@@ -70,6 +70,40 @@ replaceOnce(
 );
 
 replaceOnce(
+  `          <PositionButtonGroup
+            label="부포지션"
+            mode="multiple"
+            selected={guest.secondaryPositions}
+            onToggle={toggleGuestSecondaryPosition}
+          />`,
+  `          <div>
+            <p className="mb-2 text-sm font-semibold text-slate-600">부포지션</p>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                className={\`rounded-full px-3 py-2 text-sm font-bold \${guest.secondaryPositions.length === 0 ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600"}\`}
+                onClick={() => setGuest({ ...guest, secondaryPositions: [] })}
+              >
+                없음
+              </button>
+              {POSITIONS.map((position) => {
+                const isSelected = guest.secondaryPositions[0] === position;
+                return (
+                  <button
+                    key={position}
+                    type="button"
+                    className={\`rounded-full px-3 py-2 text-sm font-bold \${isSelected ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600"}\`}
+                    onClick={() => setGuest({ ...guest, secondaryPositions: [position] })}
+                  >
+                    {position}
+                  </button>
+                );
+              })}
+            </div>
+          </div>`
+);
+
+replaceOnce(
   `          <label className="flex items-center gap-2 rounded-xl border border-slate-300 px-3 py-2"><input type="checkbox" checked={guest.canGk} onChange={(e) => setGuest({ ...guest, canGk: e.target.checked })} /> 필드 GK 가능</label>
           <input className="rounded-xl border border-slate-300 px-3 py-2" placeholder="메모" value={guest.memo} onChange={(e) => setGuest({ ...guest, memo: e.target.value })} />`,
   `          <input className="rounded-xl border border-slate-300 px-3 py-2" placeholder="메모" value={guest.memo} onChange={(e) => setGuest({ ...guest, memo: e.target.value })} />`
@@ -88,22 +122,6 @@ replaceOnce(
               {guestRole === "GK" ? "임시 GK 추가" : "임시 용병 추가"}
             </button>
           </div>`
-);
-
-replaceOnce(
-  `      <div className="flex flex-wrap gap-2">
-        {POSITIONS.map((position) => {`,
-  `      <div className="flex flex-wrap gap-2">
-        {mode === "multiple" && (
-          <button
-            type="button"
-            className={\`rounded-full px-3 py-2 text-sm font-bold \${selected.length === 0 ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600"}\`}
-            onClick={() => selected.forEach((position) => onToggle(position))}
-          >
-            없음
-          </button>
-        )}
-        {POSITIONS.map((position) => {`
 );
 
 replaceOnce(
