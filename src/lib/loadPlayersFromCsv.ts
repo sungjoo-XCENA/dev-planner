@@ -1,8 +1,9 @@
-import type { MemberType, Player } from "@/types/player";
+import type { DedicatedGoalkeeper, MemberType, Player } from "@/types/player";
 import { parseSecondaryPositions, toPosition } from "./positions";
 
 export type LoadPlayersResult = {
   players: Player[];
+  dedicatedGks: DedicatedGoalkeeper[];
   errors: string[];
   warnings: string[];
 };
@@ -20,8 +21,8 @@ type CanonicalColumn =
   | "memo"
   | "member_type";
 
-// MVP policy: use one regular-player sheet. Guests are added in the web UI.
-// member_type is still accepted for backward compatibility, but is no longer required.
+// Rows with 주포지션=GK are loaded as dedicated goalkeepers.
+// The old 키퍼 column is optional for backward compatibility.
 const REQUIRED_COLUMNS: CanonicalColumn[] = [
   "active",
   "name",
@@ -30,7 +31,6 @@ const REQUIRED_COLUMNS: CanonicalColumn[] = [
   "mid_score",
   "defense_score",
   "activity_score",
-  "gk",
 ];
 
 const HEADER_ALIASES: Record<CanonicalColumn, string[]> = {
@@ -117,12 +117,12 @@ function parseScore(value: string, rowNumber: number, column: string, errors: st
   return parsed;
 }
 
-function parseBooleanYN(value: string, rowNumber: number, column: string, errors: string[]): boolean {
+function parseBooleanYN(value: string): boolean | null {
   const normalized = value.trim().toUpperCase();
+  if (!normalized) return null;
   if (["Y", "YES", "O", "TRUE", "가능", "예", "1"].includes(normalized)) return true;
   if (["N", "NO", "X", "FALSE", "불가", "아니오", "0"].includes(normalized)) return false;
-  errors.push(`${rowNumber}행 ${column}은 Y/N, O/X, 가능/불가 중 하나여야 합니다.`);
-  return false;
+  return null;
 }
 
 function parseActive(value: string): boolean {
@@ -135,6 +135,10 @@ function parseMemberType(value: string): MemberType {
   const normalized = value.trim().toUpperCase();
   if (["GUEST", "용병", "게스트"].includes(normalized)) return "GUEST";
   return "REGULAR";
+}
+
+function isDedicatedGkPosition(value: string): boolean {
+  return value.trim().toUpperCase() === "GK";
 }
 
 function proxiedCsvUrl(url: string): string {
@@ -155,6 +159,7 @@ export async function loadPlayersFromCsv(url: string): Promise<LoadPlayersResult
   } catch (error) {
     return {
       players: [],
+      dedicatedGks: [],
       errors: [`시트 데이터를 불러오지 못했습니다. 공유 설정 또는 URL을 확인해주세요. (${String(error)})`],
       warnings,
     };
@@ -162,7 +167,7 @@ export async function loadPlayersFromCsv(url: string): Promise<LoadPlayersResult
 
   const rows = parseCsv(text);
   if (rows.length < 2) {
-    return { players: [], errors: ["시트에 헤더 1행과 선수 데이터가 필요합니다."], warnings };
+    return { players: [], dedicatedGks: [], errors: ["시트에 헤더 1행과 선수 데이터가 필요합니다."], warnings };
   }
 
   const headers = rows[0].map((header) => header.trim());
@@ -179,6 +184,7 @@ export async function loadPlayersFromCsv(url: string): Promise<LoadPlayersResult
   };
 
   const players: Player[] = [];
+  const dedicatedGks: DedicatedGoalkeeper[] = [];
 
   rows.slice(1).forEach((row, idx) => {
     const rowNumber = idx + 2;
@@ -191,18 +197,34 @@ export async function loadPlayersFromCsv(url: string): Promise<LoadPlayersResult
       return;
     }
 
-    const primary = toPosition(valueOf(row, "primary_position"));
+    const primaryValue = valueOf(row, "primary_position");
+    if (isDedicatedGkPosition(primaryValue)) {
+      dedicatedGks.push({
+        id: `sheet_gk_${rowNumber}_${name}`,
+        source: "SHEET",
+        name,
+        memo: valueOf(row, "memo") || undefined,
+      });
+      return;
+    }
+
+    const primary = toPosition(primaryValue);
     if (!primary) {
-      errors.push(`${rowNumber}행 주포지션이 허용되지 않은 포지션입니다: ${valueOf(row, "primary_position")}`);
+      errors.push(`${rowNumber}행 주포지션이 허용되지 않은 포지션입니다: ${primaryValue}`);
       return;
     }
 
     const rawSecondary = valueOf(row, "secondary_positions");
     const secondaryPositions = parseSecondaryPositions(rawSecondary);
-    const secondaryTokens = rawSecondary.trim() ? rawSecondary.split(",").map((v) => v.trim()).filter(Boolean) : [];
+    const secondaryTokens = rawSecondary.trim() && rawSecondary.trim() !== "-"
+      ? rawSecondary.split(",").map((v) => v.trim()).filter(Boolean)
+      : [];
     if (secondaryPositions.length !== secondaryTokens.length) {
       warnings.push(`${rowNumber}행 ${name}의 부포지션 중 일부가 무시되었습니다. 허용값을 확인해주세요.`);
     }
+
+    const oldGkValue = valueOf(row, "gk");
+    const oldGkParsed = parseBooleanYN(oldGkValue);
 
     players.push({
       id: `sheet_${rowNumber}_${name}`,
@@ -216,10 +238,10 @@ export async function loadPlayersFromCsv(url: string): Promise<LoadPlayersResult
       midScore: parseScore(valueOf(row, "mid_score"), rowNumber, "미드", errors),
       defenseScore: parseScore(valueOf(row, "defense_score"), rowNumber, "수비", errors),
       activityScore: parseScore(valueOf(row, "activity_score"), rowNumber, "활동량", errors),
-      canGk: parseBooleanYN(valueOf(row, "gk"), rowNumber, "키퍼", errors),
+      canGk: oldGkParsed ?? true,
       memo: valueOf(row, "memo") || undefined,
     });
   });
 
-  return { players, errors, warnings };
+  return { players, dedicatedGks, errors, warnings };
 }
