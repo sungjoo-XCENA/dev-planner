@@ -7,7 +7,20 @@ export type LoadPlayersResult = {
   warnings: string[];
 };
 
-const REQUIRED_COLUMNS = [
+type CanonicalColumn =
+  | "active"
+  | "member_type"
+  | "name"
+  | "primary_position"
+  | "secondary_positions"
+  | "attack_score"
+  | "mid_score"
+  | "defense_score"
+  | "activity_score"
+  | "gk"
+  | "memo";
+
+const REQUIRED_COLUMNS: CanonicalColumn[] = [
   "active",
   "member_type",
   "name",
@@ -18,6 +31,24 @@ const REQUIRED_COLUMNS = [
   "activity_score",
   "gk",
 ];
+
+const HEADER_ALIASES: Record<CanonicalColumn, string[]> = {
+  active: ["active", "활성", "사용", "사용여부", "출력", "활성여부"],
+  member_type: ["member_type", "member type", "구분", "회원구분", "멤버구분", "타입"],
+  name: ["name", "이름", "성명", "선수", "선수명"],
+  primary_position: ["primary_position", "primary position", "주포지션", "주 포지션", "포지션", "메인포지션"],
+  secondary_positions: ["secondary_positions", "secondary positions", "부포지션", "부 포지션", "서브포지션", "가능포지션"],
+  attack_score: ["attack_score", "attack", "공격", "공격점수", "공격 점수"],
+  mid_score: ["mid_score", "mid", "middle", "midfield", "미드", "미드점수", "미드 점수", "중원"],
+  defense_score: ["defense_score", "defense", "defence", "수비", "수비점수", "수비 점수"],
+  activity_score: ["activity_score", "activity", "활동량", "활동", "체력", "활동점수"],
+  gk: ["gk", "GK", "키퍼", "골키퍼", "키퍼가능", "키퍼 가능", "gk가능"],
+  memo: ["memo", "메모", "비고", "참고", "특이사항"],
+};
+
+function normalizeHeader(value: string): string {
+  return value.trim().toLowerCase().replace(/[\s_\-]/g, "");
+}
 
 function parseCsv(text: string): string[][] {
   const rows: string[][] = [];
@@ -63,6 +94,19 @@ function parseCsv(text: string): string[][] {
   return rows.filter((items) => items.some((item) => item.trim().length > 0));
 }
 
+function buildHeaderMap(headers: string[]): Partial<Record<CanonicalColumn, number>> {
+  const normalizedHeaders = headers.map(normalizeHeader);
+  const result: Partial<Record<CanonicalColumn, number>> = {};
+
+  (Object.keys(HEADER_ALIASES) as CanonicalColumn[]).forEach((column) => {
+    const aliases = HEADER_ALIASES[column].map(normalizeHeader);
+    const index = normalizedHeaders.findIndex((header) => aliases.includes(header));
+    if (index >= 0) result[column] = index;
+  });
+
+  return result;
+}
+
 function parseScore(value: string, rowNumber: number, column: string, errors: string[]): number {
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed < 1 || parsed > 5) {
@@ -74,16 +118,21 @@ function parseScore(value: string, rowNumber: number, column: string, errors: st
 
 function parseBooleanYN(value: string, rowNumber: number, column: string, errors: string[]): boolean {
   const normalized = value.trim().toUpperCase();
-  if (normalized === "Y") return true;
-  if (normalized === "N") return false;
-  errors.push(`${rowNumber}행 ${column}은 Y 또는 N이어야 합니다.`);
+  if (["Y", "YES", "O", "TRUE", "가능", "예", "1"].includes(normalized)) return true;
+  if (["N", "NO", "X", "FALSE", "불가", "아니오", "0"].includes(normalized)) return false;
+  errors.push(`${rowNumber}행 ${column}은 Y/N, O/X, 가능/불가 중 하나여야 합니다.`);
   return false;
 }
 
-function parseMemberType(value: string, rowNumber: number, errors: string[]): MemberType {
+function parseActive(value: string): boolean {
+  if (!value.trim()) return true;
   const normalized = value.trim().toUpperCase();
-  if (normalized === "REGULAR" || normalized === "GUEST") return normalized;
-  errors.push(`${rowNumber}행 member_type은 REGULAR 또는 GUEST여야 합니다.`);
+  return !["N", "NO", "X", "FALSE", "미사용", "숨김", "0"].includes(normalized);
+}
+
+function parseMemberType(value: string): MemberType {
+  const normalized = value.trim().toUpperCase();
+  if (["GUEST", "용병", "게스트"].includes(normalized)) return "GUEST";
   return "REGULAR";
 }
 
@@ -116,22 +165,23 @@ export async function loadPlayersFromCsv(url: string): Promise<LoadPlayersResult
   }
 
   const headers = rows[0].map((header) => header.trim());
-  const missing = REQUIRED_COLUMNS.filter((column) => !headers.includes(column));
+  const headerMap = buildHeaderMap(headers);
+  const missing = REQUIRED_COLUMNS.filter((column) => headerMap[column] === undefined);
   if (missing.length > 0) {
     errors.push(`필수 컬럼이 누락되었습니다: ${missing.join(", ")}`);
+    errors.push(`현재 인식한 헤더: ${headers.join(", ")}`);
   }
 
-  const indexOf = (column: string) => headers.indexOf(column);
-  const valueOf = (row: string[], column: string) => {
-    const index = indexOf(column);
-    return index >= 0 ? row[index]?.trim() ?? "" : "";
+  const valueOf = (row: string[], column: CanonicalColumn) => {
+    const index = headerMap[column];
+    return index !== undefined ? row[index]?.trim() ?? "" : "";
   };
 
   const players: Player[] = [];
 
   rows.slice(1).forEach((row, idx) => {
     const rowNumber = idx + 2;
-    const active = parseBooleanYN(valueOf(row, "active") || "Y", rowNumber, "active", errors);
+    const active = parseActive(valueOf(row, "active"));
     if (!active) return;
 
     const name = valueOf(row, "name");
@@ -156,7 +206,7 @@ export async function loadPlayersFromCsv(url: string): Promise<LoadPlayersResult
     players.push({
       id: `sheet_${rowNumber}_${name}`,
       source: "SHEET",
-      memberType: parseMemberType(valueOf(row, "member_type"), rowNumber, errors),
+      memberType: parseMemberType(valueOf(row, "member_type")),
       active,
       name,
       primaryPosition: primary,
