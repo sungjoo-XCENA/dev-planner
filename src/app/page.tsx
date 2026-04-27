@@ -292,7 +292,7 @@ export default function Home() {
           <Stat label="GK" value={`${dedicatedGks.length}`} />
         </div>
         <h3 className="mt-5 font-semibold">필드 참석자</h3>
-        <div className="mt-2 flex flex-wrap gap-2">{fieldPlayers.map((p) => <Chip key={p.id} label={`${p.name}(${p.primaryPosition})`} onRemove={() => removeFieldPlayer(p.id)} />)}</div>
+        <div className="mt-2 flex flex-wrap gap-2">{fieldPlayers.map((p) => <Chip key={p.id} label={`${p.name}(${p.primaryPosition})`} tone={p.memberType === "GUEST" ? "guest" : "regular"} onRemove={() => removeFieldPlayer(p.id)} />)}</div>
         <h3 className="mt-5 font-semibold">전담 GK</h3>
         <div className="mt-2 flex flex-wrap gap-2">{dedicatedGks.map((gk) => <Chip key={gk.id} label={gk.name} onRemove={() => removeDedicatedGk(gk.id)} />)}</div>
       </section>
@@ -341,8 +341,9 @@ function MessageBox({ title, items, tone }: { title: string; items: string[]; to
   return <div className={`rounded-3xl p-5 ${tone === "error" ? "bg-red-50 text-red-900" : "bg-amber-50 text-amber-900"}`}><h3 className="font-bold">{title}</h3><ul className="mt-2 list-disc pl-5 text-sm">{items.map((item, i) => <li key={i}>{item}</li>)}</ul></div>;
 }
 
-function Chip({ label, onRemove }: { label: string; onRemove: () => void }) {
-  return <span className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1.5 text-sm">{label}<button className="font-bold text-slate-500" onClick={onRemove}>×</button></span>;
+function Chip({ label, onRemove, tone = "regular" }: { label: string; onRemove: () => void; tone?: "regular" | "guest" }) {
+  const className = tone === "guest" ? "bg-violet-100 text-violet-800" : "bg-slate-100 text-slate-700";
+  return <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-sm ${className}`}>{label}<button className="font-bold opacity-70" onClick={onRemove}>×</button></span>;
 }
 
 function PlayerSearchRow({ player, isField, isGk, onAddField, onRemoveField, onAddGk, onRemoveGk }: { player: Player; isField: boolean; isGk: boolean; onAddField: () => void; onRemoveField: () => void; onAddGk: () => void; onRemoveGk: () => void }) {
