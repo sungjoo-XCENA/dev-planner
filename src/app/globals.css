@@ -64,6 +64,31 @@ main > section:nth-of-type(2) > div.mt-4.grid {
   max-width: 220px;
 }
 
+/* Team split cards: keep 4/4/5 position groups on a single line without horizontal scroll. */
+.rounded-2xl.border.border-slate-200.p-4 > div.mt-4 > div.mt-2.flex.flex-wrap.gap-2 {
+  flex-wrap: nowrap !important;
+  gap: 0.2rem !important;
+  overflow: visible !important;
+}
+
+.rounded-2xl.border.border-slate-200.p-4 > div.mt-4 > div.mt-2.flex.flex-wrap.gap-2 > span {
+  min-width: 0;
+  flex: 1 1 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: center;
+  padding: 0.25rem 0.3rem !important;
+  font-size: 0.7rem !important;
+  line-height: 1rem !important;
+}
+
+/* The per-player appearance table is not needed in the current flow. */
+h3.mt-8.font-bold,
+h3.mt-8.font-bold + div.mt-3.grid {
+  display: none;
+}
+
 @media (max-width: 640px) {
   main {
     padding-left: 12px !important;
@@ -81,5 +106,10 @@ main > section:nth-of-type(2) > div.mt-4.grid {
   button,
   a {
     max-width: 100%;
+  }
+
+  .rounded-2xl.border.border-slate-200.p-4 > div.mt-4 > div.mt-2.flex.flex-wrap.gap-2 > span {
+    padding: 0.2rem 0.22rem !important;
+    font-size: 0.65rem !important;
   }
 }
