@@ -87,13 +87,17 @@ function parseMemberType(value: string, rowNumber: number, errors: string[]): Me
   return "REGULAR";
 }
 
+function proxiedCsvUrl(url: string): string {
+  return `/api/csv?url=${encodeURIComponent(url)}`;
+}
+
 export async function loadPlayersFromCsv(url: string): Promise<LoadPlayersResult> {
   const errors: string[] = [];
   const warnings: string[] = [];
 
   let text = "";
   try {
-    const response = await fetch(url);
+    const response = await fetch(proxiedCsvUrl(url));
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`);
     }
