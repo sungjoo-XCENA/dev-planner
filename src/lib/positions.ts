@@ -26,8 +26,9 @@ export function getPositionGroup(position: Position): PositionGroup {
 }
 
 export function parseSecondaryPositions(value: string): Position[] {
-  if (!value.trim()) return [];
-  return value
+  const normalized = value.trim();
+  if (!normalized || normalized === "-") return [];
+  return normalized
     .split(",")
     .map((item) => toPosition(item))
     .filter((item): item is Position => item !== null);
