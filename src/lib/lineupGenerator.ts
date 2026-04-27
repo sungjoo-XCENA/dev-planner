@@ -4,6 +4,7 @@ import type { Team, TeamName } from "@/types/team";
 import { playersByGroup } from "./teamBalancer";
 
 const QUARTERS: Quarter[] = [1, 2, 3, 4];
+const MAX_DEDICATED_GK_AUTO_ASSIGN = 2;
 
 function chooseDefenderIronman(team: Team) {
   const defenders = playersByGroup(team, "DEFENSE");
@@ -48,7 +49,7 @@ function lineupForTeam(team: Team, dedicatedGks: DedicatedGoalkeeper[]) {
   const gkUseCount = new Map<string, number>();
 
   for (const quarter of QUARTERS) {
-    const dedicated = dedicatedGkFor(team.name, quarter, dedicatedGks.slice(0, 2));
+    const dedicated = dedicatedGkFor(team.name, quarter, dedicatedGks.slice(0, MAX_DEDICATED_GK_AUTO_ASSIGN));
     const restingIds = Object.values(restPlan[quarter]).filter((id): id is string => Boolean(id));
     const restingPlayers = team.players.filter((player) => restingIds.includes(player.id));
     let gkName = "";
@@ -89,13 +90,17 @@ function lineupForTeam(team: Team, dedicatedGks: DedicatedGoalkeeper[]) {
     });
   }
 
+  const quarterByNumber = new Map(quarters.map((quarter) => [quarter.quarter, quarter]));
+  const roleInQuarter = (playerName: string, quarter: Quarter): LineupRole => {
+    const currentQuarter = quarterByNumber.get(quarter);
+    if (!currentQuarter) return "BENCH";
+    if (currentQuarter.gk === playerName) return "GK";
+    const isField = [...currentQuarter.attack, ...currentQuarter.mid, ...currentQuarter.defense].includes(playerName);
+    return isField ? "FIELD" : "BENCH";
+  };
+
   const summaries: PlayerLineupSummary[] = team.players.map((player) => {
-    const roles = QUARTERS.map((quarter) => {
-      const q = quarters.find((item) => item.quarter === quarter && item.team === team.name);
-      if (!q) return "BENCH" as LineupRole;
-      if (q.gk === player.name) return "GK" as LineupRole;
-      return [...q.attack, ...q.mid, ...q.defense].includes(player.name) ? "FIELD" : "BENCH";
-    });
+    const roles = QUARTERS.map((quarter) => roleInQuarter(player.name, quarter));
     return {
       playerId: player.id,
       playerName: player.name,
@@ -116,7 +121,7 @@ function lineupForTeam(team: Team, dedicatedGks: DedicatedGoalkeeper[]) {
 
 export function generateLineups(teamA: Team, teamB: Team, dedicatedGks: DedicatedGoalkeeper[]): LineupResult {
   const warnings: string[] = [];
-  if (dedicatedGks.length >= 3) warnings.push("전담 GK가 3명 이상입니다. MVP에서는 2명만 자동 배정합니다.");
+  if (dedicatedGks.length > MAX_DEDICATED_GK_AUTO_ASSIGN) warnings.push("전담 GK가 3명 이상입니다. MVP에서는 2명만 자동 배정합니다.");
 
   const a = lineupForTeam(teamA, dedicatedGks);
   const b = lineupForTeam(teamB, dedicatedGks);
@@ -124,7 +129,7 @@ export function generateLineups(teamA: Team, teamB: Team, dedicatedGks: Dedicate
   Object.entries(b.rotation).forEach(([name, items]) => {
     rotation[name] = [...(rotation[name] ?? []), ...items];
   });
-  dedicatedGks.slice(2).forEach((gk) => {
+  dedicatedGks.slice(MAX_DEDICATED_GK_AUTO_ASSIGN).forEach((gk) => {
     rotation[gk.name] = ["교대/대기"];
   });
 

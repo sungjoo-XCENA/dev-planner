@@ -13,6 +13,7 @@ const TEAM_ROLE_TARGETS: Record<PositionGroup, number> = {
   MID: 4,
   DEFENSE: 5,
 };
+const POSITION_GROUPS: PositionGroup[] = ["ATTACK", "MID", "DEFENSE"];
 
 function shuffled<T>(items: T[]): T[] {
   const copy = [...items];
@@ -42,7 +43,6 @@ function assignmentReason(player: Player, group: PositionGroup): string {
 function assignRoles(players: Player[], iterations = 8000): AssignedPlayer[] {
   let best: AssignedPlayer[] | null = null;
   let bestScore = Number.NEGATIVE_INFINITY;
-  const groups: PositionGroup[] = ["ATTACK", "MID", "DEFENSE"];
 
   for (let i = 0; i < iterations; i += 1) {
     const counts: Record<PositionGroup, number> = { ATTACK: 0, MID: 0, DEFENSE: 0 };
@@ -50,7 +50,7 @@ function assignRoles(players: Player[], iterations = 8000): AssignedPlayer[] {
     let score = 0;
 
     for (const player of shuffled(players)) {
-      const candidates = shuffled(groups)
+      const candidates = shuffled(POSITION_GROUPS)
         .filter((group) => counts[group] < ROLE_TARGETS[group])
         .sort((a, b) => assignmentScore(player, b) - assignmentScore(player, a));
       const selected = candidates[0];
@@ -142,7 +142,7 @@ function splitByRoleBalance(assigned: AssignedPlayer[], iterations = 12000): Tea
     const teamA: AssignedPlayer[] = [];
     const teamB: AssignedPlayer[] = [];
 
-    (["ATTACK", "MID", "DEFENSE"] as PositionGroup[]).forEach((group) => {
+    POSITION_GROUPS.forEach((group) => {
       const pool = shuffled(groupPlayers(assigned, group));
       const target = TEAM_ROLE_TARGETS[group];
       teamA.push(...pool.slice(0, target));
