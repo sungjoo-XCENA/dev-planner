@@ -305,7 +305,7 @@ export default function Home() {
             <h2 className="text-xl font-bold">5. 팀 분배 & 라인업 생성</h2>
             <p className="mt-1 text-sm text-slate-600">필드 참석자가 26명이어야 생성할 수 있습니다.</p>
           </div>
-          <button className="rounded-xl bg-slate-900 px-5 py-3 font-semibold text-white" onClick={runPlanner} disabled={fieldPlayers.length !== 26 || errors.length > 0}>자동 생성</button>
+          <button className="rounded-xl bg-slate-900 px-5 py-3 font-semibold text-white" onClick={runPlanner} disabled={fieldPlayers.length !== 26}>자동 생성</button>
         </div>
       </section>
 
@@ -328,7 +328,7 @@ export default function Home() {
             필드 {fieldIds.length}/26 · 전담 GK {dedicatedGks.length}
             {fieldIds.length !== 26 && <p className="text-xs font-normal text-slate-500">{fieldIds.length < 26 ? `${26 - fieldIds.length}명 더 필요` : `${fieldIds.length - 26}명 제외 필요`}</p>}
           </div>
-          <button className="rounded-xl bg-slate-900 px-5 py-3 text-sm font-bold text-white disabled:bg-slate-300" onClick={runPlanner} disabled={fieldPlayers.length !== 26 || errors.length > 0}>자동 생성</button>
+          <button className="rounded-xl bg-slate-900 px-5 py-3 text-sm font-bold text-white disabled:bg-slate-300" onClick={runPlanner} disabled={fieldPlayers.length !== 26}>자동 생성</button>
         </div>
       </div>
     </main>
