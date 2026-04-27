@@ -36,11 +36,24 @@ export default function Home() {
   const [lineupResult, setLineupResult] = useState<LineupResult | null>(null);
   const [copied, setCopied] = useState(false);
   const [showSheetUrl, setShowSheetUrl] = useState(false);
+  const [playerQuery, setPlayerQuery] = useState("");
 
   const fieldPlayers = useMemo(() => players.filter((p) => fieldIds.includes(p.id)), [players, fieldIds]);
   const regularCount = fieldPlayers.filter((p) => p.memberType === "REGULAR").length;
   const guestCount = fieldPlayers.filter((p) => p.memberType === "GUEST").length;
   const sortedPlayers = useMemo(() => [...players].sort((a, b) => a.name.localeCompare(b.name, "ko")), [players]);
+  const searchedPlayers = useMemo(() => {
+    const query = playerQuery.trim().toLowerCase();
+    if (!query) return sortedPlayers.slice(0, 12);
+    return sortedPlayers
+      .filter((player) =>
+        [player.name, player.primaryPosition, player.secondaryPositions.join(",")]
+          .join(" ")
+          .toLowerCase()
+          .includes(query),
+      )
+      .slice(0, 20);
+  }, [playerQuery, sortedPlayers]);
 
   async function handleLoad() {
     setTeamResult(null);
@@ -53,6 +66,7 @@ export default function Home() {
     setWarnings(result.warnings);
     setFieldIds([]);
     setDedicatedGks([]);
+    setPlayerQuery("");
   }
 
   function addFieldPlayer(player: Player) {
@@ -75,6 +89,10 @@ export default function Home() {
     }
     if (dedicatedGks.some((gk) => gk.id === player.id)) return;
     setDedicatedGks((prev) => [...prev, { id: player.id, source: "SHEET", name: player.name, memo: player.memo }]);
+  }
+
+  function removeDedicatedGk(id: string) {
+    setDedicatedGks((prev) => prev.filter((item) => item.id !== id));
   }
 
   function toggleGuestSecondaryPosition(position: Position) {
@@ -201,34 +219,45 @@ export default function Home() {
         </section>
       )}
 
-      <section className="mb-6 grid gap-6 lg:grid-cols-[1.3fr_1fr]">
+      <section className="mb-6 grid gap-6 lg:grid-cols-[1.15fr_1fr]">
         <div className="rounded-3xl bg-white p-6 shadow-sm">
           <div className="flex items-center justify-between gap-3">
-            <h2 className="text-xl font-bold">2. 선수 빠른 추가</h2>
-            <span className="rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-600">가나다순</span>
+            <h2 className="text-xl font-bold">2. 선수 검색 추가</h2>
+            <span className="rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-600">{players.length}명</span>
           </div>
-          <p className="mt-2 text-sm text-slate-600">투표한 사람은 이름 버튼을 누르면 바로 필드 참석자로 추가됩니다. 키퍼만 온 사람은 GK 버튼을 누르세요.</p>
-          <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-            {sortedPlayers.map((p) => {
+          <p className="mt-2 text-sm text-slate-600">이름을 검색해서 필드 참석자 또는 전담 GK로 추가하세요.</p>
+          <div className="mt-4 flex gap-2">
+            <input
+              className="min-w-0 flex-1 rounded-xl border border-slate-300 px-4 py-3"
+              value={playerQuery}
+              onChange={(e) => setPlayerQuery(e.target.value)}
+              placeholder="이름 검색 예: 정창영"
+            />
+            {playerQuery && <button className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-bold" onClick={() => setPlayerQuery("")}>초기화</button>}
+          </div>
+          <div className="mt-3 grid gap-2">
+            {searchedPlayers.map((p) => {
               const isField = fieldIds.includes(p.id);
               const isGk = dedicatedGks.some((gk) => gk.id === p.id);
               return (
-                <div key={p.id} className={`rounded-2xl border p-3 ${isField || isGk ? "border-blue-200 bg-blue-50" : "border-slate-200 bg-white"}`}>
-                  <div className="flex items-start justify-between gap-2">
-                    <button className="min-w-0 flex-1 text-left" onClick={() => addFieldPlayer(p)} disabled={isField || isGk}>
-                      <p className="truncate text-base font-bold">{p.name}</p>
-                      <p className="mt-1 text-xs text-slate-500">{p.primaryPosition} · 공격{p.attackScore}/미드{p.midScore}/수비{p.defenseScore} · 활동{p.activityScore}</p>
-                    </button>
-                    <button className="shrink-0 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-bold text-white disabled:bg-slate-300" onClick={() => addDedicatedGk(p)} disabled={isField || isGk}>GK</button>
-                  </div>
-                  <div className="mt-2 flex items-center justify-between text-xs text-slate-500">
-                    <span>필드GK {p.canGk ? "가능" : "불가"}</span>
-                    {isField && <button className="font-bold text-red-600" onClick={() => removeFieldPlayer(p.id)}>필드 제거</button>}
-                    {isGk && <button className="font-bold text-red-600" onClick={() => setDedicatedGks((prev) => prev.filter((item) => item.id !== p.id))}>GK 제거</button>}
-                  </div>
-                </div>
+                <PlayerSearchRow
+                  key={p.id}
+                  player={p}
+                  isField={isField}
+                  isGk={isGk}
+                  onAddField={() => addFieldPlayer(p)}
+                  onRemoveField={() => removeFieldPlayer(p.id)}
+                  onAddGk={() => addDedicatedGk(p)}
+                  onRemoveGk={() => removeDedicatedGk(p.id)}
+                />
               );
             })}
+            {players.length > 0 && searchedPlayers.length === 0 && (
+              <p className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">검색 결과가 없습니다.</p>
+            )}
+            {players.length > 0 && !playerQuery.trim() && (
+              <p className="text-xs text-slate-500">검색어가 없으면 가나다순 12명만 미리 보여줍니다.</p>
+            )}
           </div>
         </div>
 
@@ -246,7 +275,7 @@ export default function Home() {
           </div>
           <h3 className="mt-5 font-semibold">전담 GK</h3>
           <div className="mt-2 flex flex-wrap gap-2">
-            {dedicatedGks.map((gk) => <Chip key={gk.id} label={gk.name} onRemove={() => setDedicatedGks((prev) => prev.filter((item) => item.id !== gk.id))} />)}
+            {dedicatedGks.map((gk) => <Chip key={gk.id} label={gk.name} onRemove={() => removeDedicatedGk(gk.id)} />)}
           </div>
         </div>
       </section>
@@ -334,6 +363,53 @@ function Chip({ label, onRemove }: { label: string; onRemove: () => void }) {
   return <span className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1.5 text-sm">{label}<button className="font-bold text-slate-500" onClick={onRemove}>×</button></span>;
 }
 
+function PlayerSearchRow({
+  player,
+  isField,
+  isGk,
+  onAddField,
+  onRemoveField,
+  onAddGk,
+  onRemoveGk,
+}: {
+  player: Player;
+  isField: boolean;
+  isGk: boolean;
+  onAddField: () => void;
+  onRemoveField: () => void;
+  onAddGk: () => void;
+  onRemoveGk: () => void;
+}) {
+  const secondary = player.secondaryPositions.length > 0 ? player.secondaryPositions.join(",") : "-";
+  return (
+    <div className={`rounded-2xl border p-3 ${isField || isGk ? "border-blue-200 bg-blue-50" : "border-slate-200 bg-white"}`}>
+      <div className="flex items-center justify-between gap-2">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="font-bold">{player.name}</p>
+            {isField && <RoleBadge role="FIELD" />}
+            {isGk && <RoleBadge role="GK" />}
+          </div>
+          <p className="mt-1 text-xs text-slate-500">주 {player.primaryPosition} · 부 {secondary}</p>
+          <p className="mt-0.5 text-xs text-slate-400">공격{player.attackScore} · 미드{player.midScore} · 수비{player.defenseScore} · 활동{player.activityScore}</p>
+        </div>
+        <div className="flex shrink-0 gap-1">
+          {isField ? (
+            <button className="rounded-lg bg-red-50 px-2.5 py-2 text-xs font-bold text-red-700" onClick={onRemoveField}>해제</button>
+          ) : (
+            <button className="rounded-lg bg-blue-600 px-2.5 py-2 text-xs font-bold text-white disabled:bg-slate-300" onClick={onAddField} disabled={isGk}>필드</button>
+          )}
+          {isGk ? (
+            <button className="rounded-lg bg-red-50 px-2.5 py-2 text-xs font-bold text-red-700" onClick={onRemoveGk}>해제</button>
+          ) : (
+            <button className="rounded-lg bg-amber-500 px-2.5 py-2 text-xs font-bold text-white disabled:bg-slate-300" onClick={onAddGk} disabled={isField}>GK</button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function PositionButtonGroup({
   label,
   mode,
@@ -388,8 +464,8 @@ function GroupBadge({ group }: { group: PositionGroup }) {
 }
 
 function RoleBadge({ role }: { role: LineupRole }) {
-  const cls = role === "FIELD" ? "bg-slate-900 text-white" : role === "GK" ? "bg-amber-100 text-amber-800" : "bg-slate-100 text-slate-600";
-  const label = role === "FIELD" ? "필드" : role === "GK" ? "GK" : "대기";
+  const cls = role === "FIELD" ? "bg-blue-600 text-white" : role === "GK" ? "bg-amber-100 text-amber-800" : "bg-slate-100 text-slate-600";
+  const label = role === "FIELD" ? "FIELD" : role === "GK" ? "GK" : "BENCH";
   return <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold ${cls}`}>{label}</span>;
 }
 
