@@ -69,6 +69,26 @@ main > section:nth-of-type(4) > div:first-child > div.mt-4:has(input:placeholder
   display: none;
 }
 
+/* Visual override for the player-search placeholder until page.tsx can be cleaned up. */
+main > section:nth-of-type(4) > div:first-child > div.mt-4 {
+  position: relative;
+}
+
+main > section:nth-of-type(4) > div:first-child > div.mt-4 > input::placeholder {
+  color: transparent;
+}
+
+main > section:nth-of-type(4) > div:first-child > div.mt-4:has(input:placeholder-shown)::after {
+  content: "이름 검색 예: 하성주";
+  position: absolute;
+  left: 1rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #94a3b8;
+  pointer-events: none;
+  font-size: 1rem;
+}
+
 @media (max-width: 640px) {
   main {
     padding-left: 12px !important;
