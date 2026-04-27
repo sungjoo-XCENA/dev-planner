@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import type { DedicatedGoalkeeper, Player, Position } from "@/types/player";
 import type { LineupResult } from "@/types/lineup";
 import type { TeamBalanceResult } from "@/types/team";
+import { appConfig } from "@/config/appConfig";
 import { loadPlayersFromCsv } from "@/lib/loadPlayersFromCsv";
 import { POSITIONS } from "@/lib/positions";
 import { balanceTeams } from "@/lib/teamBalancer";
@@ -22,7 +23,7 @@ const emptyGuest = {
 };
 
 export default function Home() {
-  const [csvUrl, setCsvUrl] = useState("");
+  const [csvUrl, setCsvUrl] = useState(appConfig.defaultSheetUrl);
   const [players, setPlayers] = useState<Player[]>([]);
   const [fieldIds, setFieldIds] = useState<string[]>([]);
   const [dedicatedGks, setDedicatedGks] = useState<DedicatedGoalkeeper[]>([]);
@@ -32,10 +33,12 @@ export default function Home() {
   const [teamResult, setTeamResult] = useState<TeamBalanceResult | null>(null);
   const [lineupResult, setLineupResult] = useState<LineupResult | null>(null);
   const [copied, setCopied] = useState(false);
+  const [showSheetUrl, setShowSheetUrl] = useState(false);
 
   const fieldPlayers = useMemo(() => players.filter((p) => fieldIds.includes(p.id)), [players, fieldIds]);
   const regularCount = fieldPlayers.filter((p) => p.memberType === "REGULAR").length;
   const guestCount = fieldPlayers.filter((p) => p.memberType === "GUEST").length;
+  const sortedPlayers = useMemo(() => [...players].sort((a, b) => a.name.localeCompare(b.name, "ko")), [players]);
 
   async function handleLoad() {
     setTeamResult(null);
@@ -147,19 +150,31 @@ export default function Home() {
   }
 
   return (
-    <main className="mx-auto max-w-7xl p-4 sm:p-8">
+    <main className="mx-auto max-w-7xl p-4 pb-28 sm:p-8">
       <section className="mb-6 rounded-3xl bg-white p-6 shadow-sm">
         <p className="text-sm font-semibold text-slate-500">DEV FC Planner</p>
         <h1 className="mt-2 text-3xl font-bold tracking-tight">팀 밸런서 & 쿼터 라인업 플래너</h1>
-        <p className="mt-3 text-slate-600">Google Sheets CSV를 불러와 필드 참석자 26명과 전담 GK를 구성하고, 4/4/5 팀 분배와 3/3/4 쿼터 라인업을 생성합니다.</p>
+        <p className="mt-3 text-slate-600">정규 선수 시트를 불러오고, 투표한 사람만 빠르게 추가한 뒤 13:13 팀과 쿼터 라인업을 생성합니다.</p>
       </section>
 
       <section className="mb-6 rounded-3xl bg-white p-6 shadow-sm">
-        <h2 className="text-xl font-bold">1. Google Sheets CSV 불러오기</h2>
-        <div className="mt-4 flex flex-col gap-3 sm:flex-row">
-          <input className="flex-1 rounded-xl border border-slate-300 px-4 py-3" value={csvUrl} onChange={(e) => setCsvUrl(e.target.value)} placeholder="CSV export URL" />
-          <button className="rounded-xl bg-slate-900 px-5 py-3 font-semibold text-white" onClick={handleLoad} disabled={!csvUrl.trim()}>불러오기</button>
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h2 className="text-xl font-bold">1. 정규 선수 시트</h2>
+            <p className="mt-1 break-all text-sm text-slate-600">{csvUrl}</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <a className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold" href={csvUrl} target="_blank" rel="noreferrer">시트 수정하기</a>
+            <button className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold" onClick={() => setShowSheetUrl((v) => !v)}>{showSheetUrl ? "URL 숨기기" : "URL 변경"}</button>
+            <button className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white" onClick={handleLoad}>불러오기</button>
+          </div>
         </div>
+        {showSheetUrl && (
+          <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+            <input className="flex-1 rounded-xl border border-slate-300 px-4 py-3" value={csvUrl} onChange={(e) => setCsvUrl(e.target.value)} placeholder="Google Sheets URL" />
+            <button className="rounded-xl bg-slate-900 px-5 py-3 font-semibold text-white" onClick={handleLoad} disabled={!csvUrl.trim()}>다시 불러오기</button>
+          </div>
+        )}
         <div className="mt-4 grid gap-3 sm:grid-cols-4">
           <Stat label="불러온 선수" value={`${players.length}명`} />
           <Stat label="필드 참석자" value={`${fieldIds.length} / 26명`} />
@@ -175,41 +190,40 @@ export default function Home() {
         </section>
       )}
 
-      <section className="mb-6 grid gap-6 lg:grid-cols-2">
+      <section className="mb-6 grid gap-6 lg:grid-cols-[1.3fr_1fr]">
         <div className="rounded-3xl bg-white p-6 shadow-sm">
-          <h2 className="text-xl font-bold">2. 선수 풀</h2>
-          <div className="mt-4 max-h-[520px] overflow-auto rounded-2xl border border-slate-200">
-            <table className="w-full min-w-[760px] text-sm">
-              <thead className="bg-slate-50 text-left">
-                <tr>
-                  <Th>이름</Th><Th>구분</Th><Th>주/부</Th><Th>공/미/수</Th><Th>활동</Th><Th>GK</Th><Th>액션</Th>
-                </tr>
-              </thead>
-              <tbody>
-                {players.map((p) => (
-                  <tr key={p.id} className="border-t border-slate-100">
-                    <Td>{p.name}</Td>
-                    <Td>{p.memberType}</Td>
-                    <Td>{p.primaryPosition} / {p.secondaryPositions.join(",") || "-"}</Td>
-                    <Td>{p.attackScore}/{p.midScore}/{p.defenseScore}</Td>
-                    <Td>{p.activityScore}</Td>
-                    <Td>{p.canGk ? "Y" : "N"}</Td>
-                    <Td>
-                      <div className="flex gap-2">
-                        <button className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white" onClick={() => addFieldPlayer(p)}>필드</button>
-                        <button className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white" onClick={() => addDedicatedGk(p)}>전담GK</button>
-                      </div>
-                    </Td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-xl font-bold">2. 선수 빠른 추가</h2>
+            <span className="rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-600">가나다순</span>
+          </div>
+          <p className="mt-2 text-sm text-slate-600">투표한 사람은 이름 버튼을 누르면 바로 필드 참석자로 추가됩니다. 키퍼만 온 사람은 GK 버튼을 누르세요.</p>
+          <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+            {sortedPlayers.map((p) => {
+              const isField = fieldIds.includes(p.id);
+              const isGk = dedicatedGks.some((gk) => gk.id === p.id);
+              return (
+                <div key={p.id} className={`rounded-2xl border p-3 ${isField || isGk ? "border-blue-200 bg-blue-50" : "border-slate-200 bg-white"}`}>
+                  <div className="flex items-start justify-between gap-2">
+                    <button className="min-w-0 flex-1 text-left" onClick={() => addFieldPlayer(p)} disabled={isField || isGk}>
+                      <p className="truncate text-base font-bold">{p.name}</p>
+                      <p className="mt-1 text-xs text-slate-500">{p.primaryPosition} · 공{p.attackScore}/미{p.midScore}/수{p.defenseScore} · 활동{p.activityScore}</p>
+                    </button>
+                    <button className="shrink-0 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-bold text-white disabled:bg-slate-300" onClick={() => addDedicatedGk(p)} disabled={isField || isGk}>GK</button>
+                  </div>
+                  <div className="mt-2 flex items-center justify-between text-xs text-slate-500">
+                    <span>필드GK {p.canGk ? "가능" : "불가"}</span>
+                    {isField && <button className="font-bold text-red-600" onClick={() => removeFieldPlayer(p.id)}>필드 제거</button>}
+                    {isGk && <button className="font-bold text-red-600" onClick={() => setDedicatedGks((prev) => prev.filter((item) => item.id !== p.id))}>GK 제거</button>}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
 
         <div className="rounded-3xl bg-white p-6 shadow-sm">
           <h2 className="text-xl font-bold">3. 오늘 참석자</h2>
-          <div className="mt-4 grid gap-3 sm:grid-cols-4">
+          <div className="mt-4 grid gap-3 sm:grid-cols-4 lg:grid-cols-2">
             <Stat label="정규" value={`${regularCount}명`} />
             <Stat label="용병" value={`${guestCount}명`} />
             <Stat label="필드" value={`${fieldIds.length}/26`} />
@@ -236,7 +250,7 @@ export default function Home() {
           <ScoreInput label="미" value={guest.midScore} onChange={(v) => setGuest({ ...guest, midScore: v })} />
           <ScoreInput label="수" value={guest.defenseScore} onChange={(v) => setGuest({ ...guest, defenseScore: v })} />
           <ScoreInput label="활동" value={guest.activityScore} onChange={(v) => setGuest({ ...guest, activityScore: v })} />
-          <label className="flex items-center gap-2 rounded-xl border border-slate-300 px-3 py-2"><input type="checkbox" checked={guest.canGk} onChange={(e) => setGuest({ ...guest, canGk: e.target.checked })} /> GK 가능</label>
+          <label className="flex items-center gap-2 rounded-xl border border-slate-300 px-3 py-2"><input type="checkbox" checked={guest.canGk} onChange={(e) => setGuest({ ...guest, canGk: e.target.checked })} /> 필드 GK 가능</label>
           <input className="rounded-xl border border-slate-300 px-3 py-2 md:col-span-2" placeholder="메모" value={guest.memo} onChange={(e) => setGuest({ ...guest, memo: e.target.value })} />
           <button className="rounded-xl bg-blue-600 px-4 py-2 font-semibold text-white" onClick={addTempGuest}>임시 용병 추가</button>
           <button className="rounded-xl bg-emerald-600 px-4 py-2 font-semibold text-white" onClick={addTempGk}>임시 GK 추가</button>
@@ -247,7 +261,7 @@ export default function Home() {
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h2 className="text-xl font-bold">5. 팀 분배 & 라인업 생성</h2>
-            <p className="mt-1 text-sm text-slate-600">필드 참석자 26명이 되어야 실행할 수 있습니다.</p>
+            <p className="mt-1 text-sm text-slate-600">현재 MVP는 13:13 고정이라 필드 참석자 정확히 26명일 때 생성할 수 있습니다.</p>
           </div>
           <button className="rounded-xl bg-slate-900 px-5 py-3 font-semibold text-white" onClick={runPlanner} disabled={fieldPlayers.length !== 26 || errors.length > 0}>자동 생성</button>
         </div>
@@ -265,6 +279,16 @@ export default function Home() {
           <pre className="mt-4 whitespace-pre-wrap rounded-2xl bg-slate-950 p-4 text-sm text-slate-100">{shareText}</pre>
         </section>
       )}
+
+      <div className="fixed inset-x-0 bottom-0 z-10 border-t border-slate-200 bg-white/95 p-3 backdrop-blur">
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-3">
+          <div className="text-sm font-semibold">
+            필드 {fieldIds.length}/26 · 전담 GK {dedicatedGks.length}
+            {fieldIds.length !== 26 && <p className="text-xs font-normal text-slate-500">{fieldIds.length < 26 ? `${26 - fieldIds.length}명 더 필요` : `${fieldIds.length - 26}명 제외 필요`}</p>}
+          </div>
+          <button className="rounded-xl bg-slate-900 px-5 py-3 text-sm font-bold text-white disabled:bg-slate-300" onClick={runPlanner} disabled={fieldPlayers.length !== 26 || errors.length > 0}>자동 생성</button>
+        </div>
+      </div>
     </main>
   );
 }
