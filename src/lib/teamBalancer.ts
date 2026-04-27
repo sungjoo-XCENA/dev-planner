@@ -1,4 +1,4 @@
-import type { AssignedPlayer, Player, PositionGroup } from "@/types/player";
+import type { AssignedPlayer, FieldPosition, Player, PositionGroup } from "@/types/player";
 import type { Team, TeamBalanceResult, TeamBalanceSummary } from "@/types/team";
 import { getPositionGroup, hasGroup, scoreForGroup } from "./positions";
 
@@ -15,6 +15,13 @@ const TEAM_ROLE_TARGETS: Record<PositionGroup, number> = {
 };
 const POSITION_GROUPS: PositionGroup[] = ["ATTACK", "MID", "DEFENSE"];
 
+type FieldPlayer = Player & { primaryPosition: FieldPosition };
+type AssignedFieldPlayer = AssignedPlayer & { primaryPosition: FieldPosition };
+
+function isFieldPlayer(player: Player): player is FieldPlayer {
+  return player.primaryPosition !== "GK";
+}
+
 function shuffled<T>(items: T[]): T[] {
   const copy = [...items];
   for (let i = copy.length - 1; i > 0; i -= 1) {
@@ -24,7 +31,7 @@ function shuffled<T>(items: T[]): T[] {
   return copy;
 }
 
-function assignmentScore(player: Player, group: PositionGroup): number {
+function assignmentScore(player: FieldPlayer, group: PositionGroup): number {
   const primaryGroup = getPositionGroup(player.primaryPosition);
   const base = scoreForGroup(group, player);
   const primaryBonus = primaryGroup === group ? 2 : 0;
@@ -33,20 +40,20 @@ function assignmentScore(player: Player, group: PositionGroup): number {
   return base + primaryBonus + secondaryBonus + unrelatedPenalty;
 }
 
-function assignmentReason(player: Player, group: PositionGroup): string {
+function assignmentReason(player: FieldPlayer, group: PositionGroup): string {
   const primaryGroup = getPositionGroup(player.primaryPosition);
   if (primaryGroup === group) return "주포지션 그룹 배정";
   if (hasGroup(player.secondaryPositions, group)) return "부포지션 그룹 배정";
   return "인원 균형을 위한 포지션 변경";
 }
 
-function assignRoles(players: Player[], iterations = 8000): AssignedPlayer[] {
-  let best: AssignedPlayer[] | null = null;
+function assignRoles(players: FieldPlayer[], iterations = 8000): AssignedFieldPlayer[] {
+  let best: AssignedFieldPlayer[] | null = null;
   let bestScore = Number.NEGATIVE_INFINITY;
 
   for (let i = 0; i < iterations; i += 1) {
     const counts: Record<PositionGroup, number> = { ATTACK: 0, MID: 0, DEFENSE: 0 };
-    const assigned: AssignedPlayer[] = [];
+    const assigned: AssignedFieldPlayer[] = [];
     let score = 0;
 
     for (const player of shuffled(players)) {
@@ -79,14 +86,14 @@ function assignRoles(players: Player[], iterations = 8000): AssignedPlayer[] {
   return best;
 }
 
-function groupPlayers(players: AssignedPlayer[], group: PositionGroup): AssignedPlayer[] {
+function groupPlayers(players: AssignedFieldPlayer[], group: PositionGroup): AssignedFieldPlayer[] {
   return players.filter((player) => player.assignedGroup === group);
 }
 
-function calcTeamScore(teamA: AssignedPlayer[], teamB: AssignedPlayer[]): TeamBalanceSummary {
-  const sum = (players: AssignedPlayer[], fn: (player: AssignedPlayer) => number) =>
+function calcTeamScore(teamA: AssignedFieldPlayer[], teamB: AssignedFieldPlayer[]): TeamBalanceSummary {
+  const sum = (players: AssignedFieldPlayer[], fn: (player: AssignedFieldPlayer) => number) =>
     players.reduce((acc, player) => acc + fn(player), 0);
-  const byGroup = (players: AssignedPlayer[], group: PositionGroup) =>
+  const byGroup = (players: AssignedFieldPlayer[], group: PositionGroup) =>
     players.filter((player) => player.assignedGroup === group);
 
   const attackScoreA = sum(byGroup(teamA, "ATTACK"), (p) => p.attackScore);
@@ -133,14 +140,14 @@ function calcTeamScore(teamA: AssignedPlayer[], teamB: AssignedPlayer[]): TeamBa
   };
 }
 
-function splitByRoleBalance(assigned: AssignedPlayer[], iterations = 12000): TeamBalanceResult {
-  let bestA: AssignedPlayer[] = [];
-  let bestB: AssignedPlayer[] = [];
+function splitByRoleBalance(assigned: AssignedFieldPlayer[], iterations = 12000): TeamBalanceResult {
+  let bestA: AssignedFieldPlayer[] = [];
+  let bestB: AssignedFieldPlayer[] = [];
   let bestSummary: TeamBalanceSummary | null = null;
 
   for (let i = 0; i < iterations; i += 1) {
-    const teamA: AssignedPlayer[] = [];
-    const teamB: AssignedPlayer[] = [];
+    const teamA: AssignedFieldPlayer[] = [];
+    const teamB: AssignedFieldPlayer[] = [];
 
     POSITION_GROUPS.forEach((group) => {
       const pool = shuffled(groupPlayers(assigned, group));
@@ -181,7 +188,14 @@ export function balanceTeams(players: Player[]): TeamBalanceResult {
   if (players.length !== 26) {
     throw new Error(`필드 참석자는 정확히 26명이어야 합니다. 현재 ${players.length}명입니다.`);
   }
-  const assigned = assignRoles(players);
+
+  const gkPlayers = players.filter((player) => player.primaryPosition === "GK");
+  if (gkPlayers.length > 0) {
+    throw new Error(`GK는 필드 참석자에 포함할 수 없습니다: ${gkPlayers.map((player) => player.name).join(", ")}`);
+  }
+
+  const fieldPlayers = players.filter(isFieldPlayer);
+  const assigned = assignRoles(fieldPlayers);
   return splitByRoleBalance(assigned);
 }
 
