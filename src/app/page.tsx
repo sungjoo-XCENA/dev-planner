@@ -10,14 +10,16 @@ import { POSITIONS } from "@/lib/positions";
 import { balanceTeams } from "@/lib/teamBalancer";
 import { generateLineups } from "@/lib/lineupGenerator";
 
+const SCORE_OPTIONS = Array.from({ length: 10 }, (_, index) => index + 1);
+
 const emptyGuest = {
   name: "",
   primaryPosition: "ST" as Position,
-  secondaryPositions: "",
-  attackScore: 3,
-  midScore: 3,
-  defenseScore: 3,
-  activityScore: 3,
+  secondaryPositions: [] as Position[],
+  attackScore: 5,
+  midScore: 5,
+  defenseScore: 5,
+  activityScore: 5,
   canGk: false,
   memo: "",
 };
@@ -75,6 +77,18 @@ export default function Home() {
     setDedicatedGks((prev) => [...prev, { id: player.id, source: "SHEET", name: player.name, memo: player.memo }]);
   }
 
+  function toggleGuestSecondaryPosition(position: Position) {
+    setGuest((prev) => {
+      const exists = prev.secondaryPositions.includes(position);
+      return {
+        ...prev,
+        secondaryPositions: exists
+          ? prev.secondaryPositions.filter((item) => item !== position)
+          : [...prev.secondaryPositions, position],
+      };
+    });
+  }
+
   function addTempGuest() {
     if (!guest.name.trim()) return;
     const player: Player = {
@@ -84,10 +98,7 @@ export default function Home() {
       active: true,
       name: guest.name.trim(),
       primaryPosition: guest.primaryPosition,
-      secondaryPositions: guest.secondaryPositions
-        .split(",")
-        .map((item) => item.trim().toUpperCase())
-        .filter((item): item is Position => (POSITIONS as readonly string[]).includes(item)),
+      secondaryPositions: guest.secondaryPositions,
       attackScore: guest.attackScore,
       midScore: guest.midScore,
       defenseScore: guest.defenseScore,
@@ -206,7 +217,7 @@ export default function Home() {
                   <div className="flex items-start justify-between gap-2">
                     <button className="min-w-0 flex-1 text-left" onClick={() => addFieldPlayer(p)} disabled={isField || isGk}>
                       <p className="truncate text-base font-bold">{p.name}</p>
-                      <p className="mt-1 text-xs text-slate-500">{p.primaryPosition} · 공{p.attackScore}/미{p.midScore}/수{p.defenseScore} · 활동{p.activityScore}</p>
+                      <p className="mt-1 text-xs text-slate-500">{p.primaryPosition} · 공격{p.attackScore}/미드{p.midScore}/수비{p.defenseScore} · 활동{p.activityScore}</p>
                     </button>
                     <button className="shrink-0 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-bold text-white disabled:bg-slate-300" onClick={() => addDedicatedGk(p)} disabled={isField || isGk}>GK</button>
                   </div>
@@ -242,18 +253,47 @@ export default function Home() {
 
       <section className="mb-6 rounded-3xl bg-white p-6 shadow-sm">
         <h2 className="text-xl font-bold">4. 임시 용병 / 임시 GK 추가</h2>
-        <div className="mt-4 grid gap-3 md:grid-cols-6">
-          <input className="rounded-xl border border-slate-300 px-3 py-2" placeholder="이름" value={guest.name} onChange={(e) => setGuest({ ...guest, name: e.target.value })} />
-          <select className="rounded-xl border border-slate-300 px-3 py-2" value={guest.primaryPosition} onChange={(e) => setGuest({ ...guest, primaryPosition: e.target.value as Position })}>{POSITIONS.map((p) => <option key={p}>{p}</option>)}</select>
-          <input className="rounded-xl border border-slate-300 px-3 py-2" placeholder="부포지션 예: CM,CB" value={guest.secondaryPositions} onChange={(e) => setGuest({ ...guest, secondaryPositions: e.target.value })} />
-          <ScoreInput label="공" value={guest.attackScore} onChange={(v) => setGuest({ ...guest, attackScore: v })} />
-          <ScoreInput label="미" value={guest.midScore} onChange={(v) => setGuest({ ...guest, midScore: v })} />
-          <ScoreInput label="수" value={guest.defenseScore} onChange={(v) => setGuest({ ...guest, defenseScore: v })} />
-          <ScoreInput label="활동" value={guest.activityScore} onChange={(v) => setGuest({ ...guest, activityScore: v })} />
+        <div className="mt-4 grid gap-4">
+          <div className="grid gap-3 md:grid-cols-2">
+            <input className="rounded-xl border border-slate-300 px-3 py-2" placeholder="이름" value={guest.name} onChange={(e) => setGuest({ ...guest, name: e.target.value })} />
+            <label className="grid gap-1 text-sm font-semibold text-slate-600">
+              주포지션
+              <select className="rounded-xl border border-slate-300 px-3 py-2 font-normal text-slate-900" value={guest.primaryPosition} onChange={(e) => setGuest({ ...guest, primaryPosition: e.target.value as Position })}>{POSITIONS.map((p) => <option key={p}>{p}</option>)}</select>
+            </label>
+          </div>
+
+          <div>
+            <p className="mb-2 text-sm font-semibold text-slate-600">부포지션</p>
+            <div className="flex flex-wrap gap-2">
+              {POSITIONS.map((position) => {
+                const selected = guest.secondaryPositions.includes(position);
+                return (
+                  <button
+                    key={position}
+                    type="button"
+                    className={`rounded-full px-3 py-2 text-sm font-bold ${selected ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600"}`}
+                    onClick={() => toggleGuestSecondaryPosition(position)}
+                  >
+                    {position}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <ScoreSelect label="공격" value={guest.attackScore} onChange={(v) => setGuest({ ...guest, attackScore: v })} />
+            <ScoreSelect label="미드" value={guest.midScore} onChange={(v) => setGuest({ ...guest, midScore: v })} />
+            <ScoreSelect label="수비" value={guest.defenseScore} onChange={(v) => setGuest({ ...guest, defenseScore: v })} />
+            <ScoreSelect label="활동" value={guest.activityScore} onChange={(v) => setGuest({ ...guest, activityScore: v })} />
+          </div>
+
           <label className="flex items-center gap-2 rounded-xl border border-slate-300 px-3 py-2"><input type="checkbox" checked={guest.canGk} onChange={(e) => setGuest({ ...guest, canGk: e.target.checked })} /> 필드 GK 가능</label>
-          <input className="rounded-xl border border-slate-300 px-3 py-2 md:col-span-2" placeholder="메모" value={guest.memo} onChange={(e) => setGuest({ ...guest, memo: e.target.value })} />
-          <button className="rounded-xl bg-blue-600 px-4 py-2 font-semibold text-white" onClick={addTempGuest}>임시 용병 추가</button>
-          <button className="rounded-xl bg-emerald-600 px-4 py-2 font-semibold text-white" onClick={addTempGk}>임시 GK 추가</button>
+          <input className="rounded-xl border border-slate-300 px-3 py-2" placeholder="메모" value={guest.memo} onChange={(e) => setGuest({ ...guest, memo: e.target.value })} />
+          <div className="grid gap-2 sm:grid-cols-2">
+            <button className="rounded-xl bg-blue-600 px-4 py-3 font-semibold text-white" onClick={addTempGuest}>임시 용병 추가</button>
+            <button className="rounded-xl bg-emerald-600 px-4 py-3 font-semibold text-white" onClick={addTempGk}>임시 GK 추가</button>
+          </div>
         </div>
       </section>
 
@@ -305,8 +345,15 @@ function Chip({ label, onRemove }: { label: string; onRemove: () => void }) {
   return <span className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1.5 text-sm">{label}<button className="font-bold text-slate-500" onClick={onRemove}>×</button></span>;
 }
 
-function ScoreInput({ label, value, onChange }: { label: string; value: number; onChange: (v: number) => void }) {
-  return <label className="flex items-center gap-2 rounded-xl border border-slate-300 px-3 py-2 text-sm">{label}<input className="w-12 bg-transparent" type="number" min={1} max={5} value={value} onChange={(e) => onChange(Number(e.target.value))} /></label>;
+function ScoreSelect({ label, value, onChange }: { label: string; value: number; onChange: (v: number) => void }) {
+  return (
+    <label className="grid gap-1 text-sm font-semibold text-slate-600">
+      {label}
+      <select className="rounded-xl border border-slate-300 px-3 py-2 font-normal text-slate-900" value={value} onChange={(e) => onChange(Number(e.target.value))}>
+        {SCORE_OPTIONS.map((score) => <option key={score} value={score}>{score}</option>)}
+      </select>
+    </label>
+  );
 }
 
 function GroupBadge({ group }: { group: PositionGroup }) {
