@@ -20,6 +20,7 @@ type CanonicalColumn =
   | "gk"
   | "memo"
   | "member_type";
+type ScoreColumn = "attack_score" | "mid_score" | "defense_score" | "activity_score";
 
 // Rows with 주포지션=GK are loaded as dedicated goalkeepers.
 // The old 키퍼 column is optional for backward compatibility.
@@ -108,14 +109,26 @@ function buildHeaderMap(headers: string[]): Partial<Record<CanonicalColumn, numb
   return result;
 }
 
-function parseScore(value: string, rowNumber: number, column: string, errors: string[]): number {
-  const parsed = Number(value);
+function parseScore(value: string, playerName: string, column: string, errors: string[]): number | null {
+  const raw = value.trim();
+  if (!raw) {
+    return null;
+  }
+
+  const parsed = Number(raw);
   if (!Number.isInteger(parsed) || parsed < 1 || parsed > 10) {
-    errors.push(`${rowNumber}행 ${column}은 1~10 숫자여야 합니다.`);
-    return 5;
+    errors.push(`${playerName}: ${column} 점수는 1~10 숫자여야 합니다.`);
+    return null;
   }
   return parsed;
 }
+
+const SCORE_COLUMNS: Array<{ key: ScoreColumn; label: string }> = [
+  { key: "attack_score", label: "공격" },
+  { key: "mid_score", label: "미드" },
+  { key: "defense_score", label: "수비" },
+  { key: "activity_score", label: "활동량" },
+];
 
 function parseBooleanYN(value: string): boolean | null {
   const normalized = value.trim().toUpperCase();
@@ -153,7 +166,18 @@ export async function loadPlayersFromCsv(url: string): Promise<LoadPlayersResult
   try {
     const response = await fetch(proxiedCsvUrl(url));
     if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
+      let detail = "";
+      try {
+        const body = await response.json();
+        if (body?.upstreamStatus) {
+          detail = ` (Google 응답: ${body.upstreamStatus}${body.upstreamStatusText ? ` ${body.upstreamStatusText}` : ""})`;
+        } else if (body?.error) {
+          detail = ` (${body.error})`;
+        }
+      } catch {
+        // ignore json parse errors
+      }
+      throw new Error(`HTTP ${response.status}${detail}`);
     }
     text = await response.text();
   } catch (error) {
@@ -226,6 +250,27 @@ export async function loadPlayersFromCsv(url: string): Promise<LoadPlayersResult
     const oldGkValue = valueOf(row, "gk");
     const oldGkParsed = parseBooleanYN(oldGkValue);
 
+    const attackRaw = valueOf(row, "attack_score");
+    const midRaw = valueOf(row, "mid_score");
+    const defenseRaw = valueOf(row, "defense_score");
+    const activityRaw = valueOf(row, "activity_score");
+    const missingScoreLabels = SCORE_COLUMNS
+      .filter(({ key }) => !valueOf(row, key).trim())
+      .map(({ label }) => label);
+    if (missingScoreLabels.length > 0) {
+      errors.push(`${name}: ${missingScoreLabels.join(", ")} 점수가 비어있습니다.`);
+      return;
+    }
+
+    const attackScore = parseScore(attackRaw, name, "공격", errors);
+    const midScore = parseScore(midRaw, name, "미드", errors);
+    const defenseScore = parseScore(defenseRaw, name, "수비", errors);
+    const activityScore = parseScore(activityRaw, name, "활동량", errors);
+
+    if (attackScore === null || midScore === null || defenseScore === null || activityScore === null) {
+      return;
+    }
+
     players.push({
       id: `sheet_${rowNumber}_${name}`,
       source: "SHEET",
@@ -234,10 +279,10 @@ export async function loadPlayersFromCsv(url: string): Promise<LoadPlayersResult
       name,
       primaryPosition: primary,
       secondaryPositions,
-      attackScore: parseScore(valueOf(row, "attack_score"), rowNumber, "공격", errors),
-      midScore: parseScore(valueOf(row, "mid_score"), rowNumber, "미드", errors),
-      defenseScore: parseScore(valueOf(row, "defense_score"), rowNumber, "수비", errors),
-      activityScore: parseScore(valueOf(row, "activity_score"), rowNumber, "활동량", errors),
+      attackScore,
+      midScore,
+      defenseScore,
+      activityScore,
       canGk: oldGkParsed ?? true,
       memo: valueOf(row, "memo") || undefined,
     });

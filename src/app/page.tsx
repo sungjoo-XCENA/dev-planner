@@ -27,6 +27,7 @@ export default function Home() {
   const [csvUrl, setCsvUrl] = useState(appConfig.defaultSheetUrl);
   const [players, setPlayers] = useState<Player[]>([]);
   const [fieldIds, setFieldIds] = useState<string[]>([]);
+  const [sheetGkCandidates, setSheetGkCandidates] = useState<DedicatedGoalkeeper[]>([]);
   const [dedicatedGks, setDedicatedGks] = useState<DedicatedGoalkeeper[]>([]);
   const [errors, setErrors] = useState<string[]>([]);
   const [warnings, setWarnings] = useState<string[]>([]);
@@ -63,7 +64,8 @@ export default function Home() {
     setWarnings([]);
     const result = await loadPlayersFromCsv(csvUrl);
     setPlayers(result.players);
-    setDedicatedGks(result.dedicatedGks);
+    setSheetGkCandidates(result.dedicatedGks);
+    setDedicatedGks([]);
     setErrors(result.errors);
     setWarnings(result.warnings);
     setFieldIds([]);
@@ -93,7 +95,17 @@ export default function Home() {
   }
 
   function removeDedicatedGk(id: string) {
+    const selected = dedicatedGks.find((item) => item.id === id);
+    if (selected?.source === "SHEET") {
+      setSheetGkCandidates((prev) => [...prev, selected]);
+    }
     setDedicatedGks((prev) => prev.filter((item) => item.id !== id));
+  }
+
+  function addSheetDedicatedGk(candidate: DedicatedGoalkeeper) {
+    if (dedicatedGks.some((gk) => gk.id === candidate.id)) return;
+    setDedicatedGks((prev) => [...prev, candidate]);
+    setSheetGkCandidates((prev) => prev.filter((gk) => gk.id !== candidate.id));
   }
 
   function resetGuest() {
@@ -250,6 +262,19 @@ export default function Home() {
               <p className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">검색어를 입력하거나 . 을 입력하면 전체 목록을 볼 수 있습니다.</p>
             )}
           </div>
+          {sheetGkCandidates.length > 0 && (
+            <div className="mt-5">
+              <h3 className="font-semibold">시트 전담 GK 후보</h3>
+              <p className="mt-1 text-xs text-slate-500">아래에서 선택해야만 3. 오늘 참석자의 전담 GK에 추가됩니다.</p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {sheetGkCandidates.map((gk) => (
+                  <button key={gk.id} className="rounded-full bg-amber-100 px-3 py-1.5 text-sm font-semibold text-amber-900" onClick={() => addSheetDedicatedGk(gk)}>
+                    + {gk.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="rounded-3xl bg-white p-6 shadow-sm">

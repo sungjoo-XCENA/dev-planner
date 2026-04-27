@@ -60,7 +60,15 @@ export async function GET(request: Request) {
   try {
     const response = await fetch(csvUrl, { cache: "no-store" });
     if (!response.ok) {
-      return NextResponse.json({ error: `Failed to fetch CSV: HTTP ${response.status}` }, { status: 502 });
+      return NextResponse.json(
+        {
+          error: "Failed to fetch CSV from Google Sheets",
+          upstreamStatus: response.status,
+          upstreamStatusText: response.statusText,
+          csvUrl,
+        },
+        { status: 502 },
+      );
     }
 
     const text = await response.text();
