@@ -66,7 +66,7 @@ function lineupForTeam(team: Team, dedicatedGks: DedicatedGoalkeeper[]) {
         gkUseCount.set(gkCandidate.id, (gkUseCount.get(gkCandidate.id) ?? 0) + 1);
         bench = restingPlayers.filter((player) => player.id !== gkCandidate.id).map((player) => player.name);
       } else {
-        gkName = "GK 필요";
+        gkName = "없음";
         warnings.push(`${team.name}팀 ${quarter}Q 쉬는 선수 중 GK 가능자가 없습니다.`);
       }
     }
@@ -85,7 +85,7 @@ function lineupForTeam(team: Team, dedicatedGks: DedicatedGoalkeeper[]) {
       defense: fieldByGroup("DEFENSE"),
       gk: gkName,
       bench,
-      warnings: gkName === "GK 필요" ? [`${team.name}팀 ${quarter}Q GK 배정 필요`] : [],
+      warnings: gkName === "없음" ? [`${team.name}팀 ${quarter}Q GK 배정 필요`] : [],
     });
   }
 
