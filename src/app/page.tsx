@@ -182,9 +182,7 @@ export default function Home() {
   return (
     <main className="mx-auto max-w-7xl p-4 pb-28 sm:p-8">
       <section className="mb-6 rounded-3xl bg-white p-6 shadow-sm">
-        <p className="text-sm font-semibold text-slate-500">DEV FC Planner</p>
-        <h1 className="mt-2 text-3xl font-bold tracking-tight">팀 밸런서 & 쿼터 라인업 플래너</h1>
-        <p className="mt-3 text-slate-600">정규 선수 시트를 불러오고, 투표한 사람만 빠르게 추가한 뒤 13:13 팀과 쿼터 라인업을 생성합니다.</p>
+        <h1 className="text-3xl font-bold tracking-tight">DEV FC Planner</h1>
       </section>
 
       <section className="mb-6 rounded-3xl bg-white p-6 shadow-sm">
@@ -226,7 +224,7 @@ export default function Home() {
             <h2 className="text-xl font-bold">2. 선수 검색 추가</h2>
             <span className="rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-600">{players.length}명</span>
           </div>
-          <p className="mt-2 text-sm text-slate-600">이름을 검색해서 필드 참석자 또는 전담 GK로 추가하세요. 전체 목록은 . 을 입력하면 볼 수 있습니다.</p>
+          <p className="mt-2 text-sm text-slate-600">이름을 검색해서 필드 참석자 또는 전담 GK로 추가하세요. . 을 입력하면 전체 인원을 볼 수 있습니다.</p>
           <div className="mt-4 flex gap-2">
             <input
               className="min-w-0 flex-1 rounded-xl border border-slate-300 px-4 py-3"
@@ -236,7 +234,7 @@ export default function Home() {
             />
             {playerQuery && <button className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-bold" onClick={() => setPlayerQuery("")}>초기화</button>}
           </div>
-          <div className="mt-3 grid max-h-[520px] gap-2 overflow-y-auto pr-1">
+          <div className="mt-3 grid gap-2 overflow-y-auto pr-1" style={{ maxHeight: "520px" }}>
             {searchedPlayers.map((p) => {
               const isField = fieldIds.includes(p.id);
               const isGk = dedicatedGks.some((gk) => gk.id === p.id);
@@ -320,7 +318,7 @@ export default function Home() {
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h2 className="text-xl font-bold">5. 팀 분배 & 라인업 생성</h2>
-            <p className="mt-1 text-sm text-slate-600">현재 MVP는 13:13 고정이라 필드 참석자 정확히 26명일 때 생성할 수 있습니다.</p>
+            <p className="mt-1 text-sm text-slate-600">필드 참석자가 26명이어야 생성할 수 있습니다.</p>
           </div>
           <button className="rounded-xl bg-slate-900 px-5 py-3 font-semibold text-white" onClick={runPlanner} disabled={fieldPlayers.length !== 26 || errors.length > 0}>자동 생성</button>
         </div>
