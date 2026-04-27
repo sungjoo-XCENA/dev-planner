@@ -26,6 +26,19 @@ function normalizeGoogleSheetCsvUrl(url: string): string {
   return `https://docs.google.com/spreadsheets/d/${spreadsheetId}/export?format=csv&gid=${encodeURIComponent(gid)}`;
 }
 
+function buildCandidateCsvUrls(url: string): string[] {
+  const normalized = normalizeGoogleSheetCsvUrl(url);
+  const parsed = new URL(normalized);
+  const gid = parsed.searchParams.get("gid") ?? "0";
+
+  const candidates = [
+    normalized,
+    `https://docs.google.com/spreadsheets/d/${parsed.pathname.split("/")[3]}/gviz/tq?tqx=out:csv&gid=${encodeURIComponent(gid)}`,
+  ];
+
+  return Array.from(new Set(candidates));
+}
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const url = searchParams.get("url");
@@ -50,36 +63,55 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Only Google Sheets URLs are allowed" }, { status: 400 });
   }
 
-  let csvUrl: string;
+  let candidates: string[];
   try {
-    csvUrl = normalizeGoogleSheetCsvUrl(url);
+    candidates = buildCandidateCsvUrls(url);
   } catch {
     return NextResponse.json({ error: "Could not normalize Google Sheets URL" }, { status: 400 });
   }
 
-  try {
-    const response = await fetch(csvUrl, { cache: "no-store" });
-    if (!response.ok) {
-      return NextResponse.json(
-        {
-          error: "Failed to fetch CSV from Google Sheets",
-          upstreamStatus: response.status,
-          upstreamStatusText: response.statusText,
-          csvUrl,
-        },
-        { status: 502 },
-      );
-    }
+  const failures: string[] = [];
 
-    const text = await response.text();
-    return new NextResponse(text, {
-      status: 200,
-      headers: {
-        "content-type": "text/csv; charset=utf-8",
-        "cache-control": "no-store",
-      },
-    });
-  } catch (error) {
-    return NextResponse.json({ error: String(error) }, { status: 502 });
+  for (const csvUrl of candidates) {
+    try {
+      const response = await fetch(csvUrl, {
+        cache: "no-store",
+        headers: {
+          "user-agent": "Mozilla/5.0 dev-planner",
+          accept: "text/csv,text/plain,*/*",
+        },
+      });
+
+      if (!response.ok) {
+        failures.push(`${csvUrl} -> HTTP ${response.status} ${response.statusText}`);
+        continue;
+      }
+
+      const text = await response.text();
+      const trimmed = text.trimStart();
+      if (!text.trim() || trimmed.startsWith("<!DOCTYPE html") || text.includes("ServiceLogin")) {
+        failures.push(`${csvUrl} -> non-csv response`);
+        continue;
+      }
+
+      return new NextResponse(text, {
+        status: 200,
+        headers: {
+          "content-type": "text/csv; charset=utf-8",
+          "cache-control": "no-store",
+        },
+      });
+    } catch (error) {
+      failures.push(`${csvUrl} -> ${String(error)}`);
+    }
   }
+
+  return NextResponse.json(
+    {
+      error: "Failed to fetch CSV from Google Sheets",
+      candidatesTried: candidates,
+      failures,
+    },
+    { status: 502 },
+  );
 }
