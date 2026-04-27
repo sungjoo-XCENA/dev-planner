@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { DedicatedGoalkeeper, Player, Position, PositionGroup } from "@/types/player";
+import type { DedicatedGoalkeeper, FieldPosition, Player, PositionGroup } from "@/types/player";
 import type { LineupResult, LineupRole } from "@/types/lineup";
 import type { TeamBalanceResult } from "@/types/team";
 import { appConfig } from "@/config/appConfig";
@@ -12,10 +12,21 @@ import { generateLineups } from "@/lib/lineupGenerator";
 
 const SCORE_OPTIONS = Array.from({ length: 10 }, (_, index) => index + 1);
 
-const emptyGuest = {
+type GuestForm = {
+  name: string;
+  primaryPosition: FieldPosition;
+  secondaryPositions: FieldPosition[];
+  attackScore: number;
+  midScore: number;
+  defenseScore: number;
+  activityScore: number;
+  memo: string;
+};
+
+const emptyGuest: GuestForm = {
   name: "",
-  primaryPosition: "CF" as Position,
-  secondaryPositions: [] as Position[],
+  primaryPosition: "CF",
+  secondaryPositions: [],
   attackScore: 5,
   midScore: 5,
   defenseScore: 5,
@@ -27,11 +38,10 @@ export default function Home() {
   const [csvUrl, setCsvUrl] = useState(appConfig.defaultSheetUrl);
   const [players, setPlayers] = useState<Player[]>([]);
   const [fieldIds, setFieldIds] = useState<string[]>([]);
-  const [sheetGkCandidates, setSheetGkCandidates] = useState<DedicatedGoalkeeper[]>([]);
   const [dedicatedGks, setDedicatedGks] = useState<DedicatedGoalkeeper[]>([]);
   const [errors, setErrors] = useState<string[]>([]);
   const [warnings, setWarnings] = useState<string[]>([]);
-  const [guest, setGuest] = useState(emptyGuest);
+  const [guest, setGuest] = useState<GuestForm>(emptyGuest);
   const [guestRole, setGuestRole] = useState<"FIELD" | "GK">("FIELD");
   const [teamResult, setTeamResult] = useState<TeamBalanceResult | null>(null);
   const [lineupResult, setLineupResult] = useState<LineupResult | null>(null);
@@ -48,12 +58,7 @@ export default function Home() {
     if (!query) return [];
     if (query === ".") return sortedPlayers;
     return sortedPlayers
-      .filter((player) =>
-        [player.name, player.primaryPosition, player.secondaryPositions.join(",")]
-          .join(" ")
-          .toLowerCase()
-          .includes(query),
-      )
+      .filter((player) => [player.name, player.primaryPosition, player.secondaryPositions.join(",")].join(" ").toLowerCase().includes(query))
       .slice(0, 20);
   }, [playerQuery, sortedPlayers]);
 
@@ -64,7 +69,6 @@ export default function Home() {
     setWarnings([]);
     const result = await loadPlayersFromCsv(csvUrl);
     setPlayers(result.players);
-    setSheetGkCandidates(result.dedicatedGks);
     setDedicatedGks([]);
     setErrors(result.errors);
     setWarnings(result.warnings);
@@ -73,6 +77,10 @@ export default function Home() {
   }
 
   function addFieldPlayer(player: Player) {
+    if (player.primaryPosition === "GK") {
+      setWarnings((prev) => [...prev, `${player.name}은 GK입니다. 전담 GK로 추가해주세요.`]);
+      return;
+    }
     if (dedicatedGks.some((gk) => gk.id === player.id)) {
       setWarnings((prev) => [...prev, `${player.name}은 이미 전담 GK로 추가되어 있습니다.`]);
       return;
@@ -95,17 +103,7 @@ export default function Home() {
   }
 
   function removeDedicatedGk(id: string) {
-    const selected = dedicatedGks.find((item) => item.id === id);
-    if (selected?.source === "SHEET") {
-      setSheetGkCandidates((prev) => [...prev, selected]);
-    }
     setDedicatedGks((prev) => prev.filter((item) => item.id !== id));
-  }
-
-  function addSheetDedicatedGk(candidate: DedicatedGoalkeeper) {
-    if (dedicatedGks.some((gk) => gk.id === candidate.id)) return;
-    setDedicatedGks((prev) => [...prev, candidate]);
-    setSheetGkCandidates((prev) => prev.filter((gk) => gk.id !== candidate.id));
   }
 
   function resetGuest() {
@@ -159,22 +157,18 @@ export default function Home() {
 
   const shareText = useMemo(() => {
     if (!teamResult || !lineupResult) return "";
-    const lines: string[] = [];
-    lines.push("[DEV FC 라인업]");
-    lines.push("");
+    const lines: string[] = ["[DEV FC 라인업]", ""];
     for (const team of ["A", "B"] as const) {
       lines.push(`[${team}팀]`);
-      lineupResult.quarters
-        .filter((q) => q.team === team)
-        .forEach((q) => {
-          lines.push(`${q.quarter}Q`);
-          lines.push(`공격: ${q.attack.join(", ")}`);
-          lines.push(`미드: ${q.mid.join(", ")}`);
-          lines.push(`수비: ${q.defense.join(", ")}`);
-          lines.push(`GK: ${q.gk}`);
-          lines.push(`대기: ${q.bench.join(", ") || "없음"}`);
-          lines.push("");
-        });
+      lineupResult.quarters.filter((q) => q.team === team).forEach((q) => {
+        lines.push(`${q.quarter}Q`);
+        lines.push(`공격: ${q.attack.join(", ")}`);
+        lines.push(`미드: ${q.mid.join(", ")}`);
+        lines.push(`수비: ${q.defense.join(", ")}`);
+        lines.push(`GK: ${q.gk}`);
+        lines.push(`대기: ${q.bench.join(", ") || "없음"}`);
+        lines.push("");
+      });
     }
     return lines.join("\n");
   }, [teamResult, lineupResult]);
@@ -230,12 +224,7 @@ export default function Home() {
           </div>
           <p className="mt-2 text-sm text-slate-600">이름을 검색해서 필드 참석자 또는 전담 GK로 추가하세요. . 을 입력하면 전체 인원을 볼 수 있습니다.</p>
           <div className="mt-4 flex gap-2">
-            <input
-              className="min-w-0 flex-1 rounded-xl border border-slate-300 px-4 py-3"
-              value={playerQuery}
-              onChange={(e) => setPlayerQuery(e.target.value)}
-              placeholder="이름 검색 예: 하성주 / 전체 보기: ."
-            />
+            <input className="min-w-0 flex-1 rounded-xl border border-slate-300 px-4 py-3" value={playerQuery} onChange={(e) => setPlayerQuery(e.target.value)} placeholder="이름 검색 예: 하성주 / 전체 보기: ." />
             {playerQuery && <button className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-bold" onClick={() => setPlayerQuery("")}>초기화</button>}
           </div>
           <div className="mt-3 grid gap-2 overflow-y-auto pr-1" style={{ maxHeight: "520px" }}>
@@ -255,26 +244,9 @@ export default function Home() {
                 />
               );
             })}
-            {players.length > 0 && playerQuery.trim() && searchedPlayers.length === 0 && (
-              <p className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">검색 결과가 없습니다.</p>
-            )}
-            {players.length > 0 && !playerQuery.trim() && (
-              <p className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">검색어를 입력하거나 . 을 입력하면 전체 목록을 볼 수 있습니다.</p>
-            )}
+            {players.length > 0 && playerQuery.trim() && searchedPlayers.length === 0 && <p className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">검색 결과가 없습니다.</p>}
+            {players.length > 0 && !playerQuery.trim() && <p className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">검색어를 입력하거나 . 을 입력하면 전체 목록을 볼 수 있습니다.</p>}
           </div>
-          {sheetGkCandidates.length > 0 && (
-            <div className="mt-5">
-              <h3 className="font-semibold">시트 전담 GK 후보</h3>
-              <p className="mt-1 text-xs text-slate-500">아래에서 선택해야만 3. 오늘 참석자의 전담 GK에 추가됩니다.</p>
-              <div className="mt-2 flex flex-wrap gap-2">
-                {sheetGkCandidates.map((gk) => (
-                  <button key={gk.id} className="rounded-full bg-amber-100 px-3 py-1.5 text-sm font-semibold text-amber-900" onClick={() => addSheetDedicatedGk(gk)}>
-                    + {gk.name}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
 
         <div className="rounded-3xl bg-white p-6 shadow-sm">
@@ -286,13 +258,9 @@ export default function Home() {
             <Stat label="GK" value={`${dedicatedGks.length}`} />
           </div>
           <h3 className="mt-5 font-semibold">필드 참석자</h3>
-          <div className="mt-2 flex flex-wrap gap-2">
-            {fieldPlayers.map((p) => <Chip key={p.id} label={`${p.name}(${p.primaryPosition})`} onRemove={() => removeFieldPlayer(p.id)} />)}
-          </div>
+          <div className="mt-2 flex flex-wrap gap-2">{fieldPlayers.map((p) => <Chip key={p.id} label={`${p.name}(${p.primaryPosition})`} onRemove={() => removeFieldPlayer(p.id)} />)}</div>
           <h3 className="mt-5 font-semibold">전담 GK</h3>
-          <div className="mt-2 flex flex-wrap gap-2">
-            {dedicatedGks.map((gk) => <Chip key={gk.id} label={gk.name} onRemove={() => removeDedicatedGk(gk.id)} />)}
-          </div>
+          <div className="mt-2 flex flex-wrap gap-2">{dedicatedGks.map((gk) => <Chip key={gk.id} label={gk.name} onRemove={() => removeDedicatedGk(gk.id)} />)}</div>
         </div>
       </section>
 
@@ -300,7 +268,6 @@ export default function Home() {
         <h2 className="text-xl font-bold">4. 임시 참석자 추가</h2>
         <div className="mt-4 grid gap-4">
           <input className="rounded-xl border border-slate-300 px-3 py-3" placeholder="이름" value={guest.name} onChange={(e) => setGuest({ ...guest, name: e.target.value })} />
-
           <div>
             <p className="mb-2 text-sm font-semibold text-slate-600">주포지션</p>
             <div className="flex flex-wrap gap-2">
@@ -311,7 +278,6 @@ export default function Home() {
               })}
             </div>
           </div>
-
           <div>
             <p className="mb-2 text-sm font-semibold text-slate-600">부포지션</p>
             <div className="flex flex-wrap gap-2">
@@ -322,14 +288,12 @@ export default function Home() {
               })}
             </div>
           </div>
-
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <ScoreSelect label="공격" value={guest.attackScore} onChange={(v) => setGuest({ ...guest, attackScore: v })} />
             <ScoreSelect label="미드" value={guest.midScore} onChange={(v) => setGuest({ ...guest, midScore: v })} />
             <ScoreSelect label="수비" value={guest.defenseScore} onChange={(v) => setGuest({ ...guest, defenseScore: v })} />
             <ScoreSelect label="활동" value={guest.activityScore} onChange={(v) => setGuest({ ...guest, activityScore: v })} />
           </div>
-
           <input className="rounded-xl border border-slate-300 px-3 py-2" placeholder="메모" value={guest.memo} onChange={(e) => setGuest({ ...guest, memo: e.target.value })} />
           <button className={`w-full rounded-xl px-4 py-3 font-semibold text-white ${guestRole === "GK" ? "bg-emerald-600" : "bg-blue-600"}`} onClick={guestRole === "GK" ? addTempGk : addTempGuest}>{guestRole === "GK" ? "임시 GK 추가" : "임시 용병 추가"}</button>
         </div>
@@ -385,6 +349,7 @@ function Chip({ label, onRemove }: { label: string; onRemove: () => void }) {
 
 function PlayerSearchRow({ player, isField, isGk, onAddField, onRemoveField, onAddGk, onRemoveGk }: { player: Player; isField: boolean; isGk: boolean; onAddField: () => void; onRemoveField: () => void; onAddGk: () => void; onRemoveGk: () => void }) {
   const secondary = player.secondaryPositions.length > 0 ? player.secondaryPositions.join(",") : "-";
+  const isSheetGk = player.primaryPosition === "GK";
   return (
     <div className={`rounded-2xl border p-3 ${isField || isGk ? "border-blue-200 bg-blue-50" : "border-slate-200 bg-white"}`}>
       <div className="flex items-center justify-between gap-2">
@@ -392,13 +357,13 @@ function PlayerSearchRow({ player, isField, isGk, onAddField, onRemoveField, onA
           <div className="flex flex-wrap items-center gap-2">
             <p className="font-bold">{player.name}</p>
             {isField && <RoleBadge role="FIELD" />}
-            {isGk && <RoleBadge role="GK" />}
+            {(isGk || isSheetGk) && <RoleBadge role="GK" />}
           </div>
           <p className="mt-1 text-xs text-slate-500">주 {player.primaryPosition} · 부 {secondary}</p>
           <p className="mt-0.5 text-xs text-slate-400">공격{player.attackScore} · 미드{player.midScore} · 수비{player.defenseScore} · 활동{player.activityScore}</p>
         </div>
         <div className="flex shrink-0 gap-1">
-          {isField ? <button className="rounded-lg bg-red-50 px-2.5 py-2 text-xs font-bold text-red-700" onClick={onRemoveField}>해제</button> : <button className="rounded-lg bg-blue-600 px-2.5 py-2 text-xs font-bold text-white disabled:bg-slate-300" onClick={onAddField} disabled={isGk}>필드</button>}
+          {isField ? <button className="rounded-lg bg-red-50 px-2.5 py-2 text-xs font-bold text-red-700" onClick={onRemoveField}>해제</button> : <button className="rounded-lg bg-blue-600 px-2.5 py-2 text-xs font-bold text-white disabled:bg-slate-300" onClick={onAddField} disabled={isGk || isSheetGk}>필드</button>}
           {isGk ? <button className="rounded-lg bg-red-50 px-2.5 py-2 text-xs font-bold text-red-700" onClick={onRemoveGk}>해제</button> : <button className="rounded-lg bg-amber-500 px-2.5 py-2 text-xs font-bold text-white disabled:bg-slate-300" onClick={onAddGk} disabled={isField}>GK</button>}
         </div>
       </div>
@@ -430,94 +395,22 @@ function RoleBadge({ role }: { role: LineupRole }) {
 }
 
 function MetricCard({ label, a, b }: { label: string; a: number; b: number }) {
-  return (
-    <div className="rounded-2xl bg-slate-50 p-3">
-      <p className="text-xs font-bold text-slate-500">{label}</p>
-      <div className="mt-2 flex items-end justify-between gap-3">
-        <div><p className="text-xs text-slate-500">A팀</p><p className="text-lg font-black">{a}</p></div>
-        <div className="text-center"><p className="text-xs text-slate-500">차이</p><p className="text-sm font-bold">{Math.abs(a - b)}</p></div>
-        <div className="text-right"><p className="text-xs text-slate-500">B팀</p><p className="text-lg font-black">{b}</p></div>
-      </div>
-    </div>
-  );
+  return <div className="rounded-2xl bg-slate-50 p-3"><p className="text-xs font-bold text-slate-500">{label}</p><div className="mt-2 flex items-end justify-between gap-3"><div><p className="text-xs text-slate-500">A팀</p><p className="text-lg font-black">{a}</p></div><div className="text-center"><p className="text-xs text-slate-500">차이</p><p className="text-sm font-bold">{Math.abs(a - b)}</p></div><div className="text-right"><p className="text-xs text-slate-500">B팀</p><p className="text-lg font-black">{b}</p></div></div></div>;
 }
 
 function TeamResultView({ result }: { result: TeamBalanceResult }) {
   const s = result.summary;
-  return (
-    <section className="mb-6 rounded-3xl bg-white p-6 shadow-sm">
-      <div className="flex flex-wrap items-center gap-2">
-        <h2 className="text-xl font-bold">팀 분배 결과</h2>
-        <span className="rounded-full bg-slate-900 px-3 py-1 text-xs font-bold text-white">{result.quality}</span>
-      </div>
-      {result.warnings.length > 0 && <div className="mt-4"><MessageBox title="팀 경고" items={result.warnings} tone="warning" /></div>}
-      <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <MetricCard label="공격 점수" a={s.attackScoreA} b={s.attackScoreB} />
-        <MetricCard label="미드 점수" a={s.midScoreA} b={s.midScoreB} />
-        <MetricCard label="수비 점수" a={s.defenseScoreA} b={s.defenseScoreB} />
-        <MetricCard label="활동량" a={s.activityA} b={s.activityB} />
-        <MetricCard label="정규" a={s.regularA} b={s.regularB} />
-        <MetricCard label="용병" a={s.guestA} b={s.guestB} />
-      </div>
-      <div className="mt-6 grid gap-4 md:grid-cols-2">
-        <TeamCard title="A팀" players={result.teamA.players} />
-        <TeamCard title="B팀" players={result.teamB.players} />
-      </div>
-    </section>
-  );
+  return <section className="mb-6 rounded-3xl bg-white p-6 shadow-sm"><div className="flex flex-wrap items-center gap-2"><h2 className="text-xl font-bold">팀 분배 결과</h2><span className="rounded-full bg-slate-900 px-3 py-1 text-xs font-bold text-white">{result.quality}</span></div>{result.warnings.length > 0 && <div className="mt-4"><MessageBox title="팀 경고" items={result.warnings} tone="warning" /></div>}<div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><MetricCard label="공격 점수" a={s.attackScoreA} b={s.attackScoreB} /><MetricCard label="미드 점수" a={s.midScoreA} b={s.midScoreB} /><MetricCard label="수비 점수" a={s.defenseScoreA} b={s.defenseScoreB} /><MetricCard label="활동량" a={s.activityA} b={s.activityB} /><MetricCard label="정규" a={s.regularA} b={s.regularB} /><MetricCard label="용병" a={s.guestA} b={s.guestB} /></div><div className="mt-6 grid gap-4 md:grid-cols-2"><TeamCard title="A팀" players={result.teamA.players} /><TeamCard title="B팀" players={result.teamB.players} /></div></section>;
 }
 
 function TeamCard({ title, players }: { title: string; players: TeamBalanceResult["teamA"]["players"] }) {
-  return (
-    <div className="rounded-2xl border border-slate-200 p-4">
-      <h3 className="font-bold">{title}</h3>
-      {(["ATTACK", "MID", "DEFENSE"] as PositionGroup[]).map((g) => (
-        <div key={g} className="mt-4">
-          <GroupBadge group={g} />
-          <div className="mt-2 flex flex-wrap gap-2">
-            {players.filter((p) => p.assignedGroup === g).map((p) => <span key={p.id} className="rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-700">{p.name}{p.isPositionOverride ? "*" : ""}</span>)}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
+  return <div className="rounded-2xl border border-slate-200 p-4"><h3 className="font-bold">{title}</h3>{(["ATTACK", "MID", "DEFENSE"] as PositionGroup[]).map((g) => <div key={g} className="mt-4"><GroupBadge group={g} /><div className="mt-2 flex flex-wrap gap-2">{players.filter((p) => p.assignedGroup === g).map((p) => <span key={p.id} className="rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-700">{p.name}{p.isPositionOverride ? "*" : ""}</span>)}</div></div>)}</div>;
 }
 
 function LineupResultView({ result }: { result: LineupResult }) {
-  return (
-    <section className="mb-6 rounded-3xl bg-white p-6 shadow-sm">
-      <h2 className="text-xl font-bold">라인업 결과</h2>
-      {result.warnings.length > 0 && <div className="mt-4"><MessageBox title="라인업 경고" items={result.warnings} tone="warning" /></div>}
-      <div className="mt-4 grid gap-3 md:grid-cols-2">
-        {result.quarters.map((q) => (
-          <div key={`${q.team}-${q.quarter}`} className="rounded-2xl border border-slate-200 p-4">
-            <div className="flex items-center justify-between gap-2">
-              <p className="text-lg font-black">{q.team}팀 {q.quarter}Q</p>
-              <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-800">GK {q.gk}</span>
-            </div>
-            <LineupNames group="ATTACK" names={q.attack} />
-            <LineupNames group="MID" names={q.mid} />
-            <LineupNames group="DEFENSE" names={q.defense} />
-            <div className="mt-3">
-              <p className="text-xs font-bold text-slate-500">대기</p>
-              <div className="mt-1 flex flex-wrap gap-2">
-                {(q.bench.length ? q.bench : ["없음"]).map((name) => <span key={name} className="rounded-full bg-slate-100 px-3 py-1 text-sm text-slate-600">{name}</span>)}
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-    </section>
-  );
+  return <section className="mb-6 rounded-3xl bg-white p-6 shadow-sm"><h2 className="text-xl font-bold">라인업 결과</h2>{result.warnings.length > 0 && <div className="mt-4"><MessageBox title="라인업 경고" items={result.warnings} tone="warning" /></div>}<div className="mt-4 grid gap-3 md:grid-cols-2">{result.quarters.map((q) => <div key={`${q.team}-${q.quarter}`} className="rounded-2xl border border-slate-200 p-4"><div className="flex items-center justify-between gap-2"><p className="text-lg font-black">{q.team}팀 {q.quarter}Q</p><span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-800">GK {q.gk}</span></div><LineupNames group="ATTACK" names={q.attack} /><LineupNames group="MID" names={q.mid} /><LineupNames group="DEFENSE" names={q.defense} /><div className="mt-3"><p className="text-xs font-bold text-slate-500">대기</p><div className="mt-1 flex flex-wrap gap-2">{(q.bench.length ? q.bench : ["없음"]).map((name) => <span key={name} className="rounded-full bg-slate-100 px-3 py-1 text-sm text-slate-600">{name}</span>)}</div></div></div>)}</div></section>;
 }
 
 function LineupNames({ group, names }: { group: PositionGroup; names: string[] }) {
-  return (
-    <div className="mt-3">
-      <GroupBadge group={group} />
-      <div className="mt-1 flex flex-wrap gap-2">
-        {names.map((name) => <span key={name} className="rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-700">{name}</span>)}
-      </div>
-    </div>
-  );
+  return <div className="mt-3"><GroupBadge group={group} /><div className="mt-1 flex flex-wrap gap-2">{names.map((name) => <span key={name} className="rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-700">{name}</span>)}</div></div>;
 }
