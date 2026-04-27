@@ -1,8 +1,8 @@
-import type { Position, PositionGroup } from "@/types/player";
+import type { FieldPosition, PositionGroup } from "@/types/player";
 
 export const POSITIONS = ["CF", "LW", "RW", "MF", "LB", "RB", "CB"] as const;
 
-export const POSITION_GROUP_MAP: Record<Position, PositionGroup> = {
+export const POSITION_GROUP_MAP: Record<FieldPosition, PositionGroup> = {
   CF: "ATTACK",
   LW: "ATTACK",
   RW: "ATTACK",
@@ -12,29 +12,29 @@ export const POSITION_GROUP_MAP: Record<Position, PositionGroup> = {
   CB: "DEFENSE",
 };
 
-export function isPosition(value: string): value is Position {
+export function isPosition(value: string): value is FieldPosition {
   return (POSITIONS as readonly string[]).includes(value.trim().toUpperCase());
 }
 
-export function toPosition(value: string): Position | null {
+export function toPosition(value: string): FieldPosition | null {
   const normalized = value.trim().toUpperCase();
   return isPosition(normalized) ? normalized : null;
 }
 
-export function getPositionGroup(position: Position): PositionGroup {
+export function getPositionGroup(position: FieldPosition): PositionGroup {
   return POSITION_GROUP_MAP[position];
 }
 
-export function parseSecondaryPositions(value: string): Position[] {
+export function parseSecondaryPositions(value: string): FieldPosition[] {
   const normalized = value.trim();
   if (!normalized || normalized === "-") return [];
   return normalized
     .split(",")
     .map((item) => toPosition(item))
-    .filter((item): item is Position => item !== null);
+    .filter((item): item is FieldPosition => item !== null);
 }
 
-export function hasGroup(positions: Position[], group: PositionGroup): boolean {
+export function hasGroup(positions: FieldPosition[], group: PositionGroup): boolean {
   return positions.some((position) => getPositionGroup(position) === group);
 }
 
