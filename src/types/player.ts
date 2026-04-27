@@ -1,0 +1,46 @@
+export type Position =
+  | "ST"
+  | "CF"
+  | "LW"
+  | "RW"
+  | "CAM"
+  | "CM"
+  | "CDM"
+  | "LB"
+  | "RB"
+  | "CB";
+
+export type PositionGroup = "ATTACK" | "MID" | "DEFENSE";
+
+export type PlayerSource = "SHEET" | "TEMP_GUEST" | "LOCAL_GUEST";
+
+export type MemberType = "REGULAR" | "GUEST";
+
+export type Player = {
+  id: string;
+  source: PlayerSource;
+  memberType: MemberType;
+  active: boolean;
+  name: string;
+  primaryPosition: Position;
+  secondaryPositions: Position[];
+  attackScore: number;
+  midScore: number;
+  defenseScore: number;
+  activityScore: number;
+  canGk: boolean;
+  memo?: string;
+};
+
+export type DedicatedGoalkeeper = {
+  id: string;
+  source: "SHEET" | "TEMP_GK" | "LOCAL_GK";
+  name: string;
+  memo?: string;
+};
+
+export type AssignedPlayer = Player & {
+  assignedGroup: PositionGroup;
+  assignmentReason: string;
+  isPositionOverride: boolean;
+};
