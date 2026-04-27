@@ -254,32 +254,21 @@ export default function Home() {
       <section className="mb-6 rounded-3xl bg-white p-6 shadow-sm">
         <h2 className="text-xl font-bold">4. 임시 용병 / 임시 GK 추가</h2>
         <div className="mt-4 grid gap-4">
-          <div className="grid gap-3 md:grid-cols-2">
-            <input className="rounded-xl border border-slate-300 px-3 py-2" placeholder="이름" value={guest.name} onChange={(e) => setGuest({ ...guest, name: e.target.value })} />
-            <label className="grid gap-1 text-sm font-semibold text-slate-600">
-              주포지션
-              <select className="rounded-xl border border-slate-300 px-3 py-2 font-normal text-slate-900" value={guest.primaryPosition} onChange={(e) => setGuest({ ...guest, primaryPosition: e.target.value as Position })}>{POSITIONS.map((p) => <option key={p}>{p}</option>)}</select>
-            </label>
-          </div>
+          <input className="rounded-xl border border-slate-300 px-3 py-3" placeholder="이름" value={guest.name} onChange={(e) => setGuest({ ...guest, name: e.target.value })} />
 
-          <div>
-            <p className="mb-2 text-sm font-semibold text-slate-600">부포지션</p>
-            <div className="flex flex-wrap gap-2">
-              {POSITIONS.map((position) => {
-                const selected = guest.secondaryPositions.includes(position);
-                return (
-                  <button
-                    key={position}
-                    type="button"
-                    className={`rounded-full px-3 py-2 text-sm font-bold ${selected ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600"}`}
-                    onClick={() => toggleGuestSecondaryPosition(position)}
-                  >
-                    {position}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+          <PositionButtonGroup
+            label="주포지션"
+            mode="single"
+            selected={[guest.primaryPosition]}
+            onToggle={(position) => setGuest({ ...guest, primaryPosition: position })}
+          />
+
+          <PositionButtonGroup
+            label="부포지션"
+            mode="multiple"
+            selected={guest.secondaryPositions}
+            onToggle={toggleGuestSecondaryPosition}
+          />
 
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <ScoreSelect label="공격" value={guest.attackScore} onChange={(v) => setGuest({ ...guest, attackScore: v })} />
@@ -343,6 +332,42 @@ function MessageBox({ title, items, tone }: { title: string; items: string[]; to
 
 function Chip({ label, onRemove }: { label: string; onRemove: () => void }) {
   return <span className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1.5 text-sm">{label}<button className="font-bold text-slate-500" onClick={onRemove}>×</button></span>;
+}
+
+function PositionButtonGroup({
+  label,
+  mode,
+  selected,
+  onToggle,
+}: {
+  label: string;
+  mode: "single" | "multiple";
+  selected: Position[];
+  onToggle: (position: Position) => void;
+}) {
+  return (
+    <div>
+      <div className="mb-2 flex items-center gap-2">
+        <p className="text-sm font-semibold text-slate-600">{label}</p>
+        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">{mode === "single" ? "1개 선택" : "여러 개 선택"}</span>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {POSITIONS.map((position) => {
+          const isSelected = selected.includes(position);
+          return (
+            <button
+              key={position}
+              type="button"
+              className={`rounded-full px-3 py-2 text-sm font-bold ${isSelected ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600"}`}
+              onClick={() => onToggle(position)}
+            >
+              {position}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
 function ScoreSelect({ label, value, onChange }: { label: string; value: number; onChange: (v: number) => void }) {
