@@ -9,7 +9,6 @@ export type LoadPlayersResult = {
 
 type CanonicalColumn =
   | "active"
-  | "member_type"
   | "name"
   | "primary_position"
   | "secondary_positions"
@@ -18,11 +17,13 @@ type CanonicalColumn =
   | "defense_score"
   | "activity_score"
   | "gk"
-  | "memo";
+  | "memo"
+  | "member_type";
 
+// MVP policy: use one regular-player sheet. Guests are added in the web UI.
+// member_type is still accepted for backward compatibility, but is no longer required.
 const REQUIRED_COLUMNS: CanonicalColumn[] = [
   "active",
-  "member_type",
   "name",
   "primary_position",
   "attack_score",
@@ -33,17 +34,17 @@ const REQUIRED_COLUMNS: CanonicalColumn[] = [
 ];
 
 const HEADER_ALIASES: Record<CanonicalColumn, string[]> = {
-  active: ["active", "활성", "사용", "사용여부", "출력", "활성여부"],
-  member_type: ["member_type", "member type", "구분", "회원구분", "멤버구분", "타입"],
-  name: ["name", "이름", "성명", "선수", "선수명"],
-  primary_position: ["primary_position", "primary position", "주포지션", "주 포지션", "포지션", "메인포지션"],
-  secondary_positions: ["secondary_positions", "secondary positions", "부포지션", "부 포지션", "서브포지션", "가능포지션"],
-  attack_score: ["attack_score", "attack", "공격", "공격점수", "공격 점수"],
-  mid_score: ["mid_score", "mid", "middle", "midfield", "미드", "미드점수", "미드 점수", "중원"],
-  defense_score: ["defense_score", "defense", "defence", "수비", "수비점수", "수비 점수"],
-  activity_score: ["activity_score", "activity", "활동량", "활동", "체력", "활동점수"],
-  gk: ["gk", "GK", "키퍼", "골키퍼", "키퍼가능", "키퍼 가능", "gk가능"],
-  memo: ["memo", "메모", "비고", "참고", "특이사항"],
+  active: ["사용", "active", "활성", "사용여부", "활성여부"],
+  name: ["이름", "name", "성명", "선수", "선수명"],
+  primary_position: ["주포지션", "primary_position", "primary position", "주 포지션", "포지션", "메인포지션"],
+  secondary_positions: ["부포지션", "secondary_positions", "secondary positions", "부 포지션", "서브포지션", "가능포지션"],
+  attack_score: ["공격", "attack_score", "attack", "공격점수", "공격 점수"],
+  mid_score: ["미드", "mid_score", "mid", "middle", "midfield", "미드점수", "미드 점수", "중원"],
+  defense_score: ["수비", "defense_score", "defense", "defence", "수비점수", "수비 점수"],
+  activity_score: ["활동량", "activity_score", "activity", "활동", "체력", "활동점수"],
+  gk: ["키퍼", "gk", "GK", "골키퍼", "키퍼가능", "키퍼 가능", "gk가능"],
+  memo: ["메모", "memo", "비고", "참고", "특이사항"],
+  member_type: ["구분", "member_type", "member type", "회원구분", "멤버구분", "타입"],
 };
 
 function normalizeHeader(value: string): string {
@@ -154,14 +155,14 @@ export async function loadPlayersFromCsv(url: string): Promise<LoadPlayersResult
   } catch (error) {
     return {
       players: [],
-      errors: [`CSV 데이터를 불러오지 못했습니다. 시트 공유 설정 또는 CSV URL을 확인해주세요. (${String(error)})`],
+      errors: [`시트 데이터를 불러오지 못했습니다. 공유 설정 또는 URL을 확인해주세요. (${String(error)})`],
       warnings,
     };
   }
 
   const rows = parseCsv(text);
   if (rows.length < 2) {
-    return { players: [], errors: ["CSV에 헤더와 선수 데이터가 필요합니다."], warnings };
+    return { players: [], errors: ["시트에 헤더 1행과 선수 데이터가 필요합니다."], warnings };
   }
 
   const headers = rows[0].map((header) => header.trim());
@@ -186,13 +187,13 @@ export async function loadPlayersFromCsv(url: string): Promise<LoadPlayersResult
 
     const name = valueOf(row, "name");
     if (!name) {
-      errors.push(`${rowNumber}행 name은 필수입니다.`);
+      errors.push(`${rowNumber}행 이름은 필수입니다.`);
       return;
     }
 
     const primary = toPosition(valueOf(row, "primary_position"));
     if (!primary) {
-      errors.push(`${rowNumber}행 primary_position이 허용되지 않은 포지션입니다: ${valueOf(row, "primary_position")}`);
+      errors.push(`${rowNumber}행 주포지션이 허용되지 않은 포지션입니다: ${valueOf(row, "primary_position")}`);
       return;
     }
 
@@ -211,11 +212,11 @@ export async function loadPlayersFromCsv(url: string): Promise<LoadPlayersResult
       name,
       primaryPosition: primary,
       secondaryPositions,
-      attackScore: parseScore(valueOf(row, "attack_score"), rowNumber, "attack_score", errors),
-      midScore: parseScore(valueOf(row, "mid_score"), rowNumber, "mid_score", errors),
-      defenseScore: parseScore(valueOf(row, "defense_score"), rowNumber, "defense_score", errors),
-      activityScore: parseScore(valueOf(row, "activity_score"), rowNumber, "activity_score", errors),
-      canGk: parseBooleanYN(valueOf(row, "gk"), rowNumber, "gk", errors),
+      attackScore: parseScore(valueOf(row, "attack_score"), rowNumber, "공격", errors),
+      midScore: parseScore(valueOf(row, "mid_score"), rowNumber, "미드", errors),
+      defenseScore: parseScore(valueOf(row, "defense_score"), rowNumber, "수비", errors),
+      activityScore: parseScore(valueOf(row, "activity_score"), rowNumber, "활동량", errors),
+      canGk: parseBooleanYN(valueOf(row, "gk"), rowNumber, "키퍼", errors),
       memo: valueOf(row, "memo") || undefined,
     });
   });
