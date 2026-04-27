@@ -3,9 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "predev": "node scripts/patch-page.cjs",
     "dev": "next dev",
-    "prebuild": "node scripts/patch-page.cjs",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
