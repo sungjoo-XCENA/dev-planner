@@ -1,4 +1,4 @@
-export type Position =
+export type FieldPosition =
   | "CF"
   | "LW"
   | "RW"
@@ -6,6 +6,8 @@ export type Position =
   | "LB"
   | "RB"
   | "CB";
+
+export type Position = FieldPosition | "GK";
 
 export type PositionGroup = "ATTACK" | "MID" | "DEFENSE";
 
@@ -20,7 +22,7 @@ export type Player = {
   active: boolean;
   name: string;
   primaryPosition: Position;
-  secondaryPositions: Position[];
+  secondaryPositions: FieldPosition[];
   attackScore: number;
   midScore: number;
   defenseScore: number;
