@@ -1,11 +1,8 @@
 export type Position =
-  | "ST"
   | "CF"
   | "LW"
   | "RW"
-  | "CAM"
-  | "CM"
-  | "CDM"
+  | "MF"
   | "LB"
   | "RB"
   | "CB";
