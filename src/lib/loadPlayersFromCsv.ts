@@ -110,9 +110,9 @@ function buildHeaderMap(headers: string[]): Partial<Record<CanonicalColumn, numb
 
 function parseScore(value: string, rowNumber: number, column: string, errors: string[]): number {
   const parsed = Number(value);
-  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 5) {
-    errors.push(`${rowNumber}행 ${column}은 1~5 숫자여야 합니다.`);
-    return 3;
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 10) {
+    errors.push(`${rowNumber}행 ${column}은 1~10 숫자여야 합니다.`);
+    return 5;
   }
   return parsed;
 }
