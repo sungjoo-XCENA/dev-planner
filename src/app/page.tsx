@@ -14,13 +14,12 @@ const SCORE_OPTIONS = Array.from({ length: 10 }, (_, index) => index + 1);
 
 const emptyGuest = {
   name: "",
-  primaryPosition: "ST" as Position,
+  primaryPosition: "CF" as Position,
   secondaryPositions: [] as Position[],
   attackScore: 5,
   midScore: 5,
   defenseScore: 5,
   activityScore: 5,
-  canGk: false,
   memo: "",
 };
 
@@ -32,6 +31,7 @@ export default function Home() {
   const [errors, setErrors] = useState<string[]>([]);
   const [warnings, setWarnings] = useState<string[]>([]);
   const [guest, setGuest] = useState(emptyGuest);
+  const [guestRole, setGuestRole] = useState<"FIELD" | "GK">("FIELD");
   const [teamResult, setTeamResult] = useState<TeamBalanceResult | null>(null);
   const [lineupResult, setLineupResult] = useState<LineupResult | null>(null);
   const [copied, setCopied] = useState(false);
@@ -63,10 +63,10 @@ export default function Home() {
     setWarnings([]);
     const result = await loadPlayersFromCsv(csvUrl);
     setPlayers(result.players);
+    setDedicatedGks(result.dedicatedGks);
     setErrors(result.errors);
     setWarnings(result.warnings);
     setFieldIds([]);
-    setDedicatedGks([]);
     setPlayerQuery("");
   }
 
@@ -96,16 +96,9 @@ export default function Home() {
     setDedicatedGks((prev) => prev.filter((item) => item.id !== id));
   }
 
-  function toggleGuestSecondaryPosition(position: Position) {
-    setGuest((prev) => {
-      const exists = prev.secondaryPositions.includes(position);
-      return {
-        ...prev,
-        secondaryPositions: exists
-          ? prev.secondaryPositions.filter((item) => item !== position)
-          : [...prev.secondaryPositions, position],
-      };
-    });
+  function resetGuest() {
+    setGuest(emptyGuest);
+    setGuestRole("FIELD");
   }
 
   function addTempGuest() {
@@ -122,12 +115,12 @@ export default function Home() {
       midScore: guest.midScore,
       defenseScore: guest.defenseScore,
       activityScore: guest.activityScore,
-      canGk: guest.canGk,
+      canGk: true,
       memo: guest.memo || undefined,
     };
     setPlayers((prev) => [...prev, player]);
     setFieldIds((prev) => [...prev, player.id]);
-    setGuest(emptyGuest);
+    resetGuest();
   }
 
   function addTempGk() {
@@ -136,7 +129,7 @@ export default function Home() {
       ...prev,
       { id: `temp_gk_${Date.now()}_${guest.name}`, source: "TEMP_GK", name: guest.name.trim(), memo: guest.memo || undefined },
     ]);
-    setGuest(emptyGuest);
+    resetGuest();
   }
 
   function runPlanner() {
@@ -203,11 +196,10 @@ export default function Home() {
             <button className="rounded-xl bg-slate-900 px-5 py-3 font-semibold text-white" onClick={handleLoad} disabled={!csvUrl.trim()}>다시 불러오기</button>
           </div>
         )}
-        <div className="mt-4 grid gap-3 sm:grid-cols-4">
+        <div className="mt-4 grid gap-3 sm:grid-cols-3">
           <Stat label="불러온 선수" value={`${players.length}명`} />
           <Stat label="필드 참석자" value={`${fieldIds.length} / 26명`} />
           <Stat label="전담 GK" value={`${dedicatedGks.length}명`} />
-          <Stat label="필드 GK 가능" value={`${fieldPlayers.filter((p) => p.canGk).length}명`} />
         </div>
       </section>
 
@@ -262,7 +254,7 @@ export default function Home() {
 
         <div className="rounded-3xl bg-white p-6 shadow-sm">
           <h2 className="text-xl font-bold">3. 오늘 참석자</h2>
-          <div className="mt-4 grid gap-3 sm:grid-cols-4 lg:grid-cols-2">
+          <div className="mt-4 grid gap-3 sm:grid-cols-3 lg:grid-cols-2">
             <Stat label="정규" value={`${regularCount}명`} />
             <Stat label="용병" value={`${guestCount}명`} />
             <Stat label="필드" value={`${fieldIds.length}/26`} />
@@ -280,23 +272,31 @@ export default function Home() {
       </section>
 
       <section className="mb-6 rounded-3xl bg-white p-6 shadow-sm">
-        <h2 className="text-xl font-bold">4. 임시 용병 / 임시 GK 추가</h2>
+        <h2 className="text-xl font-bold">4. 임시 참석자 추가</h2>
         <div className="mt-4 grid gap-4">
           <input className="rounded-xl border border-slate-300 px-3 py-3" placeholder="이름" value={guest.name} onChange={(e) => setGuest({ ...guest, name: e.target.value })} />
 
-          <PositionButtonGroup
-            label="주포지션"
-            mode="single"
-            selected={[guest.primaryPosition]}
-            onToggle={(position) => setGuest({ ...guest, primaryPosition: position })}
-          />
+          <div>
+            <p className="mb-2 text-sm font-semibold text-slate-600">주포지션</p>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" className={`rounded-full px-3 py-2 text-sm font-bold ${guestRole === "GK" ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600"}`} onClick={() => setGuestRole("GK")}>GK</button>
+              {POSITIONS.map((position) => {
+                const selected = guestRole === "FIELD" && guest.primaryPosition === position;
+                return <button key={position} type="button" className={`rounded-full px-3 py-2 text-sm font-bold ${selected ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600"}`} onClick={() => { setGuestRole("FIELD"); setGuest({ ...guest, primaryPosition: position }); }}>{position}</button>;
+              })}
+            </div>
+          </div>
 
-          <PositionButtonGroup
-            label="부포지션"
-            mode="multiple"
-            selected={guest.secondaryPositions}
-            onToggle={toggleGuestSecondaryPosition}
-          />
+          <div>
+            <p className="mb-2 text-sm font-semibold text-slate-600">부포지션</p>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" className={`rounded-full px-3 py-2 text-sm font-bold ${guest.secondaryPositions.length === 0 ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600"}`} onClick={() => setGuest({ ...guest, secondaryPositions: [] })}>없음</button>
+              {POSITIONS.map((position) => {
+                const selected = guest.secondaryPositions[0] === position;
+                return <button key={position} type="button" className={`rounded-full px-3 py-2 text-sm font-bold ${selected ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600"}`} onClick={() => setGuest({ ...guest, secondaryPositions: [position] })}>{position}</button>;
+              })}
+            </div>
+          </div>
 
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <ScoreSelect label="공격" value={guest.attackScore} onChange={(v) => setGuest({ ...guest, attackScore: v })} />
@@ -305,12 +305,8 @@ export default function Home() {
             <ScoreSelect label="활동" value={guest.activityScore} onChange={(v) => setGuest({ ...guest, activityScore: v })} />
           </div>
 
-          <label className="flex items-center gap-2 rounded-xl border border-slate-300 px-3 py-2"><input type="checkbox" checked={guest.canGk} onChange={(e) => setGuest({ ...guest, canGk: e.target.checked })} /> 필드 GK 가능</label>
           <input className="rounded-xl border border-slate-300 px-3 py-2" placeholder="메모" value={guest.memo} onChange={(e) => setGuest({ ...guest, memo: e.target.value })} />
-          <div className="grid gap-2 sm:grid-cols-2">
-            <button className="rounded-xl bg-blue-600 px-4 py-3 font-semibold text-white" onClick={addTempGuest}>임시 용병 추가</button>
-            <button className="rounded-xl bg-emerald-600 px-4 py-3 font-semibold text-white" onClick={addTempGk}>임시 GK 추가</button>
-          </div>
+          <button className={`w-full rounded-xl px-4 py-3 font-semibold text-white ${guestRole === "GK" ? "bg-emerald-600" : "bg-blue-600"}`} onClick={guestRole === "GK" ? addTempGk : addTempGuest}>{guestRole === "GK" ? "임시 GK 추가" : "임시 용병 추가"}</button>
         </div>
       </section>
 
@@ -362,23 +358,7 @@ function Chip({ label, onRemove }: { label: string; onRemove: () => void }) {
   return <span className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1.5 text-sm">{label}<button className="font-bold text-slate-500" onClick={onRemove}>×</button></span>;
 }
 
-function PlayerSearchRow({
-  player,
-  isField,
-  isGk,
-  onAddField,
-  onRemoveField,
-  onAddGk,
-  onRemoveGk,
-}: {
-  player: Player;
-  isField: boolean;
-  isGk: boolean;
-  onAddField: () => void;
-  onRemoveField: () => void;
-  onAddGk: () => void;
-  onRemoveGk: () => void;
-}) {
+function PlayerSearchRow({ player, isField, isGk, onAddField, onRemoveField, onAddGk, onRemoveGk }: { player: Player; isField: boolean; isGk: boolean; onAddField: () => void; onRemoveField: () => void; onAddGk: () => void; onRemoveGk: () => void }) {
   const secondary = player.secondaryPositions.length > 0 ? player.secondaryPositions.join(",") : "-";
   return (
     <div className={`rounded-2xl border p-3 ${isField || isGk ? "border-blue-200 bg-blue-50" : "border-slate-200 bg-white"}`}>
@@ -393,53 +373,9 @@ function PlayerSearchRow({
           <p className="mt-0.5 text-xs text-slate-400">공격{player.attackScore} · 미드{player.midScore} · 수비{player.defenseScore} · 활동{player.activityScore}</p>
         </div>
         <div className="flex shrink-0 gap-1">
-          {isField ? (
-            <button className="rounded-lg bg-red-50 px-2.5 py-2 text-xs font-bold text-red-700" onClick={onRemoveField}>해제</button>
-          ) : (
-            <button className="rounded-lg bg-blue-600 px-2.5 py-2 text-xs font-bold text-white disabled:bg-slate-300" onClick={onAddField} disabled={isGk}>필드</button>
-          )}
-          {isGk ? (
-            <button className="rounded-lg bg-red-50 px-2.5 py-2 text-xs font-bold text-red-700" onClick={onRemoveGk}>해제</button>
-          ) : (
-            <button className="rounded-lg bg-amber-500 px-2.5 py-2 text-xs font-bold text-white disabled:bg-slate-300" onClick={onAddGk} disabled={isField}>GK</button>
-          )}
+          {isField ? <button className="rounded-lg bg-red-50 px-2.5 py-2 text-xs font-bold text-red-700" onClick={onRemoveField}>해제</button> : <button className="rounded-lg bg-blue-600 px-2.5 py-2 text-xs font-bold text-white disabled:bg-slate-300" onClick={onAddField} disabled={isGk}>필드</button>}
+          {isGk ? <button className="rounded-lg bg-red-50 px-2.5 py-2 text-xs font-bold text-red-700" onClick={onRemoveGk}>해제</button> : <button className="rounded-lg bg-amber-500 px-2.5 py-2 text-xs font-bold text-white disabled:bg-slate-300" onClick={onAddGk} disabled={isField}>GK</button>}
         </div>
-      </div>
-    </div>
-  );
-}
-
-function PositionButtonGroup({
-  label,
-  mode,
-  selected,
-  onToggle,
-}: {
-  label: string;
-  mode: "single" | "multiple";
-  selected: Position[];
-  onToggle: (position: Position) => void;
-}) {
-  return (
-    <div>
-      <div className="mb-2 flex items-center gap-2">
-        <p className="text-sm font-semibold text-slate-600">{label}</p>
-        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">{mode === "single" ? "1개 선택" : "여러 개 선택"}</span>
-      </div>
-      <div className="flex flex-wrap gap-2">
-        {POSITIONS.map((position) => {
-          const isSelected = selected.includes(position);
-          return (
-            <button
-              key={position}
-              type="button"
-              className={`rounded-full px-3 py-2 text-sm font-bold ${isSelected ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600"}`}
-              onClick={() => onToggle(position)}
-            >
-              {position}
-            </button>
-          );
-        })}
       </div>
     </div>
   );
@@ -495,7 +431,6 @@ function TeamResultView({ result }: { result: TeamBalanceResult }) {
         <MetricCard label="미드 점수" a={s.midScoreA} b={s.midScoreB} />
         <MetricCard label="수비 점수" a={s.defenseScoreA} b={s.defenseScoreB} />
         <MetricCard label="활동량" a={s.activityA} b={s.activityB} />
-        <MetricCard label="필드 GK 가능" a={s.fieldGkA} b={s.fieldGkB} />
         <MetricCard label="정규" a={s.regularA} b={s.regularB} />
         <MetricCard label="용병" a={s.guestA} b={s.guestB} />
       </div>
@@ -515,11 +450,7 @@ function TeamCard({ title, players }: { title: string; players: TeamBalanceResul
         <div key={g} className="mt-4">
           <GroupBadge group={g} />
           <div className="mt-2 flex flex-wrap gap-2">
-            {players.filter((p) => p.assignedGroup === g).map((p) => (
-              <span key={p.id} className="rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-700">
-                {p.name}{p.isPositionOverride ? "*" : ""}
-              </span>
-            ))}
+            {players.filter((p) => p.assignedGroup === g).map((p) => <span key={p.id} className="rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-700">{p.name}{p.isPositionOverride ? "*" : ""}</span>)}
           </div>
         </div>
       ))}
@@ -532,7 +463,6 @@ function LineupResultView({ result }: { result: LineupResult }) {
     <section className="mb-6 rounded-3xl bg-white p-6 shadow-sm">
       <h2 className="text-xl font-bold">라인업 결과</h2>
       {result.warnings.length > 0 && <div className="mt-4"><MessageBox title="라인업 경고" items={result.warnings} tone="warning" /></div>}
-
       <div className="mt-4 grid gap-3 md:grid-cols-2">
         {result.quarters.map((q) => (
           <div key={`${q.team}-${q.quarter}`} className="rounded-2xl border border-slate-200 p-4">
@@ -552,28 +482,6 @@ function LineupResultView({ result }: { result: LineupResult }) {
           </div>
         ))}
       </div>
-
-      <h3 className="mt-8 font-bold">선수별 출전표</h3>
-      <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {result.playerSummaries.map((p) => (
-          <div key={p.playerId} className="rounded-2xl border border-slate-200 p-4">
-            <div className="flex items-center justify-between gap-2">
-              <div>
-                <p className="font-bold">{p.playerName}</p>
-                <p className="text-xs text-slate-500">{p.team}팀</p>
-              </div>
-              <GroupBadge group={p.assignedGroup} />
-            </div>
-            <div className="mt-3 grid grid-cols-4 gap-2 text-center">
-              <QuarterBadge label="1Q" role={p.q1} />
-              <QuarterBadge label="2Q" role={p.q2} />
-              <QuarterBadge label="3Q" role={p.q3} />
-              <QuarterBadge label="4Q" role={p.q4} />
-            </div>
-            <p className="mt-3 text-xs text-slate-500">필드 {p.fieldCount} · GK {p.gkCount} · 대기 {p.benchCount}</p>
-          </div>
-        ))}
-      </div>
     </section>
   );
 }
@@ -585,15 +493,6 @@ function LineupNames({ group, names }: { group: PositionGroup; names: string[] }
       <div className="mt-1 flex flex-wrap gap-2">
         {names.map((name) => <span key={name} className="rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-700">{name}</span>)}
       </div>
-    </div>
-  );
-}
-
-function QuarterBadge({ label, role }: { label: string; role: LineupRole }) {
-  return (
-    <div className="rounded-xl bg-slate-50 p-2">
-      <p className="mb-1 text-xs font-bold text-slate-500">{label}</p>
-      <RoleBadge role={role} />
     </div>
   );
 }
