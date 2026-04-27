@@ -6,13 +6,69 @@
   color-scheme: light;
 }
 
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
 body {
   margin: 0;
   background: #f8fafc;
   color: #0f172a;
 }
 
+main,
+section,
+div,
+article,
+pre,
+table {
+  min-width: 0;
+}
+
+p,
+span,
+button,
+a,
+pre,
+td,
+th {
+  overflow-wrap: anywhere;
+  word-break: keep-all;
+}
+
+pre {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
 button:disabled {
   cursor: not-allowed;
   opacity: 0.5;
+}
+
+@media (max-width: 640px) {
+  main {
+    padding-left: 12px !important;
+    padding-right: 12px !important;
+  }
+
+  section {
+    border-radius: 18px !important;
+    padding: 16px !important;
+  }
+
+  input,
+  select,
+  textarea,
+  button,
+  a {
+    max-width: 100%;
+  }
 }
