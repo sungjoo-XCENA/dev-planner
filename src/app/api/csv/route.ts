@@ -1,29 +1,34 @@
 import { NextResponse } from "next/server";
 
-function normalizeGoogleSheetCsvUrl(url: string): string {
+function getSheetInfo(url: string): { spreadsheetId: string; gid: string } | null {
   const parsed = new URL(url);
-
-  // Already an export CSV URL.
-  if (parsed.pathname.includes("/export") && parsed.searchParams.get("format") === "csv") {
-    return parsed.toString();
-  }
-
-  // Normal shared/edit URL:
-  // https://docs.google.com/spreadsheets/d/{spreadsheetId}/edit?usp=sharing#gid=0
   const match = parsed.pathname.match(/\/spreadsheets\/d\/([^/]+)/);
-  if (!match) {
-    return parsed.toString();
-  }
+  if (!match) return null;
 
-  const spreadsheetId = match[1];
   let gid = parsed.searchParams.get("gid") ?? "0";
-
   if (parsed.hash) {
     const hashParams = new URLSearchParams(parsed.hash.replace(/^#/, ""));
     gid = hashParams.get("gid") ?? gid;
   }
 
-  return `https://docs.google.com/spreadsheets/d/${spreadsheetId}/export?format=csv&gid=${encodeURIComponent(gid)}`;
+  return { spreadsheetId: match[1], gid };
+}
+
+function csvCandidateUrls(url: string): string[] {
+  const parsed = new URL(url);
+
+  if (parsed.pathname.includes("/export") && parsed.searchParams.get("format") === "csv") {
+    return [parsed.toString()];
+  }
+
+  const info = getSheetInfo(url);
+  if (!info) return [parsed.toString()];
+
+  const { spreadsheetId, gid } = info;
+  return [
+    `https://docs.google.com/spreadsheets/d/${spreadsheetId}/export?format=csv&gid=${encodeURIComponent(gid)}`,
+    `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:csv&gid=${encodeURIComponent(gid)}`,
+  ];
 }
 
 export async function GET(request: Request) {
@@ -50,28 +55,47 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Only Google Sheets URLs are allowed" }, { status: 400 });
   }
 
-  let csvUrl: string;
-  try {
-    csvUrl = normalizeGoogleSheetCsvUrl(url);
-  } catch {
-    return NextResponse.json({ error: "Could not normalize Google Sheets URL" }, { status: 400 });
-  }
+  const candidates = csvCandidateUrls(url);
+  const failures: string[] = [];
 
-  try {
-    const response = await fetch(csvUrl, { cache: "no-store" });
-    if (!response.ok) {
-      return NextResponse.json({ error: `Failed to fetch CSV: HTTP ${response.status}` }, { status: 502 });
+  for (const csvUrl of candidates) {
+    try {
+      const response = await fetch(csvUrl, {
+        cache: "no-store",
+        headers: {
+          "user-agent": "Mozilla/5.0 dev-planner",
+          accept: "text/csv,text/plain,*/*",
+        },
+      });
+
+      if (!response.ok) {
+        failures.push(`${csvUrl} -> HTTP ${response.status}`);
+        continue;
+      }
+
+      const text = await response.text();
+      if (!text.trim() || text.trimStart().startsWith("<!DOCTYPE html") || text.includes("ServiceLogin")) {
+        failures.push(`${csvUrl} -> non-csv response`);
+        continue;
+      }
+
+      return new NextResponse(text, {
+        status: 200,
+        headers: {
+          "content-type": "text/csv; charset=utf-8",
+          "cache-control": "no-store",
+        },
+      });
+    } catch (error) {
+      failures.push(`${csvUrl} -> ${String(error)}`);
     }
-
-    const text = await response.text();
-    return new NextResponse(text, {
-      status: 200,
-      headers: {
-        "content-type": "text/csv; charset=utf-8",
-        "cache-control": "no-store",
-      },
-    });
-  } catch (error) {
-    return NextResponse.json({ error: String(error) }, { status: 502 });
   }
+
+  return NextResponse.json(
+    {
+      error: "Failed to fetch CSV",
+      detail: failures.join(" | "),
+    },
+    { status: 502 },
+  );
 }
