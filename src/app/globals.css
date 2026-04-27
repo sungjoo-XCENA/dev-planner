@@ -64,20 +64,25 @@ main > section:nth-of-type(2) > div.mt-4.grid {
   max-width: 220px;
 }
 
-/* The player selector should only show matches after the user types a search query. */
+/* The player selector should only show matches after the user types a search query.
+   It can be the 3rd section normally, or the 4th section when warning/error section is visible. */
+main > section:nth-of-type(3) > div:first-child > div.mt-4:has(input:placeholder-shown) + div.mt-3,
 main > section:nth-of-type(4) > div:first-child > div.mt-4:has(input:placeholder-shown) + div.mt-3 {
   display: none;
 }
 
 /* Visual override for the player-search placeholder until page.tsx can be cleaned up. */
+main > section:nth-of-type(3) > div:first-child > div.mt-4,
 main > section:nth-of-type(4) > div:first-child > div.mt-4 {
   position: relative;
 }
 
+main > section:nth-of-type(3) > div:first-child > div.mt-4 > input::placeholder,
 main > section:nth-of-type(4) > div:first-child > div.mt-4 > input::placeholder {
   color: transparent;
 }
 
+main > section:nth-of-type(3) > div:first-child > div.mt-4:has(input:placeholder-shown)::after,
 main > section:nth-of-type(4) > div:first-child > div.mt-4:has(input:placeholder-shown)::after {
   content: "이름 검색 예: 하성주";
   position: absolute;
