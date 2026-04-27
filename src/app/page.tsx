@@ -44,7 +44,8 @@ export default function Home() {
   const sortedPlayers = useMemo(() => [...players].sort((a, b) => a.name.localeCompare(b.name, "ko")), [players]);
   const searchedPlayers = useMemo(() => {
     const query = playerQuery.trim().toLowerCase();
-    if (!query) return sortedPlayers.slice(0, 12);
+    if (!query) return [];
+    if (query === ".") return sortedPlayers;
     return sortedPlayers
       .filter((player) =>
         [player.name, player.primaryPosition, player.secondaryPositions.join(",")]
@@ -225,17 +226,17 @@ export default function Home() {
             <h2 className="text-xl font-bold">2. 선수 검색 추가</h2>
             <span className="rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-600">{players.length}명</span>
           </div>
-          <p className="mt-2 text-sm text-slate-600">이름을 검색해서 필드 참석자 또는 전담 GK로 추가하세요.</p>
+          <p className="mt-2 text-sm text-slate-600">이름을 검색해서 필드 참석자 또는 전담 GK로 추가하세요. 전체 목록은 . 을 입력하면 볼 수 있습니다.</p>
           <div className="mt-4 flex gap-2">
             <input
               className="min-w-0 flex-1 rounded-xl border border-slate-300 px-4 py-3"
               value={playerQuery}
               onChange={(e) => setPlayerQuery(e.target.value)}
-              placeholder="이름 검색 예: 정창영"
+              placeholder="이름 검색 예: 하성주 / 전체 보기: ."
             />
             {playerQuery && <button className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-bold" onClick={() => setPlayerQuery("")}>초기화</button>}
           </div>
-          <div className="mt-3 grid gap-2">
+          <div className="mt-3 grid max-h-[520px] gap-2 overflow-y-auto pr-1">
             {searchedPlayers.map((p) => {
               const isField = fieldIds.includes(p.id);
               const isGk = dedicatedGks.some((gk) => gk.id === p.id);
@@ -252,11 +253,11 @@ export default function Home() {
                 />
               );
             })}
-            {players.length > 0 && searchedPlayers.length === 0 && (
+            {players.length > 0 && playerQuery.trim() && searchedPlayers.length === 0 && (
               <p className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">검색 결과가 없습니다.</p>
             )}
             {players.length > 0 && !playerQuery.trim() && (
-              <p className="text-xs text-slate-500">검색어가 없으면 가나다순 12명만 미리 보여줍니다.</p>
+              <p className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">검색어를 입력하거나 . 을 입력하면 전체 목록을 볼 수 있습니다.</p>
             )}
           </div>
         </div>
