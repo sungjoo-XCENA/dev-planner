@@ -1,5 +1,31 @@
 import { NextResponse } from "next/server";
 
+function normalizeGoogleSheetCsvUrl(url: string): string {
+  const parsed = new URL(url);
+
+  // Already an export CSV URL.
+  if (parsed.pathname.includes("/export") && parsed.searchParams.get("format") === "csv") {
+    return parsed.toString();
+  }
+
+  // Normal shared/edit URL:
+  // https://docs.google.com/spreadsheets/d/{spreadsheetId}/edit?usp=sharing#gid=0
+  const match = parsed.pathname.match(/\/spreadsheets\/d\/([^/]+)/);
+  if (!match) {
+    return parsed.toString();
+  }
+
+  const spreadsheetId = match[1];
+  let gid = parsed.searchParams.get("gid") ?? "0";
+
+  if (parsed.hash) {
+    const hashParams = new URLSearchParams(parsed.hash.replace(/^#/, ""));
+    gid = hashParams.get("gid") ?? gid;
+  }
+
+  return `https://docs.google.com/spreadsheets/d/${spreadsheetId}/export?format=csv&gid=${encodeURIComponent(gid)}`;
+}
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const url = searchParams.get("url");
@@ -12,7 +38,7 @@ export async function GET(request: Request) {
   try {
     parsed = new URL(url);
   } catch {
-    return NextResponse.json({ error: "Invalid CSV URL" }, { status: 400 });
+    return NextResponse.json({ error: "Invalid Google Sheets URL" }, { status: 400 });
   }
 
   if (parsed.protocol !== "https:") {
@@ -21,11 +47,18 @@ export async function GET(request: Request) {
 
   const allowedHosts = ["docs.google.com", "spreadsheets.google.com"];
   if (!allowedHosts.includes(parsed.hostname)) {
-    return NextResponse.json({ error: "Only Google Sheets CSV URLs are allowed" }, { status: 400 });
+    return NextResponse.json({ error: "Only Google Sheets URLs are allowed" }, { status: 400 });
+  }
+
+  let csvUrl: string;
+  try {
+    csvUrl = normalizeGoogleSheetCsvUrl(url);
+  } catch {
+    return NextResponse.json({ error: "Could not normalize Google Sheets URL" }, { status: 400 });
   }
 
   try {
-    const response = await fetch(parsed.toString(), { cache: "no-store" });
+    const response = await fetch(csvUrl, { cache: "no-store" });
     if (!response.ok) {
       return NextResponse.json({ error: `Failed to fetch CSV: HTTP ${response.status}` }, { status: 502 });
     }
