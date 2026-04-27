@@ -1,15 +1,12 @@
 import type { Position, PositionGroup } from "@/types/player";
 
-export const POSITIONS = ["ST", "CF", "LW", "RW", "CAM", "CM", "CDM", "LB", "RB", "CB"] as const;
+export const POSITIONS = ["CF", "LW", "RW", "MF", "LB", "RB", "CB"] as const;
 
 export const POSITION_GROUP_MAP: Record<Position, PositionGroup> = {
-  ST: "ATTACK",
   CF: "ATTACK",
   LW: "ATTACK",
   RW: "ATTACK",
-  CAM: "MID",
-  CM: "MID",
-  CDM: "MID",
+  MF: "MID",
   LB: "DEFENSE",
   RB: "DEFENSE",
   CB: "DEFENSE",
