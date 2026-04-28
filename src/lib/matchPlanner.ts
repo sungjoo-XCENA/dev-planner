@@ -97,6 +97,27 @@ function targetFor(id: string, limits: MatchQuarterLimits): number {
   return Math.max(1, Math.min(4, Math.round(limits[id] ?? 4)));
 }
 
+function hasQuota(item: MatchSelection, playCounts: Map<string, number>, limits: MatchQuarterLimits): boolean {
+  return (playCounts.get(item.player.id) ?? 0) < targetFor(item.player.id, limits);
+}
+
+function rankQuarterCandidates(
+  items: MatchSelection[],
+  group: PositionGroup,
+  playCounts: Map<string, number>,
+  limits: MatchQuarterLimits,
+): MatchSelection[] {
+  return [...items].sort((a, b) => {
+    const remainingA = targetFor(a.player.id, limits) - (playCounts.get(a.player.id) ?? 0);
+    const remainingB = targetFor(b.player.id, limits) - (playCounts.get(b.player.id) ?? 0);
+    if (remainingB !== remainingA) return remainingB - remainingA;
+    const groupFitA = a.group === group ? 1 : 0;
+    const groupFitB = b.group === group ? 1 : 0;
+    if (groupFitB !== groupFitA) return groupFitB - groupFitA;
+    return b.score - a.score;
+  });
+}
+
 function pickQuarterGroup(
   pool: MatchSelection[],
   group: PositionGroup,
@@ -105,25 +126,20 @@ function pickQuarterGroup(
   playCounts: Map<string, number>,
   limits: MatchQuarterLimits,
 ): MatchSelection[] {
-  const groupPool = pool.filter((item) => item.group === group && !selectedIds.has(item.player.id));
-  const candidates = groupPool.length >= count
-    ? groupPool
-    : pool.filter((item) => !selectedIds.has(item.player.id));
+  const eligible = pool.filter((item) => !selectedIds.has(item.player.id) && hasQuota(item, playCounts, limits));
+  const sameGroup = eligible.filter((item) => item.group === group);
+  const primaryPool = sameGroup.length >= count ? sameGroup : eligible;
 
-  const picked = [...candidates]
-    .sort((a, b) => {
-      const remainingA = targetFor(a.player.id, limits) - (playCounts.get(a.player.id) ?? 0);
-      const remainingB = targetFor(b.player.id, limits) - (playCounts.get(b.player.id) ?? 0);
-      const playedEnoughA = remainingA <= 0 ? 1 : 0;
-      const playedEnoughB = remainingB <= 0 ? 1 : 0;
-      if (playedEnoughA !== playedEnoughB) return playedEnoughA - playedEnoughB;
-      if (remainingB !== remainingA) return remainingB - remainingA;
-      const groupFitA = a.group === group ? 1 : 0;
-      const groupFitB = b.group === group ? 1 : 0;
-      if (groupFitB !== groupFitA) return groupFitB - groupFitA;
-      return b.score - a.score;
-    })
-    .slice(0, count);
+  let picked = rankQuarterCandidates(primaryPool, group, playCounts, limits).slice(0, count);
+
+  if (picked.length < count) {
+    const pickedIds = new Set(picked.map((item) => item.player.id));
+    const fallback = pool.filter((item) => !selectedIds.has(item.player.id) && !pickedIds.has(item.player.id));
+    picked = [
+      ...picked,
+      ...rankQuarterCandidates(fallback, group, playCounts, limits).slice(0, count - picked.length),
+    ];
+  }
 
   picked.forEach((item) => selectedIds.add(item.player.id));
   return picked;
