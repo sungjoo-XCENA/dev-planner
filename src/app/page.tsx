@@ -13,6 +13,7 @@ import { planMatchLineup, type MatchPlanResult, type MatchSelection, type MatchQ
 
 const SCORE_OPTIONS = Array.from({ length: 10 }, (_, index) => index + 1);
 const QUARTER_OPTIONS = [1, 2, 3, 4];
+const DEFAULT_MATCH_QUARTERS = 3;
 type PlannerMode = "BALANCE" | "MATCH";
 
 type GuestForm = {
@@ -110,7 +111,7 @@ export default function Home() {
     }
     if (fieldIds.includes(player.id)) return;
     setFieldIds((prev) => [...prev, player.id]);
-    setMatchQuarterLimits((prev) => ({ ...prev, [player.id]: prev[player.id] ?? 4 }));
+    setMatchQuarterLimits((prev) => ({ ...prev, [player.id]: prev[player.id] ?? DEFAULT_MATCH_QUARTERS }));
   }
 
   function removeFieldPlayer(id: string) {
@@ -159,7 +160,7 @@ export default function Home() {
     };
     setPlayers((prev) => [...prev, player]);
     setFieldIds((prev) => [...prev, player.id]);
-    setMatchQuarterLimits((prev) => ({ ...prev, [player.id]: 4 }));
+    setMatchQuarterLimits((prev) => ({ ...prev, [player.id]: DEFAULT_MATCH_QUARTERS }));
     resetGuest();
   }
 
@@ -338,7 +339,7 @@ export default function Home() {
       {plannerMode === "MATCH" && fieldPlayers.length > 0 && (
         <section className="mb-6 rounded-3xl bg-white p-6 shadow-sm">
           <h2 className="text-xl font-bold">매치 출전 쿼터 설정</h2>
-          <p className="mt-1 text-sm text-slate-600">자동 생성 전에 선수별로 몇 쿼터 뛸지 정하세요. 기본값은 4Q입니다.</p>
+          <p className="mt-1 text-sm text-slate-600">자동 생성 전에 선수별로 몇 쿼터 뛸지 정하세요. 기본값은 3Q입니다.</p>
           <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {fieldPlayers.map((player) => (
               <div key={player.id} className="flex items-center justify-between gap-2 rounded-2xl bg-slate-50 p-3">
@@ -346,7 +347,7 @@ export default function Home() {
                   <p className="truncate text-sm font-bold">{player.name}</p>
                   <p className="text-xs text-slate-500">{player.primaryPosition}</p>
                 </div>
-                <select className="rounded-xl border border-slate-300 px-2 py-1 text-sm" value={matchQuarterLimits[player.id] ?? 4} onChange={(e) => setQuarterLimit(player.id, Number(e.target.value))}>
+                <select className="rounded-xl border border-slate-300 px-2 py-1 text-sm" value={matchQuarterLimits[player.id] ?? DEFAULT_MATCH_QUARTERS} onChange={(e) => setQuarterLimit(player.id, Number(e.target.value))}>
                   {QUARTER_OPTIONS.map((q) => <option key={q} value={q}>{q}Q</option>)}
                 </select>
               </div>
