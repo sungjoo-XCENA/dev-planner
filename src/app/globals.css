@@ -64,6 +64,19 @@ main > section:nth-of-type(2) > div.mt-4.grid {
   max-width: 220px;
 }
 
+/* Bottom sticky bar should not duplicate mode/state controls on mobile. */
+.fixed.inset-x-0.bottom-0 > div > div.text-sm.font-semibold {
+  display: none;
+}
+
+.fixed.inset-x-0.bottom-0 > div {
+  justify-content: stretch !important;
+}
+
+.fixed.inset-x-0.bottom-0 button {
+  width: 100%;
+}
+
 /* Team split cards: keep 4/4/5 position groups on a single line without horizontal scroll. */
 .rounded-2xl.border.border-slate-200.p-4 > div.mt-4 > div.mt-2.flex.flex-wrap.gap-2 {
   flex-wrap: nowrap !important;
