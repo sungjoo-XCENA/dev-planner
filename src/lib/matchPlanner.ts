@@ -8,6 +8,15 @@ export type MatchSelection = {
   reason: string;
 };
 
+export type MatchQuarterLineup = {
+  quarter: 1 | 2 | 3 | 4;
+  attack: string[];
+  mid: string[];
+  defense: string[];
+  gk: string;
+  bench: string[];
+};
+
 export type MatchPlanResult = {
   starters: {
     attack: MatchSelection[];
@@ -15,16 +24,21 @@ export type MatchPlanResult = {
     defense: MatchSelection[];
     gk: DedicatedGoalkeeper | null;
   };
+  quarters: MatchQuarterLineup[];
   bench: MatchSelection[];
   warnings: string[];
 };
 
-const MIN_MATCH_FIELD_PLAYERS = 11;
+export type MatchQuarterLimits = Record<string, number>;
+
+const MIN_MATCH_FIELD_PLAYERS = 10;
 const MAX_MATCH_FIELD_PLAYERS = 18;
+const FIELD_STARTER_COUNT = 10;
+const QUARTERS = [1, 2, 3, 4] as const;
 const TARGETS: Record<PositionGroup, number> = {
   ATTACK: 3,
   MID: 3,
-  DEFENSE: 5,
+  DEFENSE: 4,
 };
 
 function isFieldPosition(position: Player["primaryPosition"]): position is FieldPosition {
@@ -65,7 +79,65 @@ function bestGroupFor(player: Player): PositionGroup {
     .sort((a, b) => b.score - a.score)[0].group;
 }
 
-export function planMatchLineup(players: Player[], dedicatedGks: DedicatedGoalkeeper[]): MatchPlanResult {
+function pickGroup(
+  players: Player[],
+  group: PositionGroup,
+  count: number,
+  selectedIds: Set<string>,
+): MatchSelection[] {
+  const picked = players
+    .filter((player) => !selectedIds.has(player.id))
+    .map((player) => selectionFor(player, group))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, count);
+  picked.forEach((item) => selectedIds.add(item.player.id));
+  return picked;
+}
+
+function selectionsByGroup(selections: MatchSelection[], group: PositionGroup): MatchSelection[] {
+  return selections.filter((item) => item.group === group);
+}
+
+function buildQuarterLineups(
+  selections: MatchSelection[],
+  dedicatedGk: DedicatedGoalkeeper | null,
+  limits: MatchQuarterLimits,
+): MatchQuarterLineup[] {
+  const playCounts = new Map<string, number>();
+  const ordered = [...selections].sort((a, b) => b.score - a.score);
+  const targetFor = (id: string) => Math.max(0, Math.min(4, Math.round(limits[id] ?? 4)));
+
+  return QUARTERS.map((quarter) => {
+    const selected = [...ordered]
+      .sort((a, b) => {
+        const needA = targetFor(a.player.id) - (playCounts.get(a.player.id) ?? 0);
+        const needB = targetFor(b.player.id) - (playCounts.get(b.player.id) ?? 0);
+        if (needB !== needA) return needB - needA;
+        return b.score - a.score;
+      })
+      .filter((item) => (playCounts.get(item.player.id) ?? 0) < targetFor(item.player.id))
+      .slice(0, FIELD_STARTER_COUNT);
+
+    selected.forEach((item) => playCounts.set(item.player.id, (playCounts.get(item.player.id) ?? 0) + 1));
+    const selectedIds = new Set(selected.map((item) => item.player.id));
+    const bench = ordered.filter((item) => !selectedIds.has(item.player.id)).map((item) => item.player.name);
+
+    return {
+      quarter,
+      attack: selectionsByGroup(selected, "ATTACK").map((item) => item.player.name),
+      mid: selectionsByGroup(selected, "MID").map((item) => item.player.name),
+      defense: selectionsByGroup(selected, "DEFENSE").map((item) => item.player.name),
+      gk: dedicatedGk?.name ?? "없음",
+      bench,
+    };
+  });
+}
+
+export function planMatchLineup(
+  players: Player[],
+  dedicatedGks: DedicatedGoalkeeper[],
+  quarterLimits: MatchQuarterLimits = {},
+): MatchPlanResult {
   const warnings: string[] = [];
   const fieldPlayers = players.filter((player) => player.primaryPosition !== "GK");
 
@@ -87,23 +159,13 @@ export function planMatchLineup(players: Player[], dedicatedGks: DedicatedGoalke
     gk: dedicatedGks[0] ?? null,
   };
 
-  const fillGroup = (group: PositionGroup, count: number): MatchSelection[] => {
-    const candidates = fieldPlayers
-      .filter((player) => !selectedIds.has(player.id))
-      .map((player) => selectionFor(player, group))
-      .sort((a, b) => b.score - a.score);
-    const picked = candidates.slice(0, count);
-    picked.forEach((item) => selectedIds.add(item.player.id));
-    return picked;
-  };
+  starters.defense = pickGroup(fieldPlayers, "DEFENSE", TARGETS.DEFENSE, selectedIds);
+  starters.mid = pickGroup(fieldPlayers, "MID", TARGETS.MID, selectedIds);
+  starters.attack = pickGroup(fieldPlayers, "ATTACK", TARGETS.ATTACK, selectedIds);
 
-  starters.defense = fillGroup("DEFENSE", TARGETS.DEFENSE);
-  starters.mid = fillGroup("MID", TARGETS.MID);
-  starters.attack = fillGroup("ATTACK", TARGETS.ATTACK);
-
-  const totalStarters = starters.attack.length + starters.mid.length + starters.defense.length;
-  if (totalStarters < 11) {
-    const shortage = 11 - totalStarters;
+  const starterSelections = [...starters.attack, ...starters.mid, ...starters.defense];
+  if (starterSelections.length < FIELD_STARTER_COUNT) {
+    const shortage = FIELD_STARTER_COUNT - starterSelections.length;
     const extra = fieldPlayers
       .filter((player) => !selectedIds.has(player.id))
       .map((player) => selectionFor(player, bestGroupFor(player)))
@@ -111,6 +173,7 @@ export function planMatchLineup(players: Player[], dedicatedGks: DedicatedGoalke
       .slice(0, shortage);
     extra.forEach((item) => {
       selectedIds.add(item.player.id);
+      starterSelections.push(item);
       if (item.group === "ATTACK") starters.attack.push(item);
       else if (item.group === "MID") starters.mid.push(item);
       else starters.defense.push(item);
@@ -121,6 +184,8 @@ export function planMatchLineup(players: Player[], dedicatedGks: DedicatedGoalke
     .filter((player) => !selectedIds.has(player.id))
     .map((player) => selectionFor(player, bestGroupFor(player)))
     .sort((a, b) => b.score - a.score);
+  const allSelections = [...starterSelections, ...bench].sort((a, b) => b.score - a.score);
+  const quarters = buildQuarterLineups(allSelections, starters.gk, quarterLimits);
 
   const weakGroups = (["ATTACK", "MID", "DEFENSE"] as PositionGroup[]).filter((group) => {
     const items = group === "ATTACK" ? starters.attack : group === "MID" ? starters.mid : starters.defense;
@@ -128,5 +193,5 @@ export function planMatchLineup(players: Player[], dedicatedGks: DedicatedGoalke
   });
   if (weakGroups.length > 0) warnings.push(`일부 포지션은 전력 우선으로 변경 배정되었습니다: ${weakGroups.join(", ")}`);
 
-  return { starters, bench, warnings };
+  return { starters, quarters, bench, warnings };
 }
