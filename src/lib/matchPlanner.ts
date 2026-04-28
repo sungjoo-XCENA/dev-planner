@@ -33,7 +33,6 @@ export type MatchQuarterLimits = Record<string, number>;
 
 const MIN_MATCH_FIELD_PLAYERS = 10;
 const MAX_MATCH_FIELD_PLAYERS = 18;
-const FIELD_STARTER_COUNT = 10;
 const QUARTERS = [1, 2, 3, 4] as const;
 const TARGETS: Record<PositionGroup, number> = {
   ATTACK: 3,
@@ -94,8 +93,40 @@ function pickGroup(
   return picked;
 }
 
-function selectionsByGroup(selections: MatchSelection[], group: PositionGroup): MatchSelection[] {
-  return selections.filter((item) => item.group === group);
+function targetFor(id: string, limits: MatchQuarterLimits): number {
+  return Math.max(1, Math.min(4, Math.round(limits[id] ?? 4)));
+}
+
+function pickQuarterGroup(
+  pool: MatchSelection[],
+  group: PositionGroup,
+  count: number,
+  selectedIds: Set<string>,
+  playCounts: Map<string, number>,
+  limits: MatchQuarterLimits,
+): MatchSelection[] {
+  const groupPool = pool.filter((item) => item.group === group && !selectedIds.has(item.player.id));
+  const candidates = groupPool.length >= count
+    ? groupPool
+    : pool.filter((item) => !selectedIds.has(item.player.id));
+
+  const picked = [...candidates]
+    .sort((a, b) => {
+      const remainingA = targetFor(a.player.id, limits) - (playCounts.get(a.player.id) ?? 0);
+      const remainingB = targetFor(b.player.id, limits) - (playCounts.get(b.player.id) ?? 0);
+      const playedEnoughA = remainingA <= 0 ? 1 : 0;
+      const playedEnoughB = remainingB <= 0 ? 1 : 0;
+      if (playedEnoughA !== playedEnoughB) return playedEnoughA - playedEnoughB;
+      if (remainingB !== remainingA) return remainingB - remainingA;
+      const groupFitA = a.group === group ? 1 : 0;
+      const groupFitB = b.group === group ? 1 : 0;
+      if (groupFitB !== groupFitA) return groupFitB - groupFitA;
+      return b.score - a.score;
+    })
+    .slice(0, count);
+
+  picked.forEach((item) => selectedIds.add(item.player.id));
+  return picked;
 }
 
 function buildQuarterLineups(
@@ -105,28 +136,22 @@ function buildQuarterLineups(
 ): MatchQuarterLineup[] {
   const playCounts = new Map<string, number>();
   const ordered = [...selections].sort((a, b) => b.score - a.score);
-  const targetFor = (id: string) => Math.max(0, Math.min(4, Math.round(limits[id] ?? 4)));
 
   return QUARTERS.map((quarter) => {
-    const selected = [...ordered]
-      .sort((a, b) => {
-        const needA = targetFor(a.player.id) - (playCounts.get(a.player.id) ?? 0);
-        const needB = targetFor(b.player.id) - (playCounts.get(b.player.id) ?? 0);
-        if (needB !== needA) return needB - needA;
-        return b.score - a.score;
-      })
-      .filter((item) => (playCounts.get(item.player.id) ?? 0) < targetFor(item.player.id))
-      .slice(0, FIELD_STARTER_COUNT);
+    const selectedIds = new Set<string>();
+    const attack = pickQuarterGroup(ordered, "ATTACK", TARGETS.ATTACK, selectedIds, playCounts, limits);
+    const mid = pickQuarterGroup(ordered, "MID", TARGETS.MID, selectedIds, playCounts, limits);
+    const defense = pickQuarterGroup(ordered, "DEFENSE", TARGETS.DEFENSE, selectedIds, playCounts, limits);
+    const selected = [...attack, ...mid, ...defense];
 
     selected.forEach((item) => playCounts.set(item.player.id, (playCounts.get(item.player.id) ?? 0) + 1));
-    const selectedIds = new Set(selected.map((item) => item.player.id));
     const bench = ordered.filter((item) => !selectedIds.has(item.player.id)).map((item) => item.player.name);
 
     return {
       quarter,
-      attack: selectionsByGroup(selected, "ATTACK").map((item) => item.player.name),
-      mid: selectionsByGroup(selected, "MID").map((item) => item.player.name),
-      defense: selectionsByGroup(selected, "DEFENSE").map((item) => item.player.name),
+      attack: attack.map((item) => item.player.name),
+      mid: mid.map((item) => item.player.name),
+      defense: defense.map((item) => item.player.name),
       gk: dedicatedGk?.name ?? "없음",
       bench,
     };
@@ -164,22 +189,6 @@ export function planMatchLineup(
   starters.attack = pickGroup(fieldPlayers, "ATTACK", TARGETS.ATTACK, selectedIds);
 
   const starterSelections = [...starters.attack, ...starters.mid, ...starters.defense];
-  if (starterSelections.length < FIELD_STARTER_COUNT) {
-    const shortage = FIELD_STARTER_COUNT - starterSelections.length;
-    const extra = fieldPlayers
-      .filter((player) => !selectedIds.has(player.id))
-      .map((player) => selectionFor(player, bestGroupFor(player)))
-      .sort((a, b) => b.score - a.score)
-      .slice(0, shortage);
-    extra.forEach((item) => {
-      selectedIds.add(item.player.id);
-      starterSelections.push(item);
-      if (item.group === "ATTACK") starters.attack.push(item);
-      else if (item.group === "MID") starters.mid.push(item);
-      else starters.defense.push(item);
-    });
-  }
-
   const bench = fieldPlayers
     .filter((player) => !selectedIds.has(player.id))
     .map((player) => selectionFor(player, bestGroupFor(player)))
