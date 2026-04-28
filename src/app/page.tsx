@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import type { DedicatedGoalkeeper, FieldPosition, Player, PositionGroup } from "@/types/player";
 import type { LineupResult, LineupRole } from "@/types/lineup";
 import type { TeamBalanceResult } from "@/types/team";
@@ -36,6 +36,12 @@ const emptyGuest: GuestForm = {
   memo: "",
 };
 
+function modeHelp(mode: PlannerMode): string {
+  return mode === "BALANCE"
+    ? "내부전은 24명 이상 권장, 22명부터 생성 가능합니다. A/B팀 밸런스를 맞춥니다."
+    : "매치는 필드 참석자 11명~18명 중 이기는 목적의 베스트 11과 후보를 추천합니다.";
+}
+
 export default function Home() {
   const [csvUrl, setCsvUrl] = useState(appConfig.defaultSheetUrl);
   const [players, setPlayers] = useState<Player[]>([]);
@@ -67,13 +73,18 @@ export default function Home() {
   }, [playerQuery, sortedPlayers]);
 
   const canGenerate = plannerMode === "BALANCE"
-    ? fieldPlayers.length === 26
+    ? fieldPlayers.length >= 22 && fieldPlayers.length <= 36
     : fieldPlayers.length >= 11 && fieldPlayers.length <= 18;
 
-  async function handleLoad() {
+  function resetResults() {
     setTeamResult(null);
     setLineupResult(null);
     setMatchResult(null);
+    setCopied(false);
+  }
+
+  async function handleLoad() {
+    resetResults();
     setErrors([]);
     setWarnings([]);
     const result = await loadPlayersFromCsv(csvUrl);
@@ -152,10 +163,7 @@ export default function Home() {
   }
 
   function runPlanner() {
-    setCopied(false);
-    setTeamResult(null);
-    setLineupResult(null);
-    setMatchResult(null);
+    resetResults();
     try {
       if (plannerMode === "MATCH") {
         setMatchResult(planMatchLineup(fieldPlayers, dedicatedGks));
@@ -256,18 +264,7 @@ export default function Home() {
           {searchedPlayers.map((p) => {
             const isField = fieldIds.includes(p.id);
             const isGk = dedicatedGks.some((gk) => gk.id === p.id);
-            return (
-              <PlayerSearchRow
-                key={p.id}
-                player={p}
-                isField={isField}
-                isGk={isGk}
-                onAddField={() => addFieldPlayer(p)}
-                onRemoveField={() => removeFieldPlayer(p.id)}
-                onAddGk={() => addDedicatedGk(p)}
-                onRemoveGk={() => removeDedicatedGk(p.id)}
-              />
-            );
+            return <PlayerSearchRow key={p.id} player={p} isField={isField} isGk={isGk} onAddField={() => addFieldPlayer(p)} onRemoveField={() => removeFieldPlayer(p.id)} onAddGk={() => addDedicatedGk(p)} onRemoveGk={() => removeDedicatedGk(p.id)} />;
           })}
           {players.length > 0 && playerQuery.trim() && searchedPlayers.length === 0 && <p className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">검색 결과가 없습니다.</p>}
           {players.length > 0 && !playerQuery.trim() && <p className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">검색어를 입력하거나 . 을 입력하면 전체 목록을 볼 수 있습니다.</p>}
@@ -318,9 +315,7 @@ export default function Home() {
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <h2 className="text-xl font-bold">팀분배&라인업</h2>
-            <p className="mt-1 text-sm text-slate-600">
-              {plannerMode === "BALANCE" ? "내부전은 필드 참석자 26명일 때 A/B팀 밸런스를 맞춥니다." : "매치는 필드 참석자 11명~18명 중 이기는 목적의 베스트 11과 후보를 추천합니다."}
-            </p>
+            <p className="mt-1 text-sm text-slate-600">{modeHelp(plannerMode)}</p>
             <div className="mt-3 flex gap-2">
               <ModeButton active={plannerMode === "BALANCE"} onClick={() => setPlannerMode("BALANCE")}>내부전</ModeButton>
               <ModeButton active={plannerMode === "MATCH"} onClick={() => setPlannerMode("MATCH")}>매치</ModeButton>
@@ -348,7 +343,7 @@ export default function Home() {
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-3">
           <div className="text-sm font-semibold">
             {plannerMode === "BALANCE" ? "내부전" : "매치"} · 필드 {fieldIds.length}명 · 전담 GK {dedicatedGks.length}
-            {!canGenerate && <p className="text-xs font-normal text-slate-500">{plannerMode === "BALANCE" ? "내부전은 필드 26명 필요" : "매치는 필드 11명~18명 필요"}</p>}
+            {!canGenerate && <p className="text-xs font-normal text-slate-500">{plannerMode === "BALANCE" ? "내부전은 24명 이상 권장, 22명부터 가능" : "매치는 필드 11명~18명 필요"}</p>}
           </div>
           <button className="rounded-xl bg-slate-900 px-5 py-3 text-sm font-bold text-white disabled:bg-slate-300" onClick={runPlanner} disabled={!canGenerate}>자동 생성</button>
         </div>
@@ -357,7 +352,7 @@ export default function Home() {
   );
 }
 
-function ModeButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+function ModeButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: ReactNode }) {
   return <button type="button" className={`rounded-xl px-4 py-2 text-sm font-bold ${active ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600"}`} onClick={onClick}>{children}</button>;
 }
 
@@ -422,11 +417,11 @@ function LineupNames({ group, names }: { group: PositionGroup; names: string[] }
 }
 
 function MatchResultView({ result }: { result: MatchPlanResult }) {
-  return <section className="mb-6 rounded-3xl bg-white p-6 shadow-sm"><h2 className="text-xl font-bold">매치 라인업 추천</h2>{result.warnings.length > 0 && <div className="mt-4"><MessageBox title="매치 경고" items={result.warnings} tone="warning" /></div>}<div className="mt-4 rounded-2xl border border-slate-200 p-4"><h3 className="font-bold">선발 11</h3><div className="mt-3"><span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-800">GK</span><div className="mt-2 flex flex-wrap gap-2"><span className="rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-700">{result.starters.gk?.name ?? "없음"}</span></div></div><MatchGroup title="공격" group="ATTACK" items={result.starters.attack} /><MatchGroup title="미드" group="MID" items={result.starters.mid} /><MatchGroup title="수비" group="DEFENSE" items={result.starters.defense} /></div><div className="mt-4 rounded-2xl border border-slate-200 p-4"><h3 className="font-bold">후보 / 교체 우선순위</h3><div className="mt-2 flex flex-wrap gap-2">{(result.bench.length ? result.bench : []).map((item) => <span key={item.player.id} className="rounded-full bg-violet-100 px-3 py-1 text-sm font-semibold text-violet-800">{item.player.name}({groupKorean(item.group)})</span>)}{result.bench.length === 0 && <span className="rounded-full bg-slate-100 px-3 py-1 text-sm text-slate-600">없음</span>}</div></div></section>;
+  return <section className="mb-6 rounded-3xl bg-white p-6 shadow-sm"><h2 className="text-xl font-bold">매치 라인업 추천</h2>{result.warnings.length > 0 && <div className="mt-4"><MessageBox title="매치 경고" items={result.warnings} tone="warning" /></div>}<div className="mt-4 rounded-2xl border border-slate-200 p-4"><h3 className="font-bold">선발 11</h3><div className="mt-3"><span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-800">GK</span><div className="mt-2 flex flex-wrap gap-2"><span className="rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-700">{result.starters.gk?.name ?? "없음"}</span></div></div><MatchGroup group="ATTACK" items={result.starters.attack} /><MatchGroup group="MID" items={result.starters.mid} /><MatchGroup group="DEFENSE" items={result.starters.defense} /></div><div className="mt-4 rounded-2xl border border-slate-200 p-4"><h3 className="font-bold">후보 / 교체 우선순위</h3><div className="mt-2 flex flex-wrap gap-2">{result.bench.map((item) => <span key={item.player.id} className="rounded-full bg-violet-100 px-3 py-1 text-sm font-semibold text-violet-800">{item.player.name}({groupKorean(item.group)})</span>)}{result.bench.length === 0 && <span className="rounded-full bg-slate-100 px-3 py-1 text-sm text-slate-600">없음</span>}</div></div></section>;
 }
 
-function MatchGroup({ title, group, items }: { title: string; group: PositionGroup; items: MatchSelection[] }) {
-  return <div className="mt-3"><GroupBadge group={group} /><p className="sr-only">{title}</p><div className="mt-2 flex flex-wrap gap-2">{items.map((item) => <span key={item.player.id} className="rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-700" title={item.reason}>{item.player.name}</span>)}</div></div>;
+function MatchGroup({ group, items }: { group: PositionGroup; items: MatchSelection[] }) {
+  return <div className="mt-3"><GroupBadge group={group} /><div className="mt-2 flex flex-wrap gap-2">{items.map((item) => <span key={item.player.id} className="rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-700" title={item.reason}>{item.player.name}</span>)}</div></div>;
 }
 
 function groupKorean(group: PositionGroup): string {
