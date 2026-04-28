@@ -15,6 +15,7 @@ export type MatchQuarterLineup = {
   defense: string[];
   gk: string;
   bench: string[];
+  unavailable: string[];
 };
 
 export type MatchPlanResult = {
@@ -161,7 +162,9 @@ function buildQuarterLineups(
     const selected = [...attack, ...mid, ...defense];
 
     selected.forEach((item) => playCounts.set(item.player.id, (playCounts.get(item.player.id) ?? 0) + 1));
-    const bench = ordered.filter((item) => !selectedIds.has(item.player.id)).map((item) => item.player.name);
+    const notPlaying = ordered.filter((item) => !selectedIds.has(item.player.id));
+    const bench = notPlaying.filter((item) => hasQuota(item, playCounts, limits)).map((item) => item.player.name);
+    const unavailable = notPlaying.filter((item) => !hasQuota(item, playCounts, limits)).map((item) => item.player.name);
 
     return {
       quarter,
@@ -170,6 +173,7 @@ function buildQuarterLineups(
       defense: defense.map((item) => item.player.name),
       gk: dedicatedGk?.name ?? "없음",
       bench,
+      unavailable,
     };
   });
 }
