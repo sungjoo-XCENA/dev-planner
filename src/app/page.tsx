@@ -9,9 +9,10 @@ import { loadPlayersFromCsv } from "@/lib/loadPlayersFromCsv";
 import { POSITIONS } from "@/lib/positions";
 import { balanceTeams } from "@/lib/teamBalancer";
 import { generateLineups } from "@/lib/lineupGenerator";
-import { planMatchLineup, type MatchPlanResult, type MatchSelection } from "@/lib/matchPlanner";
+import { planMatchLineup, type MatchPlanResult, type MatchSelection, type MatchQuarterLimits } from "@/lib/matchPlanner";
 
 const SCORE_OPTIONS = Array.from({ length: 10 }, (_, index) => index + 1);
+const QUARTER_OPTIONS = [1, 2, 3, 4];
 type PlannerMode = "BALANCE" | "MATCH";
 
 type GuestForm = {
@@ -39,7 +40,7 @@ const emptyGuest: GuestForm = {
 function modeHelp(mode: PlannerMode): string {
   return mode === "BALANCE"
     ? "내부전은 24명 이상 권장, 22명부터 생성 가능합니다. A/B팀 밸런스를 맞춥니다."
-    : "매치는 필드 참석자 11명~18명 중 이기는 목적의 베스트 11과 후보를 추천합니다.";
+    : "매치는 필드 10명~18명과 전담 GK 기준으로 베스트 11과 1~4Q 라인업을 추천합니다.";
 }
 
 export default function Home() {
@@ -55,6 +56,7 @@ export default function Home() {
   const [teamResult, setTeamResult] = useState<TeamBalanceResult | null>(null);
   const [lineupResult, setLineupResult] = useState<LineupResult | null>(null);
   const [matchResult, setMatchResult] = useState<MatchPlanResult | null>(null);
+  const [matchQuarterLimits, setMatchQuarterLimits] = useState<MatchQuarterLimits>({});
   const [copied, setCopied] = useState(false);
   const [showSheetUrl, setShowSheetUrl] = useState(false);
   const [playerQuery, setPlayerQuery] = useState("");
@@ -74,7 +76,7 @@ export default function Home() {
 
   const canGenerate = plannerMode === "BALANCE"
     ? fieldPlayers.length >= 22 && fieldPlayers.length <= 36
-    : fieldPlayers.length >= 11 && fieldPlayers.length <= 18;
+    : fieldPlayers.length >= 10 && fieldPlayers.length <= 18;
 
   function resetResults() {
     setTeamResult(null);
@@ -94,6 +96,7 @@ export default function Home() {
     setWarnings(result.warnings);
     setFieldIds([]);
     setPlayerQuery("");
+    setMatchQuarterLimits({});
   }
 
   function addFieldPlayer(player: Player) {
@@ -107,10 +110,16 @@ export default function Home() {
     }
     if (fieldIds.includes(player.id)) return;
     setFieldIds((prev) => [...prev, player.id]);
+    setMatchQuarterLimits((prev) => ({ ...prev, [player.id]: prev[player.id] ?? 4 }));
   }
 
   function removeFieldPlayer(id: string) {
     setFieldIds((prev) => prev.filter((item) => item !== id));
+    setMatchQuarterLimits((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
   }
 
   function addDedicatedGk(player: Player) {
@@ -150,6 +159,7 @@ export default function Home() {
     };
     setPlayers((prev) => [...prev, player]);
     setFieldIds((prev) => [...prev, player.id]);
+    setMatchQuarterLimits((prev) => ({ ...prev, [player.id]: 4 }));
     resetGuest();
   }
 
@@ -162,11 +172,15 @@ export default function Home() {
     resetGuest();
   }
 
+  function setQuarterLimit(playerId: string, value: number) {
+    setMatchQuarterLimits((prev) => ({ ...prev, [playerId]: value }));
+  }
+
   function runPlanner() {
     resetResults();
     try {
       if (plannerMode === "MATCH") {
-        setMatchResult(planMatchLineup(fieldPlayers, dedicatedGks));
+        setMatchResult(planMatchLineup(fieldPlayers, dedicatedGks, matchQuarterLimits));
       } else {
         const team = balanceTeams(fieldPlayers);
         const lineup = generateLineups(team.teamA, team.teamB, dedicatedGks);
@@ -182,11 +196,21 @@ export default function Home() {
   const shareText = useMemo(() => {
     if (matchResult) {
       const lines: string[] = ["[DEV FC 매치 라인업]", ""];
+      lines.push("[베스트 라인업]");
       lines.push(`GK: ${matchResult.starters.gk?.name ?? "없음"}`);
       lines.push(`공격: ${matchResult.starters.attack.map((item) => item.player.name).join(", ")}`);
       lines.push(`미드: ${matchResult.starters.mid.map((item) => item.player.name).join(", ")}`);
       lines.push(`수비: ${matchResult.starters.defense.map((item) => item.player.name).join(", ")}`);
       lines.push("");
+      matchResult.quarters.forEach((q) => {
+        lines.push(`${q.quarter}Q`);
+        lines.push(`GK: ${q.gk}`);
+        lines.push(`공격: ${q.attack.join(", ")}`);
+        lines.push(`미드: ${q.mid.join(", ")}`);
+        lines.push(`수비: ${q.defense.join(", ")}`);
+        lines.push(`대기: ${q.bench.join(", ") || "없음"}`);
+        lines.push("");
+      });
       lines.push(`후보: ${matchResult.bench.map((item) => item.player.name).join(", ") || "없음"}`);
       return lines.join("\n");
     }
@@ -311,6 +335,26 @@ export default function Home() {
         <div className="mt-2 flex flex-wrap gap-2">{dedicatedGks.map((gk) => <Chip key={gk.id} label={gk.name} onRemove={() => removeDedicatedGk(gk.id)} />)}</div>
       </section>
 
+      {plannerMode === "MATCH" && fieldPlayers.length > 0 && (
+        <section className="mb-6 rounded-3xl bg-white p-6 shadow-sm">
+          <h2 className="text-xl font-bold">매치 출전 쿼터 설정</h2>
+          <p className="mt-1 text-sm text-slate-600">자동 생성 전에 선수별로 몇 쿼터 뛸지 정하세요. 기본값은 4Q입니다.</p>
+          <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {fieldPlayers.map((player) => (
+              <div key={player.id} className="flex items-center justify-between gap-2 rounded-2xl bg-slate-50 p-3">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-bold">{player.name}</p>
+                  <p className="text-xs text-slate-500">{player.primaryPosition}</p>
+                </div>
+                <select className="rounded-xl border border-slate-300 px-2 py-1 text-sm" value={matchQuarterLimits[player.id] ?? 4} onChange={(e) => setQuarterLimit(player.id, Number(e.target.value))}>
+                  {QUARTER_OPTIONS.map((q) => <option key={q} value={q}>{q}Q</option>)}
+                </select>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
       <section className="mb-6 rounded-3xl bg-white p-6 shadow-sm">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
@@ -343,7 +387,7 @@ export default function Home() {
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-3">
           <div className="text-sm font-semibold">
             {plannerMode === "BALANCE" ? "내부전" : "매치"} · 필드 {fieldIds.length}명 · 전담 GK {dedicatedGks.length}
-            {!canGenerate && <p className="text-xs font-normal text-slate-500">{plannerMode === "BALANCE" ? "내부전은 24명 이상 권장, 22명부터 가능" : "매치는 필드 11명~18명 필요"}</p>}
+            {!canGenerate && <p className="text-xs font-normal text-slate-500">{plannerMode === "BALANCE" ? "내부전은 24명 이상 권장, 22명부터 가능" : "매치는 필드 10명~18명 필요"}</p>}
           </div>
           <button className="rounded-xl bg-slate-900 px-5 py-3 text-sm font-bold text-white disabled:bg-slate-300" onClick={runPlanner} disabled={!canGenerate}>자동 생성</button>
         </div>
@@ -417,7 +461,7 @@ function LineupNames({ group, names }: { group: PositionGroup; names: string[] }
 }
 
 function MatchResultView({ result }: { result: MatchPlanResult }) {
-  return <section className="mb-6 rounded-3xl bg-white p-6 shadow-sm"><h2 className="text-xl font-bold">매치 라인업 추천</h2>{result.warnings.length > 0 && <div className="mt-4"><MessageBox title="매치 경고" items={result.warnings} tone="warning" /></div>}<div className="mt-4 rounded-2xl border border-slate-200 p-4"><h3 className="font-bold">선발 11</h3><div className="mt-3"><span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-800">GK</span><div className="mt-2 flex flex-wrap gap-2"><span className="rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-700">{result.starters.gk?.name ?? "없음"}</span></div></div><MatchGroup group="ATTACK" items={result.starters.attack} /><MatchGroup group="MID" items={result.starters.mid} /><MatchGroup group="DEFENSE" items={result.starters.defense} /></div><div className="mt-4 rounded-2xl border border-slate-200 p-4"><h3 className="font-bold">후보 / 교체 우선순위</h3><div className="mt-2 flex flex-wrap gap-2">{result.bench.map((item) => <span key={item.player.id} className="rounded-full bg-violet-100 px-3 py-1 text-sm font-semibold text-violet-800">{item.player.name}({groupKorean(item.group)})</span>)}{result.bench.length === 0 && <span className="rounded-full bg-slate-100 px-3 py-1 text-sm text-slate-600">없음</span>}</div></div></section>;
+  return <section className="mb-6 rounded-3xl bg-white p-6 shadow-sm"><h2 className="text-xl font-bold">매치 라인업 추천</h2>{result.warnings.length > 0 && <div className="mt-4"><MessageBox title="매치 경고" items={result.warnings} tone="warning" /></div>}<div className="mt-4 rounded-2xl border border-slate-200 p-4"><h3 className="font-bold">베스트 라인업</h3><div className="mt-3"><span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-800">GK</span><div className="mt-2 flex flex-wrap gap-2"><span className="rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-700">{result.starters.gk?.name ?? "없음"}</span></div></div><MatchGroup group="ATTACK" items={result.starters.attack} /><MatchGroup group="MID" items={result.starters.mid} /><MatchGroup group="DEFENSE" items={result.starters.defense} /></div><div className="mt-4 grid gap-3 md:grid-cols-2">{result.quarters.map((q) => <div key={q.quarter} className="rounded-2xl border border-slate-200 p-4"><div className="flex items-center justify-between gap-2"><p className="text-lg font-black">{q.quarter}Q</p><span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-800">GK {q.gk}</span></div><LineupNames group="ATTACK" names={q.attack} /><LineupNames group="MID" names={q.mid} /><LineupNames group="DEFENSE" names={q.defense} /><div className="mt-3"><p className="text-xs font-bold text-slate-500">대기</p><div className="mt-1 flex flex-wrap gap-2">{(q.bench.length ? q.bench : ["없음"]).map((name) => <span key={name} className="rounded-full bg-slate-100 px-3 py-1 text-sm text-slate-600">{name}</span>)}</div></div></div>)}</div><div className="mt-4 rounded-2xl border border-slate-200 p-4"><h3 className="font-bold">후보 / 교체 우선순위</h3><div className="mt-2 flex flex-wrap gap-2">{result.bench.map((item) => <span key={item.player.id} className="rounded-full bg-violet-100 px-3 py-1 text-sm font-semibold text-violet-800">{item.player.name}({groupKorean(item.group)})</span>)}{result.bench.length === 0 && <span className="rounded-full bg-slate-100 px-3 py-1 text-sm text-slate-600">없음</span>}</div></div></section>;
 }
 
 function MatchGroup({ group, items }: { group: PositionGroup; items: MatchSelection[] }) {
