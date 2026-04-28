@@ -1,33 +1,47 @@
-import type { DedicatedGoalkeeper, PositionGroup } from "@/types/player";
+import type { AssignedPlayer, DedicatedGoalkeeper, PositionGroup } from "@/types/player";
 import type { LineupResult, LineupRole, PlayerLineupSummary, Quarter, TeamQuarterLineup } from "@/types/lineup";
 import type { Team, TeamName } from "@/types/team";
 import { playersByGroup } from "./teamBalancer";
 
 const QUARTERS: Quarter[] = [1, 2, 3, 4];
 const MAX_DEDICATED_GK_AUTO_ASSIGN = 2;
+const FIELD_PLAYERS_PER_TEAM = 11;
 
-function chooseDefenderIronman(team: Team) {
-  const defenders = playersByGroup(team, "DEFENSE");
-  return [...defenders].sort((a, b) => {
-    if (a.canGk !== b.canGk) return a.canGk ? 1 : -1;
-    if (b.activityScore !== a.activityScore) return b.activityScore - a.activityScore;
-    return b.defenseScore - a.defenseScore;
-  })[0];
-}
-
-function buildRestPlan(team: Team): Record<Quarter, Record<PositionGroup, string | null>> {
-  const attack = playersByGroup(team, "ATTACK");
-  const mid = playersByGroup(team, "MID");
-  const defense = playersByGroup(team, "DEFENSE");
-  const ironman = chooseDefenderIronman(team);
-  const restingDefenders = defense.filter((player) => player.id !== ironman.id);
-
-  return {
-    1: { ATTACK: attack[0]?.id ?? null, MID: mid[0]?.id ?? null, DEFENSE: restingDefenders[0]?.id ?? null },
-    2: { ATTACK: attack[1]?.id ?? null, MID: mid[1]?.id ?? null, DEFENSE: restingDefenders[1]?.id ?? null },
-    3: { ATTACK: attack[2]?.id ?? null, MID: mid[2]?.id ?? null, DEFENSE: restingDefenders[2]?.id ?? null },
-    4: { ATTACK: attack[3]?.id ?? null, MID: mid[3]?.id ?? null, DEFENSE: restingDefenders[3]?.id ?? null },
+function buildRestPlan(team: Team): Record<Quarter, Set<string>> {
+  const restCountPerQuarter = Math.max(0, team.players.length - FIELD_PLAYERS_PER_TEAM);
+  const result: Record<Quarter, Set<string>> = {
+    1: new Set<string>(),
+    2: new Set<string>(),
+    3: new Set<string>(),
+    4: new Set<string>(),
   };
+
+  if (restCountPerQuarter === 0) return result;
+
+  const pool = [...team.players].sort((a, b) => {
+    const scoreA = a.activityScore + (a.canGk ? 0.5 : 0);
+    const scoreB = b.activityScore + (b.canGk ? 0.5 : 0);
+    if (scoreB !== scoreA) return scoreB - scoreA;
+    return a.name.localeCompare(b.name, "ko");
+  });
+
+  const restCounts = new Map<string, number>();
+  for (const quarter of QUARTERS) {
+    const selected = [...pool]
+      .sort((a, b) => {
+        const countDiff = (restCounts.get(a.id) ?? 0) - (restCounts.get(b.id) ?? 0);
+        if (countDiff !== 0) return countDiff;
+        return a.activityScore - b.activityScore;
+      })
+      .slice(0, restCountPerQuarter);
+
+    selected.forEach((player) => {
+      result[quarter].add(player.id);
+      restCounts.set(player.id, (restCounts.get(player.id) ?? 0) + 1);
+    });
+  }
+
+  return result;
 }
 
 function dedicatedGkFor(team: TeamName, quarter: Quarter, dedicatedGks: DedicatedGoalkeeper[]): DedicatedGoalkeeper | null {
@@ -41,6 +55,23 @@ function dedicatedGkFor(team: TeamName, quarter: Quarter, dedicatedGks: Dedicate
   return firstToA ? dedicatedGks[1] : dedicatedGks[0];
 }
 
+function groupFieldNames(team: Team, group: PositionGroup, restingIds: Set<string>): string[] {
+  return playersByGroup(team, group)
+    .filter((player) => !restingIds.has(player.id))
+    .map((player) => player.name);
+}
+
+function chooseFieldGk(restingPlayers: AssignedPlayer[], teamPlayers: AssignedPlayer[], gkUseCount: Map<string, number>): AssignedPlayer | null {
+  const restingCandidate = [...restingPlayers]
+    .filter((player) => player.canGk)
+    .sort((a, b) => (gkUseCount.get(a.id) ?? 0) - (gkUseCount.get(b.id) ?? 0))[0];
+  if (restingCandidate) return restingCandidate;
+
+  return [...teamPlayers]
+    .filter((player) => player.canGk)
+    .sort((a, b) => (gkUseCount.get(a.id) ?? 0) - (gkUseCount.get(b.id) ?? 0))[0] ?? null;
+}
+
 function lineupForTeam(team: Team, dedicatedGks: DedicatedGoalkeeper[]) {
   const restPlan = buildRestPlan(team);
   const warnings: string[] = [];
@@ -50,8 +81,8 @@ function lineupForTeam(team: Team, dedicatedGks: DedicatedGoalkeeper[]) {
 
   for (const quarter of QUARTERS) {
     const dedicated = dedicatedGkFor(team.name, quarter, dedicatedGks.slice(0, MAX_DEDICATED_GK_AUTO_ASSIGN));
-    const restingIds = Object.values(restPlan[quarter]).filter((id): id is string => Boolean(id));
-    const restingPlayers = team.players.filter((player) => restingIds.includes(player.id));
+    const restingIds = restPlan[quarter];
+    const restingPlayers = team.players.filter((player) => restingIds.has(player.id));
     let gkName = "";
     let bench = restingPlayers.map((player) => player.name);
 
@@ -59,31 +90,23 @@ function lineupForTeam(team: Team, dedicatedGks: DedicatedGoalkeeper[]) {
       gkName = dedicated.name;
       rotation[dedicated.name] = [...(rotation[dedicated.name] ?? []), `${quarter}Q ${team.name}팀`];
     } else {
-      const gkCandidate = [...restingPlayers]
-        .filter((player) => player.canGk)
-        .sort((a, b) => (gkUseCount.get(a.id) ?? 0) - (gkUseCount.get(b.id) ?? 0))[0];
+      const gkCandidate = chooseFieldGk(restingPlayers, team.players, gkUseCount);
       if (gkCandidate) {
         gkName = gkCandidate.name;
         gkUseCount.set(gkCandidate.id, (gkUseCount.get(gkCandidate.id) ?? 0) + 1);
         bench = restingPlayers.filter((player) => player.id !== gkCandidate.id).map((player) => player.name);
       } else {
         gkName = "없음";
-        warnings.push(`${team.name}팀 ${quarter}Q 쉬는 선수 중 GK 가능자가 없습니다.`);
+        warnings.push(`${team.name}팀 ${quarter}Q GK 배정 필요`);
       }
     }
-
-    const fieldByGroup = (group: PositionGroup) =>
-      team.players
-        .filter((player) => player.assignedGroup === group)
-        .filter((player) => player.id !== restPlan[quarter][group])
-        .map((player) => player.name);
 
     quarters.push({
       quarter,
       team: team.name,
-      attack: fieldByGroup("ATTACK"),
-      mid: fieldByGroup("MID"),
-      defense: fieldByGroup("DEFENSE"),
+      attack: groupFieldNames(team, "ATTACK", restingIds),
+      mid: groupFieldNames(team, "MID", restingIds),
+      defense: groupFieldNames(team, "DEFENSE", restingIds),
       gk: gkName,
       bench,
       warnings: gkName === "없음" ? [`${team.name}팀 ${quarter}Q GK 배정 필요`] : [],
@@ -121,7 +144,7 @@ function lineupForTeam(team: Team, dedicatedGks: DedicatedGoalkeeper[]) {
 
 export function generateLineups(teamA: Team, teamB: Team, dedicatedGks: DedicatedGoalkeeper[]): LineupResult {
   const warnings: string[] = [];
-  if (dedicatedGks.length > MAX_DEDICATED_GK_AUTO_ASSIGN) warnings.push("전담 GK가 3명 이상입니다. MVP에서는 2명만 자동 배정합니다.");
+  if (dedicatedGks.length > MAX_DEDICATED_GK_AUTO_ASSIGN) warnings.push("전담 GK가 3명 이상입니다. 2명만 자동 배정합니다.");
 
   const a = lineupForTeam(teamA, dedicatedGks);
   const b = lineupForTeam(teamB, dedicatedGks);
