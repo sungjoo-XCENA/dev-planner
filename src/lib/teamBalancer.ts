@@ -352,6 +352,29 @@ export function balanceTeams(players: Player[]): TeamBalanceResult {
   };
 }
 
+export function summarizeTeams(teamAPlayers: AssignedPlayer[], teamBPlayers: AssignedPlayer[]): TeamBalanceResult {
+  const a = teamAPlayers as AssignedFieldPlayer[];
+  const b = teamBPlayers as AssignedFieldPlayer[];
+  const summary = calcTeamScore(a, b);
+
+  const warnings: string[] = [];
+  const overrides = [...a, ...b].filter((p) => p.isPositionOverride);
+  if (overrides.length >= 6) warnings.push(`포지션 변경자가 ${overrides.length}명입니다. 역할 배정이 다소 억지일 수 있습니다.`);
+  if (summary.fieldGkA === 0 || summary.fieldGkB === 0) warnings.push("한 팀에 필드 GK 가능자가 없습니다. 전담 GK가 없거나 부족하면 문제가 될 수 있습니다.");
+  if (Math.abs(summary.activityA - summary.activityB) >= 8) warnings.push("팀별 활동량 차이가 큽니다.");
+  if (Math.abs(summary.guestA - summary.guestB) >= 5) warnings.push("정규 선수와 용병 비율이 한쪽으로 몰렸습니다.");
+
+  const quality: TeamBalanceResult["quality"] = warnings.length === 0 ? "좋음" : warnings.length <= 2 ? "주의" : "나쁨";
+
+  return {
+    teamA: { name: "A", players: a },
+    teamB: { name: "B", players: b },
+    summary,
+    warnings,
+    quality,
+  };
+}
+
 export function rebalanceTeams(teamAPlayers: Player[], teamBPlayers: Player[]): TeamBalanceResult {
   const totalCount = teamAPlayers.length + teamBPlayers.length;
   if (totalCount < MIN_TEAM_SIZE * 2 || totalCount > MAX_TEAM_SIZE * 2) {
