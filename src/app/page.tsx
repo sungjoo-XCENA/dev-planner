@@ -696,19 +696,10 @@ function TeamResultView({
   const overridesB = result.teamB.players.filter((p) => p.isPositionOverride).length;
   return (
     <section className="mb-6 rounded-3xl bg-white p-6 shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <h2 className="text-xl font-bold">팀 분배 결과</h2>
-          <span className="rounded-full bg-slate-900 px-3 py-1 text-xs font-bold text-white">{result.quality}</span>
-          {!confirmed && <span className="rounded-full bg-blue-100 px-3 py-1 text-xs font-bold text-blue-700">조정 가능</span>}
-        </div>
-        <div className="flex gap-2">
-          {confirmed ? (
-            <button className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold" onClick={onReadjust}>팀 다시 조정</button>
-          ) : (
-            <button className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-bold text-white" onClick={onConfirm}>팀 확정 → 라인업 생성</button>
-          )}
-        </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <h2 className="text-xl font-bold">팀 분배 결과</h2>
+        <span className="rounded-full bg-slate-900 px-3 py-1 text-xs font-bold text-white">{result.quality}</span>
+        {!confirmed && <span className="rounded-full bg-blue-100 px-3 py-1 text-xs font-bold text-blue-700">조정 가능</span>}
       </div>
       {result.warnings.length > 0 && <div className="mt-4"><MessageBox title="팀 경고" items={result.warnings} tone="warning" /></div>}
       <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
