@@ -3,8 +3,12 @@ import type { Team, TeamBalanceResult, TeamBalanceSummary } from "@/types/team";
 import { getPositionGroup, hasGroup, scoreForGroup } from "./positions";
 
 const POSITION_GROUPS: PositionGroup[] = ["ATTACK", "MID", "DEFENSE"];
+const PAIRING_GROUP_ORDER: PositionGroup[] = ["DEFENSE", "MID", "ATTACK"];
 const MIN_TEAM_SIZE = 11;
 const MAX_TEAM_SIZE = 18;
+const ASSIGN_ROLES_FULL_ITER = 8000;
+const ASSIGN_ROLES_FAST_ITER = 600;
+const SWAP_REFINE_MAX_ROUNDS = 30;
 
 type FieldPlayer = Player & { primaryPosition: FieldPosition };
 type AssignedFieldPlayer = AssignedPlayer & { primaryPosition: FieldPosition };
@@ -34,42 +38,6 @@ function calcOverallScore(player: FieldPlayer): number {
   return player.attackScore + player.midScore + player.defenseScore + player.activityScore;
 }
 
-function pairAndSplit(players: FieldPlayer[]): { teamA: FieldPlayer[]; teamB: FieldPlayer[] } {
-  const sorted = [...players].sort((a, b) => {
-    const diff = calcOverallScore(b) - calcOverallScore(a);
-    if (diff !== 0) return diff;
-    return a.name.localeCompare(b.name, "ko");
-  });
-
-  const teamA: FieldPlayer[] = [];
-  const teamB: FieldPlayer[] = [];
-
-  for (let i = 0; i < sorted.length; i += 2) {
-    const stronger = sorted[i];
-    const weaker = sorted[i + 1];
-    const pairIndex = Math.floor(i / 2);
-
-    if (!weaker) {
-      const sumA = teamA.reduce((acc, player) => acc + calcOverallScore(player), 0);
-      const sumB = teamB.reduce((acc, player) => acc + calcOverallScore(player), 0);
-      if (sumA <= sumB) teamA.push(stronger);
-      else teamB.push(stronger);
-      continue;
-    }
-
-    const strongerToA = pairIndex % 2 === 0;
-    if (strongerToA) {
-      teamA.push(stronger);
-      teamB.push(weaker);
-    } else {
-      teamB.push(stronger);
-      teamA.push(weaker);
-    }
-  }
-
-  return { teamA, teamB };
-}
-
 function assignmentScore(player: FieldPlayer, group: PositionGroup): number {
   const primaryGroup = getPositionGroup(player.primaryPosition);
   const base = scoreForGroup(group, player);
@@ -86,7 +54,7 @@ function assignmentReason(player: FieldPlayer, group: PositionGroup): string {
   return "인원 균형을 위한 포지션 변경";
 }
 
-function assignRoles(players: FieldPlayer[], roleTargets: RoleTargets, iterations = 8000): AssignedFieldPlayer[] {
+function assignRoles(players: FieldPlayer[], roleTargets: RoleTargets, iterations: number): AssignedFieldPlayer[] {
   let best: AssignedFieldPlayer[] | null = null;
   let bestScore = Number.NEGATIVE_INFINITY;
 
@@ -177,6 +145,128 @@ function calcTeamScore(teamA: AssignedFieldPlayer[], teamB: AssignedFieldPlayer[
   };
 }
 
+function pairCostAtPrimary(teamA: FieldPlayer[], teamB: FieldPlayer[]): number {
+  const primarySum = (team: FieldPlayer[], group: PositionGroup, scoreFn: (player: FieldPlayer) => number) =>
+    team.filter((player) => getPositionGroup(player.primaryPosition) === group)
+      .reduce((acc, player) => acc + scoreFn(player), 0);
+  const aAtt = primarySum(teamA, "ATTACK", (p) => p.attackScore);
+  const aMid = primarySum(teamA, "MID", (p) => p.midScore);
+  const aDef = primarySum(teamA, "DEFENSE", (p) => p.defenseScore);
+  const aAct = teamA.reduce((acc, p) => acc + p.activityScore, 0);
+  const bAtt = primarySum(teamB, "ATTACK", (p) => p.attackScore);
+  const bMid = primarySum(teamB, "MID", (p) => p.midScore);
+  const bDef = primarySum(teamB, "DEFENSE", (p) => p.defenseScore);
+  const bAct = teamB.reduce((acc, p) => acc + p.activityScore, 0);
+  const aTotal = aAtt + aMid + aDef + aAct;
+  const bTotal = bAtt + bMid + bDef + bAct;
+  return (Math.abs(aAtt - bAtt) + Math.abs(aMid - bMid) + Math.abs(aDef - bDef)) * 5
+       + Math.abs(aAct - bAct) * 2
+       + Math.abs(aTotal - bTotal);
+}
+
+function pairByPosition(players: FieldPlayer[]): { teamA: FieldPlayer[]; teamB: FieldPlayer[] } {
+  const byGroup = new Map<PositionGroup, FieldPlayer[]>();
+  POSITION_GROUPS.forEach((g) => byGroup.set(g, []));
+  for (const player of players) {
+    byGroup.get(getPositionGroup(player.primaryPosition))!.push(player);
+  }
+  POSITION_GROUPS.forEach((g) => {
+    byGroup.get(g)!.sort((a, b) => {
+      const diff = calcOverallScore(b) - calcOverallScore(a);
+      if (diff !== 0) return diff;
+      return a.name.localeCompare(b.name, "ko");
+    });
+  });
+
+  const teamA: FieldPlayer[] = [];
+  const teamB: FieldPlayer[] = [];
+
+  for (const group of PAIRING_GROUP_ORDER) {
+    const pool = byGroup.get(group)!;
+    for (let i = 0; i < pool.length; i += 2) {
+      const stronger = pool[i];
+      const weaker = pool[i + 1];
+
+      if (!weaker) {
+        if (teamA.length < teamB.length) {
+          teamA.push(stronger);
+        } else if (teamB.length < teamA.length) {
+          teamB.push(stronger);
+        } else {
+          const costA = pairCostAtPrimary([...teamA, stronger], teamB);
+          const costB = pairCostAtPrimary(teamA, [...teamB, stronger]);
+          if (costA <= costB) teamA.push(stronger);
+          else teamB.push(stronger);
+        }
+        continue;
+      }
+
+      const cost1 = pairCostAtPrimary([...teamA, stronger], [...teamB, weaker]);
+      const cost2 = pairCostAtPrimary([...teamA, weaker], [...teamB, stronger]);
+      if (cost1 <= cost2) {
+        teamA.push(stronger);
+        teamB.push(weaker);
+      } else {
+        teamA.push(weaker);
+        teamB.push(stronger);
+      }
+    }
+  }
+
+  return { teamA, teamB };
+}
+
+type EvalResult = {
+  score: number;
+  assignedA: AssignedFieldPlayer[];
+  assignedB: AssignedFieldPlayer[];
+  summary: TeamBalanceSummary;
+};
+
+function evaluateSplit(teamA: FieldPlayer[], teamB: FieldPlayer[], iterations: number): EvalResult {
+  const targetsA = targetForTeamSize(teamA.length);
+  const targetsB = targetForTeamSize(teamB.length);
+  const assignedA = assignRoles(teamA, targetsA, iterations);
+  const assignedB = assignRoles(teamB, targetsB, iterations);
+  const summary = calcTeamScore(assignedA, assignedB);
+  return { score: summary.balanceScore, assignedA, assignedB, summary };
+}
+
+function refineWithSwaps(teamA: FieldPlayer[], teamB: FieldPlayer[]): { teamA: FieldPlayer[]; teamB: FieldPlayer[] } {
+  const a = [...teamA];
+  const b = [...teamB];
+
+  for (let round = 0; round < SWAP_REFINE_MAX_ROUNDS; round += 1) {
+    const baseline = evaluateSplit(a, b, ASSIGN_ROLES_FAST_ITER).score;
+    let bestImprovement = 0;
+    let bestSwap: [number, number] | null = null;
+
+    for (let i = 0; i < a.length; i += 1) {
+      for (let j = 0; j < b.length; j += 1) {
+        if (getPositionGroup(a[i].primaryPosition) !== getPositionGroup(b[j].primaryPosition)) continue;
+        const trialA = [...a];
+        const trialB = [...b];
+        trialA[i] = b[j];
+        trialB[j] = a[i];
+        const trialScore = evaluateSplit(trialA, trialB, ASSIGN_ROLES_FAST_ITER).score;
+        const improvement = baseline - trialScore;
+        if (improvement > bestImprovement) {
+          bestImprovement = improvement;
+          bestSwap = [i, j];
+        }
+      }
+    }
+
+    if (!bestSwap) break;
+    const [i, j] = bestSwap;
+    const tmp = a[i];
+    a[i] = b[j];
+    b[j] = tmp;
+  }
+
+  return { teamA: a, teamB: b };
+}
+
 export function balanceTeams(players: Player[]): TeamBalanceResult {
   if (players.length < MIN_TEAM_SIZE * 2 || players.length > MAX_TEAM_SIZE * 2) {
     throw new Error(`필드 참석자는 ${MIN_TEAM_SIZE * 2}명~${MAX_TEAM_SIZE * 2}명이어야 합니다. 현재 ${players.length}명입니다.`);
@@ -189,31 +279,28 @@ export function balanceTeams(players: Player[]): TeamBalanceResult {
 
   const fieldPlayers = players.filter(isFieldPlayer);
 
-  const { teamA: teamAPlayers, teamB: teamBPlayers } = pairAndSplit(fieldPlayers);
-  if (teamAPlayers.length > MAX_TEAM_SIZE || teamBPlayers.length < MIN_TEAM_SIZE) {
-    throw new Error(`한 팀은 ${MIN_TEAM_SIZE}명~${MAX_TEAM_SIZE}명이어야 합니다. 현재 A팀 ${teamAPlayers.length}명, B팀 ${teamBPlayers.length}명입니다.`);
+  const initial = pairByPosition(fieldPlayers);
+  if (initial.teamA.length < MIN_TEAM_SIZE || initial.teamA.length > MAX_TEAM_SIZE
+      || initial.teamB.length < MIN_TEAM_SIZE || initial.teamB.length > MAX_TEAM_SIZE) {
+    throw new Error(`한 팀은 ${MIN_TEAM_SIZE}명~${MAX_TEAM_SIZE}명이어야 합니다. 현재 A팀 ${initial.teamA.length}명, B팀 ${initial.teamB.length}명입니다.`);
   }
 
-  const teamATargets = targetForTeamSize(teamAPlayers.length);
-  const teamBTargets = targetForTeamSize(teamBPlayers.length);
-  const assignedA = assignRoles(teamAPlayers, teamATargets);
-  const assignedB = assignRoles(teamBPlayers, teamBTargets);
-
-  const summary = calcTeamScore(assignedA, assignedB);
+  const refined = refineWithSwaps(initial.teamA, initial.teamB);
+  const final = evaluateSplit(refined.teamA, refined.teamB, ASSIGN_ROLES_FULL_ITER);
 
   const warnings: string[] = [];
-  const overrides = [...assignedA, ...assignedB].filter((p) => p.isPositionOverride);
+  const overrides = [...final.assignedA, ...final.assignedB].filter((p) => p.isPositionOverride);
   if (overrides.length >= 6) warnings.push(`포지션 변경자가 ${overrides.length}명입니다. 역할 배정이 다소 억지일 수 있습니다.`);
-  if (summary.fieldGkA === 0 || summary.fieldGkB === 0) warnings.push("한 팀에 필드 GK 가능자가 없습니다. 전담 GK가 없거나 부족하면 문제가 될 수 있습니다.");
-  if (Math.abs(summary.activityA - summary.activityB) >= 8) warnings.push("팀별 활동량 차이가 큽니다.");
-  if (Math.abs(summary.guestA - summary.guestB) >= 5) warnings.push("정규 선수와 용병 비율이 한쪽으로 몰렸습니다.");
+  if (final.summary.fieldGkA === 0 || final.summary.fieldGkB === 0) warnings.push("한 팀에 필드 GK 가능자가 없습니다. 전담 GK가 없거나 부족하면 문제가 될 수 있습니다.");
+  if (Math.abs(final.summary.activityA - final.summary.activityB) >= 8) warnings.push("팀별 활동량 차이가 큽니다.");
+  if (Math.abs(final.summary.guestA - final.summary.guestB) >= 5) warnings.push("정규 선수와 용병 비율이 한쪽으로 몰렸습니다.");
 
   const quality: TeamBalanceResult["quality"] = warnings.length === 0 ? "좋음" : warnings.length <= 2 ? "주의" : "나쁨";
 
   return {
-    teamA: { name: "A", players: assignedA },
-    teamB: { name: "B", players: assignedB },
-    summary,
+    teamA: { name: "A", players: final.assignedA },
+    teamB: { name: "B", players: final.assignedB },
+    summary: final.summary,
     warnings,
     quality,
   };
