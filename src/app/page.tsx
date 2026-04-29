@@ -814,12 +814,12 @@ function TeamCard({
               <GroupBadge group={g} />
               <span className="text-xs font-bold text-slate-600">합계 {score}</span>
             </div>
-            <div className="mt-2 flex flex-wrap gap-1.5">
+            <div className="mt-1.5 grid grid-cols-5 gap-1">
               {players.filter((p) => p.assignedGroup === g).map((p) => {
                 const isSelected = selection?.team === team && selection.playerId === p.id;
                 const composite = p.attackScore + p.midScore + p.defenseScore + p.activityScore;
                 const isSwapHint = showSwapHints && selectedComposite != null && Math.abs(composite - selectedComposite) <= 3;
-                const baseClass = "rounded-xl px-2.5 py-1.5 text-left transition border";
+                const baseClass = "min-w-0 rounded-lg px-1 py-0.5 text-left transition border";
                 const stateClass = isSelected
                   ? "bg-blue-600 text-white shadow-md border-blue-700"
                   : isSwapHint
@@ -832,14 +832,14 @@ function TeamCard({
                   <button
                     key={p.id}
                     type="button"
-                    title={p.assignmentReason}
+                    title={`${p.assignmentReason} · 공${p.attackScore} 미${p.midScore} 수${p.defenseScore} 활${p.activityScore}`}
                     className={`${baseClass} ${stateClass}`}
                     disabled={!interactive}
                     onClick={() => onPlayerClick(team, p.id)}
                   >
-                    <div className="text-sm font-bold leading-tight">{p.name}{overrideMark(p.assignmentReason)}</div>
-                    <div className={`text-[10px] font-mono leading-tight ${statClass}`}>
-                      공{p.attackScore} 미{p.midScore} 수{p.defenseScore} 활{p.activityScore}
+                    <div className="truncate text-[11px] font-bold leading-tight">{p.name}{overrideMark(p.assignmentReason)}</div>
+                    <div className={`truncate font-mono text-[9px] leading-tight ${statClass}`}>
+                      {p.attackScore}/{p.midScore}/{p.defenseScore}/{p.activityScore}
                     </div>
                   </button>
                 );
