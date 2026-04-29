@@ -342,6 +342,39 @@ export function balanceTeams(players: Player[]): TeamBalanceResult {
   };
 }
 
+export function rebalanceTeams(teamAPlayers: Player[], teamBPlayers: Player[]): TeamBalanceResult {
+  const totalCount = teamAPlayers.length + teamBPlayers.length;
+  if (totalCount < MIN_TEAM_SIZE * 2 || totalCount > MAX_TEAM_SIZE * 2) {
+    throw new Error(`필드 참석자는 ${MIN_TEAM_SIZE * 2}명~${MAX_TEAM_SIZE * 2}명이어야 합니다. 현재 ${totalCount}명입니다.`);
+  }
+
+  const fieldA = teamAPlayers.filter(isFieldPlayer);
+  const fieldB = teamBPlayers.filter(isFieldPlayer);
+  if (fieldA.length < MIN_TEAM_SIZE || fieldA.length > MAX_TEAM_SIZE
+      || fieldB.length < MIN_TEAM_SIZE || fieldB.length > MAX_TEAM_SIZE) {
+    throw new Error(`한 팀은 ${MIN_TEAM_SIZE}명~${MAX_TEAM_SIZE}명이어야 합니다. 현재 A팀 ${fieldA.length}명, B팀 ${fieldB.length}명입니다.`);
+  }
+
+  const final = evaluateSplit(fieldA, fieldB);
+
+  const warnings: string[] = [];
+  const overrides = [...final.assignedA, ...final.assignedB].filter((p) => p.isPositionOverride);
+  if (overrides.length >= 6) warnings.push(`포지션 변경자가 ${overrides.length}명입니다. 역할 배정이 다소 억지일 수 있습니다.`);
+  if (final.summary.fieldGkA === 0 || final.summary.fieldGkB === 0) warnings.push("한 팀에 필드 GK 가능자가 없습니다. 전담 GK가 없거나 부족하면 문제가 될 수 있습니다.");
+  if (Math.abs(final.summary.activityA - final.summary.activityB) >= 8) warnings.push("팀별 활동량 차이가 큽니다.");
+  if (Math.abs(final.summary.guestA - final.summary.guestB) >= 5) warnings.push("정규 선수와 용병 비율이 한쪽으로 몰렸습니다.");
+
+  const quality: TeamBalanceResult["quality"] = warnings.length === 0 ? "좋음" : warnings.length <= 2 ? "주의" : "나쁨";
+
+  return {
+    teamA: { name: "A", players: final.assignedA },
+    teamB: { name: "B", players: final.assignedB },
+    summary: final.summary,
+    warnings,
+    quality,
+  };
+}
+
 export function playersByGroup(team: Team, group: PositionGroup): AssignedPlayer[] {
   return team.players.filter((player) => player.assignedGroup === group);
 }
