@@ -723,7 +723,7 @@ function TeamResultView({
       </div>
       {!confirmed && (
         <p className="mt-4 rounded-2xl bg-blue-50 px-4 py-3 text-sm text-blue-800">
-          선수를 한 명 누르면 선택되고, 다른 팀 선수를 누르면 자리를 바꿔요. 조정이 끝나면 위 <strong>팀 확정</strong> 버튼을 누르세요.
+          선수를 한 명 누르면 선택되고, 다른 팀 선수를 누르면 자리를 바꿔요. 조정이 끝나면 <strong>팀 확정</strong> 버튼을 누르세요.
         </p>
       )}
       {selection && (() => {
@@ -765,6 +765,13 @@ function TeamResultView({
         />
       </div>
       <p className="mt-4 text-xs text-slate-500"><span className="font-bold">*</span> 부포지션으로 배정된 선수 · <span className="font-bold">**</span> 인원 균형을 위해 주·부와 무관한 포지션으로 강제 배정된 선수</p>
+      <div className="mt-5 flex justify-end">
+        {confirmed ? (
+          <button className="w-full rounded-xl border border-slate-300 px-5 py-3 text-sm font-semibold sm:w-auto" onClick={onReadjust}>팀 다시 조정</button>
+        ) : (
+          <button className="w-full rounded-xl bg-emerald-600 px-5 py-3 text-base font-bold text-white sm:w-auto" onClick={onConfirm}>팀 확정 → 라인업 생성</button>
+        )}
+      </div>
     </section>
   );
 }
@@ -878,15 +885,15 @@ async function downloadElementAsImage(elem: HTMLElement, filename: string) {
 
 function PlayerChip({ name, accent }: { name: string; accent?: "gk" }) {
   const className = accent === "gk"
-    ? "rounded-full bg-amber-300 px-3 py-1 text-xs font-extrabold text-amber-950 shadow"
-    : "rounded-full bg-white px-3 py-1 text-xs font-extrabold text-slate-900 shadow";
+    ? "rounded-full bg-amber-300 px-3 py-1.5 text-sm font-extrabold text-amber-950 shadow whitespace-nowrap"
+    : "rounded-full bg-white px-3 py-1.5 text-sm font-extrabold text-slate-900 shadow whitespace-nowrap";
   return <span className={className}>{name}</span>;
 }
 
 function PlayerRow({ players }: { players: string[] }) {
   if (!players.length) return <div className="flex h-6" />;
   return (
-    <div className="flex flex-wrap items-center justify-around gap-1 px-2">
+    <div className="flex flex-wrap items-center justify-around gap-1.5 px-2">
       {players.map((name) => <PlayerChip key={name} name={name} />)}
     </div>
   );
@@ -909,13 +916,13 @@ function Pitch({ title, gk, attack, mid, defense, bench, accent = "emerald" }: {
         <p className="text-lg font-black">{title}</p>
         <span className="rounded-full bg-amber-300 px-3 py-1 text-xs font-extrabold text-amber-950">GK {gk}</span>
       </div>
-      <div className={`relative bg-gradient-to-b ${fieldClass} p-3`} style={{ aspectRatio: "3 / 4" }}>
+      <div className={`relative bg-gradient-to-b ${fieldClass} p-3`} style={{ aspectRatio: "5 / 4" }}>
         <div className="absolute inset-3 rounded-lg border-2 border-white/40" />
         <div className="absolute inset-x-3 top-1/2 h-px -translate-y-1/2 bg-white/40" />
-        <div className="absolute left-1/2 top-1/2 h-20 w-20 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white/40" />
-        <div className="absolute left-1/4 right-1/4 top-3 h-14 rounded-b-md border-2 border-t-0 border-white/40" />
-        <div className="absolute left-1/4 right-1/4 bottom-3 h-14 rounded-t-md border-2 border-b-0 border-white/40" />
-        <div className="relative flex h-full flex-col justify-around py-2">
+        <div className="absolute left-1/2 top-1/2 h-14 w-14 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white/40" />
+        <div className="absolute left-1/4 right-1/4 top-3 h-9 rounded-b-md border-2 border-t-0 border-white/40" />
+        <div className="absolute left-1/4 right-1/4 bottom-3 h-9 rounded-t-md border-2 border-b-0 border-white/40" />
+        <div className="relative flex h-full flex-col justify-around py-1">
           <PlayerRow players={attack} />
           <PlayerRow players={mid} />
           <PlayerRow players={defense} />
