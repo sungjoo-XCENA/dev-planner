@@ -814,7 +814,7 @@ function TeamCard({
               <GroupBadge group={g} />
               <span className="text-xs font-bold text-slate-600">합계 {score}</span>
             </div>
-            <div className="mt-1.5 grid grid-cols-5 gap-1">
+            <div className="mt-1.5 grid gap-1" style={{ gridTemplateColumns: `repeat(${players.filter((p) => p.assignedGroup === g).length}, minmax(0, 1fr))` }}>
               {players.filter((p) => p.assignedGroup === g).map((p) => {
                 const isSelected = selection?.team === team && selection.playerId === p.id;
                 const composite = p.attackScore + p.midScore + p.defenseScore + p.activityScore;
