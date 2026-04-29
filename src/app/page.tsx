@@ -826,7 +826,7 @@ function TeamCard({
                 const isSelected = selection?.team === team && selection.playerId === p.id;
                 const composite = p.attackScore + p.midScore + p.defenseScore + p.activityScore;
                 const isSwapHint = showSwapHints && selectedComposite != null && Math.abs(composite - selectedComposite) <= 3;
-                const baseClass = "min-w-0 rounded-lg px-1 py-0.5 text-left transition border";
+                const baseClass = "min-w-0 rounded-lg px-1 py-0.5 text-center transition border";
                 const stateClass = isSelected
                   ? "bg-blue-600 text-white shadow-md border-blue-700"
                   : isSwapHint
