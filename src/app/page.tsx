@@ -446,11 +446,17 @@ function MetricCard({ label, a, b }: { label: string; a: number; b: number }) {
 
 function TeamResultView({ result }: { result: TeamBalanceResult }) {
   const s = result.summary;
-  return <section className="mb-6 rounded-3xl bg-white p-6 shadow-sm"><div className="flex flex-wrap items-center gap-2"><h2 className="text-xl font-bold">팀 분배 결과</h2><span className="rounded-full bg-slate-900 px-3 py-1 text-xs font-bold text-white">{result.quality}</span></div>{result.warnings.length > 0 && <div className="mt-4"><MessageBox title="팀 경고" items={result.warnings} tone="warning" /></div>}<div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><MetricCard label="공격 점수" a={s.attackScoreA} b={s.attackScoreB} /><MetricCard label="미드 점수" a={s.midScoreA} b={s.midScoreB} /><MetricCard label="수비 점수" a={s.defenseScoreA} b={s.defenseScoreB} /><MetricCard label="활동량" a={s.activityA} b={s.activityB} /><MetricCard label="정규" a={s.regularA} b={s.regularB} /><MetricCard label="용병" a={s.guestA} b={s.guestB} /></div><div className="mt-6 grid gap-4 md:grid-cols-2"><TeamCard title="A팀" players={result.teamA.players} /><TeamCard title="B팀" players={result.teamB.players} /></div></section>;
+  return <section className="mb-6 rounded-3xl bg-white p-6 shadow-sm"><div className="flex flex-wrap items-center gap-2"><h2 className="text-xl font-bold">팀 분배 결과</h2><span className="rounded-full bg-slate-900 px-3 py-1 text-xs font-bold text-white">{result.quality}</span></div>{result.warnings.length > 0 && <div className="mt-4"><MessageBox title="팀 경고" items={result.warnings} tone="warning" /></div>}<div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><MetricCard label="공격 점수" a={s.attackScoreA} b={s.attackScoreB} /><MetricCard label="미드 점수" a={s.midScoreA} b={s.midScoreB} /><MetricCard label="수비 점수" a={s.defenseScoreA} b={s.defenseScoreB} /><MetricCard label="활동량" a={s.activityA} b={s.activityB} /><MetricCard label="정규" a={s.regularA} b={s.regularB} /><MetricCard label="용병" a={s.guestA} b={s.guestB} /></div><div className="mt-6 grid gap-4 md:grid-cols-2"><TeamCard title="A팀" players={result.teamA.players} /><TeamCard title="B팀" players={result.teamB.players} /></div><p className="mt-4 text-xs text-slate-500"><span className="font-bold">*</span> 부포지션으로 배정된 선수 · <span className="font-bold">**</span> 인원 균형을 위해 주·부와 무관한 포지션으로 강제 배정된 선수</p></section>;
+}
+
+function overrideMark(reason: string): string {
+  if (reason === "부포지션 그룹 배정") return "*";
+  if (reason === "인원 균형을 위한 포지션 변경") return "**";
+  return "";
 }
 
 function TeamCard({ title, players }: { title: string; players: TeamBalanceResult["teamA"]["players"] }) {
-  return <div className="rounded-2xl border border-slate-200 p-4"><h3 className="font-bold">{title}</h3>{(["ATTACK", "MID", "DEFENSE"] as PositionGroup[]).map((g) => <div key={g} className="mt-4"><GroupBadge group={g} /><div className="mt-2 flex flex-wrap gap-2">{players.filter((p) => p.assignedGroup === g).map((p) => <span key={p.id} className="rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-700">{p.name}{p.isPositionOverride ? "*" : ""}</span>)}</div></div>)}</div>;
+  return <div className="rounded-2xl border border-slate-200 p-4"><h3 className="font-bold">{title}</h3>{(["ATTACK", "MID", "DEFENSE"] as PositionGroup[]).map((g) => <div key={g} className="mt-4"><GroupBadge group={g} /><div className="mt-2 flex flex-wrap gap-2">{players.filter((p) => p.assignedGroup === g).map((p) => <span key={p.id} title={p.assignmentReason} className="rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-700">{p.name}{overrideMark(p.assignmentReason)}</span>)}</div></div>)}</div>;
 }
 
 function LineupResultView({ result }: { result: LineupResult }) {
