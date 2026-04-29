@@ -714,7 +714,7 @@ function TeamResultView({
       </div>
       {!confirmed && (
         <p className="mt-4 rounded-2xl bg-blue-50 px-4 py-3 text-sm text-blue-800">
-          선수를 한 명 누르면 선택되고, 다른 팀 선수를 누르면 자리를 바꿔요. 조정이 끝나면 <strong>팀 확정</strong> 버튼을 누르세요.
+          선수를 한 명 누르면 선택되고, 다른 팀 선수를 누르면 자리를 바꿔요. <span className="rounded-md bg-amber-100 px-1.5 py-0.5 text-amber-900">노란 테두리</span>는 종합 점수(공+미+수+활)가 ±3 이내라 swap해도 균형이 잘 유지되는 후보예요. 조정이 끝나면 <strong>팀 확정</strong> 버튼을 누르세요.
         </p>
       )}
       {selection && (() => {
