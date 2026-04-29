@@ -6,7 +6,7 @@ const POSITION_GROUPS: PositionGroup[] = ["ATTACK", "MID", "DEFENSE"];
 const PAIRING_GROUP_ORDER: PositionGroup[] = ["DEFENSE", "MID", "ATTACK"];
 const MIN_TEAM_SIZE = 11;
 const MAX_TEAM_SIZE = 18;
-const SWAP_REFINE_MAX_ROUNDS = 30;
+const PAIR_FLIP_MAX_ROUNDS = 30;
 
 type FieldPlayer = Player & { primaryPosition: FieldPosition };
 type AssignedFieldPlayer = AssignedPlayer & { primaryPosition: FieldPosition };
@@ -23,17 +23,30 @@ function targetForTeamSize(size: number): RoleTargets {
   return { ATTACK: attack, MID: mid, DEFENSE: defense };
 }
 
-function calcOverallScore(player: FieldPlayer): number {
+function compositeScore(player: FieldPlayer): number {
   return player.attackScore + player.midScore + player.defenseScore + player.activityScore;
 }
 
-function assignmentScore(player: FieldPlayer, group: PositionGroup): number {
-  const primaryGroup = getPositionGroup(player.primaryPosition);
-  const base = scoreForGroup(group, player);
-  const primaryBonus = primaryGroup === group ? 2 : 0;
-  const secondaryBonus = hasGroup(player.secondaryPositions, group) ? 1 : 0;
-  const unrelatedPenalty = primaryGroup !== group && secondaryBonus === 0 ? -1 : 0;
-  return base + primaryBonus + secondaryBonus + unrelatedPenalty;
+function groupActivityScore(player: FieldPlayer, group: PositionGroup): number {
+  return scoreForGroup(group, player) + player.activityScore;
+}
+
+function comparePlayersForPair(group: PositionGroup, a: FieldPlayer, b: FieldPlayer): number {
+  const metricDiff = groupActivityScore(b, group) - groupActivityScore(a, group);
+  if (metricDiff !== 0) return metricDiff;
+  const compositeDiff = compositeScore(b) - compositeScore(a);
+  if (compositeDiff !== 0) return compositeDiff;
+  return a.name.localeCompare(b.name, "ko");
+}
+
+function compareSurplusForRelocation(a: FieldPlayer, b: FieldPlayer): number {
+  const aGroup = getPositionGroup(a.primaryPosition);
+  const bGroup = getPositionGroup(b.primaryPosition);
+  const metricDiff = groupActivityScore(a, aGroup) - groupActivityScore(b, bGroup);
+  if (metricDiff !== 0) return metricDiff;
+  const compositeDiff = compositeScore(a) - compositeScore(b);
+  if (compositeDiff !== 0) return compositeDiff;
+  return a.name.localeCompare(b.name, "ko");
 }
 
 function assignmentReason(player: FieldPlayer, group: PositionGroup): string {
@@ -43,51 +56,64 @@ function assignmentReason(player: FieldPlayer, group: PositionGroup): string {
   return "인원 균형을 위한 포지션 변경";
 }
 
-function maxAssignmentScore(player: FieldPlayer): number {
-  return Math.max(...POSITION_GROUPS.map((group) => assignmentScore(player, group)));
-}
-
-function groupTiebreakRank(player: FieldPlayer, group: PositionGroup): number {
-  const primary = getPositionGroup(player.primaryPosition);
-  if (group === primary) return 0;
-  if (hasGroup(player.secondaryPositions, group)) return 1;
-  return 2;
-}
-
 function assignRoles(players: FieldPlayer[], roleTargets: RoleTargets): AssignedFieldPlayer[] {
-  const ordered = [...players].sort((a, b) => {
-    const diff = maxAssignmentScore(b) - maxAssignmentScore(a);
-    if (diff !== 0) return diff;
-    return a.name.localeCompare(b.name, "ko");
+  const byPrimary = new Map<PositionGroup, FieldPlayer[]>();
+  POSITION_GROUPS.forEach((group) => byPrimary.set(group, []));
+  for (const player of players) {
+    byPrimary.get(getPositionGroup(player.primaryPosition))!.push(player);
+  }
+
+  POSITION_GROUPS.forEach((group) => {
+    byPrimary.get(group)!.sort((a, b) => comparePlayersForPair(group, a, b));
   });
 
   const counts: RoleTargets = { ATTACK: 0, MID: 0, DEFENSE: 0 };
-  const assigned: AssignedFieldPlayer[] = [];
+  const groupOf = new Map<string, PositionGroup>();
+  const surplus: FieldPlayer[] = [];
 
-  for (const player of ordered) {
-    const available = POSITION_GROUPS.filter((group) => counts[group] < roleTargets[group]);
-    if (available.length === 0) continue;
-    available.sort((a, b) => {
-      const diff = assignmentScore(player, b) - assignmentScore(player, a);
-      if (diff !== 0) return diff;
-      return groupTiebreakRank(player, a) - groupTiebreakRank(player, b);
+  for (const group of POSITION_GROUPS) {
+    const pool = byPrimary.get(group)!;
+    const target = roleTargets[group];
+    pool.slice(0, target).forEach((player) => {
+      groupOf.set(player.id, group);
+      counts[group] += 1;
     });
-    const selected = available[0];
-    counts[selected] += 1;
-    const primaryGroup = getPositionGroup(player.primaryPosition);
-    assigned.push({
-      ...player,
-      assignedGroup: selected,
-      assignmentReason: assignmentReason(player, selected),
-      isPositionOverride: primaryGroup !== selected,
-    });
+    pool.slice(target).forEach((player) => surplus.push(player));
   }
 
-  if (assigned.length !== players.length || POSITION_GROUPS.some((group) => counts[group] !== roleTargets[group])) {
+  surplus.sort(compareSurplusForRelocation);
+
+  for (const player of surplus) {
+    const deficits = POSITION_GROUPS.filter((group) => counts[group] < roleTargets[group]);
+    if (deficits.length === 0) {
+      throw new Error("역할 배정에 실패했습니다.");
+    }
+    deficits.sort((a, b) => {
+      const scoreDiff = scoreForGroup(b, player) - scoreForGroup(a, player);
+      if (scoreDiff !== 0) return scoreDiff;
+      return (roleTargets[b] - counts[b]) - (roleTargets[a] - counts[a]);
+    });
+    const target = deficits[0];
+    groupOf.set(player.id, target);
+    counts[target] += 1;
+  }
+
+  if (POSITION_GROUPS.some((group) => counts[group] !== roleTargets[group])) {
     throw new Error("역할 배정에 실패했습니다.");
   }
 
-  return assigned;
+  return players.map((player) => {
+    const group = groupOf.get(player.id);
+    if (!group) {
+      throw new Error("역할 배정에 실패했습니다.");
+    }
+    return {
+      ...player,
+      assignedGroup: group,
+      assignmentReason: assignmentReason(player, group),
+      isPositionOverride: getPositionGroup(player.primaryPosition) !== group,
+    };
+  });
 }
 
 function calcTeamScore(teamA: AssignedFieldPlayer[], teamB: AssignedFieldPlayer[]): TeamBalanceSummary {
@@ -140,7 +166,7 @@ function calcTeamScore(teamA: AssignedFieldPlayer[], teamB: AssignedFieldPlayer[
   };
 }
 
-function pairCostAtPrimary(teamA: FieldPlayer[], teamB: FieldPlayer[]): number {
+function pairCostByPrimary(teamA: FieldPlayer[], teamB: FieldPlayer[]): number {
   const primarySum = (team: FieldPlayer[], group: PositionGroup, scoreFn: (player: FieldPlayer) => number) =>
     team.filter((player) => getPositionGroup(player.primaryPosition) === group)
       .reduce((acc, player) => acc + scoreFn(player), 0);
@@ -159,22 +185,25 @@ function pairCostAtPrimary(teamA: FieldPlayer[], teamB: FieldPlayer[]): number {
        + Math.abs(aTotal - bTotal);
 }
 
-function pairByPosition(players: FieldPlayer[]): { teamA: FieldPlayer[]; teamB: FieldPlayer[] } {
+type PairAndSplitResult = {
+  teamA: FieldPlayer[];
+  teamB: FieldPlayer[];
+  partnerById: Map<string, string>;
+};
+
+function pairByPosition(players: FieldPlayer[]): PairAndSplitResult {
   const byGroup = new Map<PositionGroup, FieldPlayer[]>();
   POSITION_GROUPS.forEach((g) => byGroup.set(g, []));
   for (const player of players) {
     byGroup.get(getPositionGroup(player.primaryPosition))!.push(player);
   }
-  POSITION_GROUPS.forEach((g) => {
-    byGroup.get(g)!.sort((a, b) => {
-      const diff = calcOverallScore(b) - calcOverallScore(a);
-      if (diff !== 0) return diff;
-      return a.name.localeCompare(b.name, "ko");
-    });
+  POSITION_GROUPS.forEach((group) => {
+    byGroup.get(group)!.sort((a, b) => comparePlayersForPair(group, a, b));
   });
 
   const teamA: FieldPlayer[] = [];
   const teamB: FieldPlayer[] = [];
+  const partnerById = new Map<string, string>();
 
   for (const group of PAIRING_GROUP_ORDER) {
     const pool = byGroup.get(group)!;
@@ -188,16 +217,16 @@ function pairByPosition(players: FieldPlayer[]): { teamA: FieldPlayer[]; teamB: 
         } else if (teamB.length < teamA.length) {
           teamB.push(stronger);
         } else {
-          const costA = pairCostAtPrimary([...teamA, stronger], teamB);
-          const costB = pairCostAtPrimary(teamA, [...teamB, stronger]);
+          const costA = pairCostByPrimary([...teamA, stronger], teamB);
+          const costB = pairCostByPrimary(teamA, [...teamB, stronger]);
           if (costA <= costB) teamA.push(stronger);
           else teamB.push(stronger);
         }
         continue;
       }
 
-      const cost1 = pairCostAtPrimary([...teamA, stronger], [...teamB, weaker]);
-      const cost2 = pairCostAtPrimary([...teamA, weaker], [...teamB, stronger]);
+      const cost1 = pairCostByPrimary([...teamA, stronger], [...teamB, weaker]);
+      const cost2 = pairCostByPrimary([...teamA, weaker], [...teamB, stronger]);
       if (cost1 <= cost2) {
         teamA.push(stronger);
         teamB.push(weaker);
@@ -205,10 +234,12 @@ function pairByPosition(players: FieldPlayer[]): { teamA: FieldPlayer[]; teamB: 
         teamA.push(weaker);
         teamB.push(stronger);
       }
+      partnerById.set(stronger.id, weaker.id);
+      partnerById.set(weaker.id, stronger.id);
     }
   }
 
-  return { teamA, teamB };
+  return { teamA, teamB, partnerById };
 }
 
 type EvalResult = {
@@ -227,36 +258,46 @@ function evaluateSplit(teamA: FieldPlayer[], teamB: FieldPlayer[]): EvalResult {
   return { score: summary.balanceScore, assignedA, assignedB, summary };
 }
 
-function refineWithSwaps(teamA: FieldPlayer[], teamB: FieldPlayer[]): { teamA: FieldPlayer[]; teamB: FieldPlayer[] } {
+function refineByPairFlip(
+  teamA: FieldPlayer[],
+  teamB: FieldPlayer[],
+  partnerById: Map<string, string>,
+): { teamA: FieldPlayer[]; teamB: FieldPlayer[] } {
   const a = [...teamA];
   const b = [...teamB];
 
-  for (let round = 0; round < SWAP_REFINE_MAX_ROUNDS; round += 1) {
+  for (let round = 0; round < PAIR_FLIP_MAX_ROUNDS; round += 1) {
     const baseline = evaluateSplit(a, b).score;
     let bestImprovement = 0;
-    let bestSwap: [number, number] | null = null;
+    let bestFlip: { aIndex: number; bIndex: number } | null = null;
+    const visited = new Set<string>();
 
     for (let i = 0; i < a.length; i += 1) {
-      for (let j = 0; j < b.length; j += 1) {
-        if (getPositionGroup(a[i].primaryPosition) !== getPositionGroup(b[j].primaryPosition)) continue;
-        const trialA = [...a];
-        const trialB = [...b];
-        trialA[i] = b[j];
-        trialB[j] = a[i];
-        const trialScore = evaluateSplit(trialA, trialB).score;
-        const improvement = baseline - trialScore;
-        if (improvement > bestImprovement) {
-          bestImprovement = improvement;
-          bestSwap = [i, j];
-        }
+      const player = a[i];
+      const partnerId = partnerById.get(player.id);
+      if (!partnerId || visited.has(player.id)) continue;
+      const j = b.findIndex((other) => other.id === partnerId);
+      if (j < 0) continue;
+      visited.add(player.id);
+      visited.add(partnerId);
+
+      const trialA = [...a];
+      const trialB = [...b];
+      trialA[i] = b[j];
+      trialB[j] = a[i];
+      const trialScore = evaluateSplit(trialA, trialB).score;
+      const improvement = baseline - trialScore;
+      if (improvement > bestImprovement) {
+        bestImprovement = improvement;
+        bestFlip = { aIndex: i, bIndex: j };
       }
     }
 
-    if (!bestSwap) break;
-    const [i, j] = bestSwap;
-    const tmp = a[i];
-    a[i] = b[j];
-    b[j] = tmp;
+    if (!bestFlip) break;
+    const { aIndex, bIndex } = bestFlip;
+    const tmp = a[aIndex];
+    a[aIndex] = b[bIndex];
+    b[bIndex] = tmp;
   }
 
   return { teamA: a, teamB: b };
@@ -280,7 +321,7 @@ export function balanceTeams(players: Player[]): TeamBalanceResult {
     throw new Error(`한 팀은 ${MIN_TEAM_SIZE}명~${MAX_TEAM_SIZE}명이어야 합니다. 현재 A팀 ${initial.teamA.length}명, B팀 ${initial.teamB.length}명입니다.`);
   }
 
-  const refined = refineWithSwaps(initial.teamA, initial.teamB);
+  const refined = refineByPairFlip(initial.teamA, initial.teamB, initial.partnerById);
   const final = evaluateSplit(refined.teamA, refined.teamB);
 
   const warnings: string[] = [];
