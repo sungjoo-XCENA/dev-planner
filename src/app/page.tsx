@@ -7,7 +7,7 @@ import type { TeamBalanceResult } from "@/types/team";
 import { appConfig } from "@/config/appConfig";
 import { loadPlayersFromCsv } from "@/lib/loadPlayersFromCsv";
 import { POSITIONS, getPositionGroup, hasGroup } from "@/lib/positions";
-import { balanceTeams, rebalanceTeams, summarizeTeams } from "@/lib/teamBalancer";
+import { balanceTeams, summarizeTeams } from "@/lib/teamBalancer";
 import { generateLineups } from "@/lib/lineupGenerator";
 import { planMatchLineup, type MatchPlanResult, type MatchSelection, type MatchQuarterLimits } from "@/lib/matchPlanner";
 import { clearStoredAll, loadStored, saveStored } from "@/lib/persistedState";
@@ -374,10 +374,27 @@ export default function Home() {
       setSwapSelection(null);
       return;
     }
-    const newA = teamAPlayers.map((p) => (p.id === aPlayer.id ? bPlayer : p));
-    const newB = teamBPlayers.map((p) => (p.id === bPlayer.id ? aPlayer : p));
+    const reassign = <T extends { primaryPosition: Player["primaryPosition"]; secondaryPositions: FieldPosition[] }>(p: T, newGroup: PositionGroup): T & { assignedGroup: PositionGroup; assignmentReason: string; isPositionOverride: boolean } => {
+      if (p.primaryPosition === "GK") {
+        return { ...p, assignedGroup: newGroup, assignmentReason: "주포지션 그룹 배정", isPositionOverride: false };
+      }
+      const primaryGroup = getPositionGroup(p.primaryPosition);
+      const reason = primaryGroup === newGroup
+        ? "주포지션 그룹 배정"
+        : hasGroup(p.secondaryPositions, newGroup)
+          ? "부포지션 그룹 배정"
+          : "인원 균형을 위한 포지션 변경";
+      return {
+        ...p,
+        assignedGroup: newGroup,
+        assignmentReason: reason,
+        isPositionOverride: primaryGroup !== newGroup,
+      };
+    };
+    const newA = teamAPlayers.map((p) => (p.id === aPlayer.id ? reassign(bPlayer, aPlayer.assignedGroup) : p));
+    const newB = teamBPlayers.map((p) => (p.id === bPlayer.id ? reassign(aPlayer, bPlayer.assignedGroup) : p));
     try {
-      const next = rebalanceTeams(newA, newB);
+      const next = summarizeTeams(newA, newB);
       setTeamResult(next);
       setSwapSelection(null);
     } catch (error) {
@@ -709,34 +726,42 @@ function TeamResultView({
           선수를 한 명 누르면 선택되고, 다른 팀 선수를 누르면 자리를 바꿔요. 조정이 끝나면 위 <strong>팀 확정</strong> 버튼을 누르세요.
         </p>
       )}
-      <div className="mt-6 grid gap-4 md:grid-cols-2">
+      {selection && (() => {
+        const sourcePlayers = selection.team === "A" ? result.teamA.players : result.teamB.players;
+        const sel = sourcePlayers.find((p) => p.id === selection.playerId);
+        if (!sel) return null;
+        const composite = sel.attackScore + sel.midScore + sel.defenseScore + sel.activityScore;
+        const secondary = sel.secondaryPositions.length > 0 ? sel.secondaryPositions.join(",") : "-";
+        return (
+          <div className="mt-4 flex flex-col gap-2 rounded-2xl border border-blue-200 bg-blue-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm font-bold text-blue-900">선택: {selection.team}팀 · {sel.name}</p>
+              <p className="text-xs text-blue-800">주포 {sel.primaryPosition} · 부포 {secondary} · 종합 {composite}</p>
+            </div>
+            <p className="text-xs font-mono text-blue-900">공 {sel.attackScore} · 미 {sel.midScore} · 수 {sel.defenseScore} · 활 {sel.activityScore}</p>
+          </div>
+        );
+      })()}
+      <div className="mt-4 grid gap-4 md:grid-cols-2">
         <TeamCard
           title="A팀"
           players={result.teamA.players}
           team="A"
           selection={selection}
+          otherTeamPlayers={result.teamB.players}
           onPlayerClick={onPlayerClick}
           interactive={!confirmed}
           groupScores={{ ATTACK: s.attackScoreA, MID: s.midScoreA, DEFENSE: s.defenseScoreA }}
-          groupMax={{
-            ATTACK: Math.max(s.attackScoreA, s.attackScoreB),
-            MID: Math.max(s.midScoreA, s.midScoreB),
-            DEFENSE: Math.max(s.defenseScoreA, s.defenseScoreB),
-          }}
         />
         <TeamCard
           title="B팀"
           players={result.teamB.players}
           team="B"
           selection={selection}
+          otherTeamPlayers={result.teamA.players}
           onPlayerClick={onPlayerClick}
           interactive={!confirmed}
           groupScores={{ ATTACK: s.attackScoreB, MID: s.midScoreB, DEFENSE: s.defenseScoreB }}
-          groupMax={{
-            ATTACK: Math.max(s.attackScoreA, s.attackScoreB),
-            MID: Math.max(s.midScoreA, s.midScoreB),
-            DEFENSE: Math.max(s.defenseScoreA, s.defenseScoreB),
-          }}
         />
       </div>
       <p className="mt-4 text-xs text-slate-500"><span className="font-bold">*</span> 부포지션으로 배정된 선수 · <span className="font-bold">**</span> 인원 균형을 위해 주·부와 무관한 포지션으로 강제 배정된 선수</p>
@@ -750,63 +775,72 @@ function overrideMark(reason: string): string {
   return "";
 }
 
-function gradientForScore(score: number, max: number): string {
-  if (max <= 0) return "rgba(96, 165, 250, 0.1)";
-  const ratio = Math.min(1, score / max);
-  const opacity = 0.12 + ratio * 0.5;
-  return `rgba(96, 165, 250, ${opacity.toFixed(3)})`;
-}
-
 function TeamCard({
   title,
   players,
   team,
   selection,
+  otherTeamPlayers,
   onPlayerClick,
   interactive,
   groupScores,
-  groupMax,
 }: {
   title: string;
   players: TeamBalanceResult["teamA"]["players"];
   team: "A" | "B";
   selection: SwapSelection;
+  otherTeamPlayers: TeamBalanceResult["teamA"]["players"];
   onPlayerClick: (team: "A" | "B", playerId: string) => void;
   interactive: boolean;
   groupScores: Record<PositionGroup, number>;
-  groupMax: Record<PositionGroup, number>;
 }) {
+  const selectedPlayer = selection
+    ? (selection.team === team
+        ? players.find((p) => p.id === selection.playerId)
+        : otherTeamPlayers.find((p) => p.id === selection.playerId))
+    : undefined;
+  const selectedComposite = selectedPlayer
+    ? selectedPlayer.attackScore + selectedPlayer.midScore + selectedPlayer.defenseScore + selectedPlayer.activityScore
+    : null;
+  const showSwapHints = selection != null && selection.team !== team;
   return (
     <div className="rounded-2xl border border-slate-200 p-4">
       <h3 className="font-bold">{title}</h3>
       {(["ATTACK", "MID", "DEFENSE"] as PositionGroup[]).map((g) => {
         const score = groupScores[g];
-        const max = groupMax[g];
-        const bg = gradientForScore(score, max);
         return (
-          <div key={g} className="mt-3 rounded-xl p-3" style={{ backgroundColor: bg }}>
+          <div key={g} className="mt-3">
             <div className="flex items-center justify-between">
               <GroupBadge group={g} />
-              <span className="text-xs font-bold text-slate-700">합계 {score}</span>
+              <span className="text-xs font-bold text-slate-600">합계 {score}</span>
             </div>
-            <div className="mt-2 flex flex-wrap gap-2">
+            <div className="mt-2 flex flex-wrap gap-1.5">
               {players.filter((p) => p.assignedGroup === g).map((p) => {
                 const isSelected = selection?.team === team && selection.playerId === p.id;
-                const className = isSelected
-                  ? "rounded-full bg-blue-600 px-3 py-1 text-sm font-semibold text-white shadow"
-                  : interactive
-                    ? "rounded-full bg-white/80 px-3 py-1 text-sm font-semibold text-slate-700 hover:bg-blue-100 cursor-pointer"
-                    : "rounded-full bg-white/80 px-3 py-1 text-sm font-semibold text-slate-700";
+                const composite = p.attackScore + p.midScore + p.defenseScore + p.activityScore;
+                const isSwapHint = showSwapHints && selectedComposite != null && Math.abs(composite - selectedComposite) <= 3;
+                const baseClass = "rounded-xl px-2.5 py-1.5 text-left transition border";
+                const stateClass = isSelected
+                  ? "bg-blue-600 text-white shadow-md border-blue-700"
+                  : isSwapHint
+                    ? "bg-amber-50 text-slate-700 border-amber-300 hover:bg-amber-100 cursor-pointer"
+                    : interactive
+                      ? "bg-slate-50 text-slate-700 border-transparent hover:bg-blue-50 cursor-pointer"
+                      : "bg-slate-50 text-slate-700 border-transparent";
+                const statClass = isSelected ? "text-blue-100" : "text-slate-500";
                 return (
                   <button
                     key={p.id}
                     type="button"
                     title={p.assignmentReason}
-                    className={className}
+                    className={`${baseClass} ${stateClass}`}
                     disabled={!interactive}
                     onClick={() => onPlayerClick(team, p.id)}
                   >
-                    {p.name}{overrideMark(p.assignmentReason)}
+                    <div className="text-sm font-bold leading-tight">{p.name}{overrideMark(p.assignmentReason)}</div>
+                    <div className={`text-[10px] font-mono leading-tight ${statClass}`}>
+                      공{p.attackScore} 미{p.midScore} 수{p.defenseScore} 활{p.activityScore}
+                    </div>
                   </button>
                 );
               })}
