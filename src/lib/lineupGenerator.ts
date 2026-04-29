@@ -5,18 +5,21 @@ import { playersByGroup } from "./teamBalancer";
 
 const QUARTERS: Quarter[] = [1, 2, 3, 4];
 const MAX_DEDICATED_GK_AUTO_ASSIGN = 2;
-const FIELD_PLAYERS_PER_TEAM = 11;
+const OUTFIELD_PER_TEAM = 10;
+const ON_PITCH_PER_TEAM = 11;
 
-function buildRestPlan(team: Team): Record<Quarter, Set<string>> {
-  const restCountPerQuarter = Math.max(0, team.players.length - FIELD_PLAYERS_PER_TEAM);
+function teamEngagement(hasDedicatedGk: boolean): number {
+  return hasDedicatedGk ? OUTFIELD_PER_TEAM : ON_PITCH_PER_TEAM;
+}
+
+function buildRestPlan(team: Team, engagementByQuarter: Record<Quarter, number>): Record<Quarter, Set<string>> {
   const result: Record<Quarter, Set<string>> = {
     1: new Set<string>(),
     2: new Set<string>(),
     3: new Set<string>(),
     4: new Set<string>(),
   };
-
-  if (restCountPerQuarter === 0) return result;
+  if (team.players.length === 0) return result;
 
   const pool = [...team.players].sort((a, b) => {
     const scoreA = a.activityScore + (a.canGk ? 0.5 : 0);
@@ -27,6 +30,8 @@ function buildRestPlan(team: Team): Record<Quarter, Set<string>> {
 
   const restCounts = new Map<string, number>();
   for (const quarter of QUARTERS) {
+    const restCountPerQuarter = Math.max(0, team.players.length - engagementByQuarter[quarter]);
+    if (restCountPerQuarter === 0) continue;
     const selected = [...pool]
       .sort((a, b) => {
         const countDiff = (restCounts.get(a.id) ?? 0) - (restCounts.get(b.id) ?? 0);
@@ -55,46 +60,55 @@ function dedicatedGkFor(team: TeamName, quarter: Quarter, dedicatedGks: Dedicate
   return firstToA ? dedicatedGks[1] : dedicatedGks[0];
 }
 
-function groupFieldNames(team: Team, group: PositionGroup, restingIds: Set<string>): string[] {
+function groupFieldNames(team: Team, group: PositionGroup, excludedIds: Set<string>): string[] {
   return playersByGroup(team, group)
-    .filter((player) => !restingIds.has(player.id))
+    .filter((player) => !excludedIds.has(player.id))
     .map((player) => player.name);
 }
 
-function chooseFieldGk(restingPlayers: AssignedPlayer[], teamPlayers: AssignedPlayer[], gkUseCount: Map<string, number>): AssignedPlayer | null {
-  const restingCandidate = [...restingPlayers]
-    .filter((player) => player.canGk)
-    .sort((a, b) => (gkUseCount.get(a.id) ?? 0) - (gkUseCount.get(b.id) ?? 0))[0];
-  if (restingCandidate) return restingCandidate;
-
-  return [...teamPlayers]
+function chooseFieldGk(onPitchPlayers: AssignedPlayer[], gkUseCount: Map<string, number>): AssignedPlayer | null {
+  return [...onPitchPlayers]
     .filter((player) => player.canGk)
     .sort((a, b) => (gkUseCount.get(a.id) ?? 0) - (gkUseCount.get(b.id) ?? 0))[0] ?? null;
 }
 
 function lineupForTeam(team: Team, dedicatedGks: DedicatedGoalkeeper[]) {
-  const restPlan = buildRestPlan(team);
+  const dedicatedSlice = dedicatedGks.slice(0, MAX_DEDICATED_GK_AUTO_ASSIGN);
+  const dedicatedByQuarter: Record<Quarter, DedicatedGoalkeeper | null> = {
+    1: dedicatedGkFor(team.name, 1, dedicatedSlice),
+    2: dedicatedGkFor(team.name, 2, dedicatedSlice),
+    3: dedicatedGkFor(team.name, 3, dedicatedSlice),
+    4: dedicatedGkFor(team.name, 4, dedicatedSlice),
+  };
+  const engagementByQuarter: Record<Quarter, number> = {
+    1: teamEngagement(!!dedicatedByQuarter[1]),
+    2: teamEngagement(!!dedicatedByQuarter[2]),
+    3: teamEngagement(!!dedicatedByQuarter[3]),
+    4: teamEngagement(!!dedicatedByQuarter[4]),
+  };
+  const restPlan = buildRestPlan(team, engagementByQuarter);
   const warnings: string[] = [];
   const quarters: TeamQuarterLineup[] = [];
   const rotation: Record<string, string[]> = {};
   const gkUseCount = new Map<string, number>();
 
   for (const quarter of QUARTERS) {
-    const dedicated = dedicatedGkFor(team.name, quarter, dedicatedGks.slice(0, MAX_DEDICATED_GK_AUTO_ASSIGN));
+    const dedicated = dedicatedByQuarter[quarter];
     const restingIds = restPlan[quarter];
     const restingPlayers = team.players.filter((player) => restingIds.has(player.id));
+    const onPitchPlayers = team.players.filter((player) => !restingIds.has(player.id));
+    const fieldExcludeIds = new Set<string>(restingIds);
     let gkName = "";
-    let bench = restingPlayers.map((player) => player.name);
 
     if (dedicated) {
       gkName = dedicated.name;
       rotation[dedicated.name] = [...(rotation[dedicated.name] ?? []), `${quarter}Q ${team.name}팀`];
     } else {
-      const gkCandidate = chooseFieldGk(restingPlayers, team.players, gkUseCount);
+      const gkCandidate = chooseFieldGk(onPitchPlayers, gkUseCount);
       if (gkCandidate) {
         gkName = gkCandidate.name;
         gkUseCount.set(gkCandidate.id, (gkUseCount.get(gkCandidate.id) ?? 0) + 1);
-        bench = restingPlayers.filter((player) => player.id !== gkCandidate.id).map((player) => player.name);
+        fieldExcludeIds.add(gkCandidate.id);
       } else {
         gkName = "없음";
         warnings.push(`${team.name}팀 ${quarter}Q GK 배정 필요`);
@@ -104,11 +118,11 @@ function lineupForTeam(team: Team, dedicatedGks: DedicatedGoalkeeper[]) {
     quarters.push({
       quarter,
       team: team.name,
-      attack: groupFieldNames(team, "ATTACK", restingIds),
-      mid: groupFieldNames(team, "MID", restingIds),
-      defense: groupFieldNames(team, "DEFENSE", restingIds),
+      attack: groupFieldNames(team, "ATTACK", fieldExcludeIds),
+      mid: groupFieldNames(team, "MID", fieldExcludeIds),
+      defense: groupFieldNames(team, "DEFENSE", fieldExcludeIds),
       gk: gkName,
-      bench,
+      bench: restingPlayers.map((player) => player.name),
       warnings: gkName === "없음" ? [`${team.name}팀 ${quarter}Q GK 배정 필요`] : [],
     });
   }
