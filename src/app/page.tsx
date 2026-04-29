@@ -733,12 +733,14 @@ function TeamResultView({
         const composite = sel.attackScore + sel.midScore + sel.defenseScore + sel.activityScore;
         const secondary = sel.secondaryPositions.length > 0 ? sel.secondaryPositions.join(",") : "-";
         return (
-          <div className="mt-4 flex flex-col gap-2 rounded-2xl border border-blue-200 bg-blue-50 p-4 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <p className="text-sm font-bold text-blue-900">선택: {selection.team}팀 · {sel.name}</p>
-              <p className="text-xs text-blue-800">주포 {sel.primaryPosition} · 부포 {secondary} · 종합 {composite}</p>
+          <div className="fixed inset-x-3 bottom-24 z-30 mx-auto max-w-3xl rounded-2xl border border-blue-300 bg-blue-50/95 p-3 shadow-xl backdrop-blur sm:bottom-6">
+            <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                <p className="text-sm font-bold text-blue-900">선택: {selection.team}팀 · {sel.name}</p>
+                <p className="text-xs text-blue-800">주포 {sel.primaryPosition} · 부포 {secondary} · 종합 {composite}</p>
+              </div>
+              <p className="text-xs font-mono text-blue-900">공 {sel.attackScore} · 미 {sel.midScore} · 수 {sel.defenseScore} · 활 {sel.activityScore}</p>
             </div>
-            <p className="text-xs font-mono text-blue-900">공 {sel.attackScore} · 미 {sel.midScore} · 수 {sel.defenseScore} · 활 {sel.activityScore}</p>
           </div>
         );
       })()}
