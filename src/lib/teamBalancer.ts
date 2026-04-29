@@ -6,8 +6,6 @@ const POSITION_GROUPS: PositionGroup[] = ["ATTACK", "MID", "DEFENSE"];
 const PAIRING_GROUP_ORDER: PositionGroup[] = ["DEFENSE", "MID", "ATTACK"];
 const MIN_TEAM_SIZE = 11;
 const MAX_TEAM_SIZE = 18;
-const ASSIGN_ROLES_FULL_ITER = 8000;
-const ASSIGN_ROLES_FAST_ITER = 600;
 const SWAP_REFINE_MAX_ROUNDS = 30;
 
 type FieldPlayer = Player & { primaryPosition: FieldPosition };
@@ -16,15 +14,6 @@ type RoleTargets = Record<PositionGroup, number>;
 
 function isFieldPlayer(player: Player): player is FieldPlayer {
   return player.primaryPosition !== "GK";
-}
-
-function shuffled<T>(items: T[]): T[] {
-  const copy = [...items];
-  for (let i = copy.length - 1; i > 0; i -= 1) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [copy[i], copy[j]] = [copy[j], copy[i]];
-  }
-  return copy;
 }
 
 function targetForTeamSize(size: number): RoleTargets {
@@ -54,45 +43,51 @@ function assignmentReason(player: FieldPlayer, group: PositionGroup): string {
   return "인원 균형을 위한 포지션 변경";
 }
 
-function assignRoles(players: FieldPlayer[], roleTargets: RoleTargets, iterations: number): AssignedFieldPlayer[] {
-  let best: AssignedFieldPlayer[] | null = null;
-  let bestScore = Number.NEGATIVE_INFINITY;
+function maxAssignmentScore(player: FieldPlayer): number {
+  return Math.max(...POSITION_GROUPS.map((group) => assignmentScore(player, group)));
+}
 
-  for (let i = 0; i < iterations; i += 1) {
-    const counts: RoleTargets = { ATTACK: 0, MID: 0, DEFENSE: 0 };
-    const assigned: AssignedFieldPlayer[] = [];
-    let score = 0;
+function groupTiebreakRank(player: FieldPlayer, group: PositionGroup): number {
+  const primary = getPositionGroup(player.primaryPosition);
+  if (group === primary) return 0;
+  if (hasGroup(player.secondaryPositions, group)) return 1;
+  return 2;
+}
 
-    for (const player of shuffled(players)) {
-      const candidates = shuffled(POSITION_GROUPS)
-        .filter((group) => counts[group] < roleTargets[group])
-        .sort((a, b) => assignmentScore(player, b) - assignmentScore(player, a));
-      const selected = candidates[0];
-      if (!selected) continue;
-      counts[selected] += 1;
-      score += assignmentScore(player, selected);
-      const primaryGroup = getPositionGroup(player.primaryPosition);
-      assigned.push({
-        ...player,
-        assignedGroup: selected,
-        assignmentReason: assignmentReason(player, selected),
-        isPositionOverride: primaryGroup !== selected,
-      });
-    }
+function assignRoles(players: FieldPlayer[], roleTargets: RoleTargets): AssignedFieldPlayer[] {
+  const ordered = [...players].sort((a, b) => {
+    const diff = maxAssignmentScore(b) - maxAssignmentScore(a);
+    if (diff !== 0) return diff;
+    return a.name.localeCompare(b.name, "ko");
+  });
 
-    if (assigned.length !== players.length) continue;
-    if (POSITION_GROUPS.some((group) => counts[group] !== roleTargets[group])) continue;
-    if (score > bestScore) {
-      bestScore = score;
-      best = assigned;
-    }
+  const counts: RoleTargets = { ATTACK: 0, MID: 0, DEFENSE: 0 };
+  const assigned: AssignedFieldPlayer[] = [];
+
+  for (const player of ordered) {
+    const available = POSITION_GROUPS.filter((group) => counts[group] < roleTargets[group]);
+    if (available.length === 0) continue;
+    available.sort((a, b) => {
+      const diff = assignmentScore(player, b) - assignmentScore(player, a);
+      if (diff !== 0) return diff;
+      return groupTiebreakRank(player, a) - groupTiebreakRank(player, b);
+    });
+    const selected = available[0];
+    counts[selected] += 1;
+    const primaryGroup = getPositionGroup(player.primaryPosition);
+    assigned.push({
+      ...player,
+      assignedGroup: selected,
+      assignmentReason: assignmentReason(player, selected),
+      isPositionOverride: primaryGroup !== selected,
+    });
   }
 
-  if (!best) {
+  if (assigned.length !== players.length || POSITION_GROUPS.some((group) => counts[group] !== roleTargets[group])) {
     throw new Error("역할 배정에 실패했습니다.");
   }
 
-  return best;
+  return assigned;
 }
 
 function calcTeamScore(teamA: AssignedFieldPlayer[], teamB: AssignedFieldPlayer[]): TeamBalanceSummary {
@@ -223,11 +218,11 @@ type EvalResult = {
   summary: TeamBalanceSummary;
 };
 
-function evaluateSplit(teamA: FieldPlayer[], teamB: FieldPlayer[], iterations: number): EvalResult {
+function evaluateSplit(teamA: FieldPlayer[], teamB: FieldPlayer[]): EvalResult {
   const targetsA = targetForTeamSize(teamA.length);
   const targetsB = targetForTeamSize(teamB.length);
-  const assignedA = assignRoles(teamA, targetsA, iterations);
-  const assignedB = assignRoles(teamB, targetsB, iterations);
+  const assignedA = assignRoles(teamA, targetsA);
+  const assignedB = assignRoles(teamB, targetsB);
   const summary = calcTeamScore(assignedA, assignedB);
   return { score: summary.balanceScore, assignedA, assignedB, summary };
 }
@@ -237,7 +232,7 @@ function refineWithSwaps(teamA: FieldPlayer[], teamB: FieldPlayer[]): { teamA: F
   const b = [...teamB];
 
   for (let round = 0; round < SWAP_REFINE_MAX_ROUNDS; round += 1) {
-    const baseline = evaluateSplit(a, b, ASSIGN_ROLES_FAST_ITER).score;
+    const baseline = evaluateSplit(a, b).score;
     let bestImprovement = 0;
     let bestSwap: [number, number] | null = null;
 
@@ -248,7 +243,7 @@ function refineWithSwaps(teamA: FieldPlayer[], teamB: FieldPlayer[]): { teamA: F
         const trialB = [...b];
         trialA[i] = b[j];
         trialB[j] = a[i];
-        const trialScore = evaluateSplit(trialA, trialB, ASSIGN_ROLES_FAST_ITER).score;
+        const trialScore = evaluateSplit(trialA, trialB).score;
         const improvement = baseline - trialScore;
         if (improvement > bestImprovement) {
           bestImprovement = improvement;
@@ -286,7 +281,7 @@ export function balanceTeams(players: Player[]): TeamBalanceResult {
   }
 
   const refined = refineWithSwaps(initial.teamA, initial.teamB);
-  const final = evaluateSplit(refined.teamA, refined.teamB, ASSIGN_ROLES_FULL_ITER);
+  const final = evaluateSplit(refined.teamA, refined.teamB);
 
   const warnings: string[] = [];
   const overrides = [...final.assignedA, ...final.assignedB].filter((p) => p.isPositionOverride);
