@@ -6,8 +6,8 @@ import type { LineupResult, LineupRole } from "@/types/lineup";
 import type { TeamBalanceResult } from "@/types/team";
 import { appConfig } from "@/config/appConfig";
 import { loadPlayersFromCsv } from "@/lib/loadPlayersFromCsv";
-import { POSITIONS } from "@/lib/positions";
-import { balanceTeams, rebalanceTeams } from "@/lib/teamBalancer";
+import { POSITIONS, getPositionGroup, hasGroup } from "@/lib/positions";
+import { balanceTeams, rebalanceTeams, summarizeTeams } from "@/lib/teamBalancer";
 import { generateLineups } from "@/lib/lineupGenerator";
 import { planMatchLineup, type MatchPlanResult, type MatchSelection, type MatchQuarterLimits } from "@/lib/matchPlanner";
 import { clearStoredAll, loadStored, saveStored } from "@/lib/persistedState";
@@ -320,7 +320,46 @@ export default function Home() {
       return;
     }
     if (swapSelection.team === team) {
-      setSwapSelection({ team, playerId });
+      const teamPlayers = team === "A" ? teamResult.teamA.players : teamResult.teamB.players;
+      const playerA = teamPlayers.find((p) => p.id === swapSelection.playerId);
+      const playerB = teamPlayers.find((p) => p.id === playerId);
+      if (!playerA || !playerB) {
+        setSwapSelection(null);
+        return;
+      }
+      if (playerA.assignedGroup === playerB.assignedGroup) {
+        setSwapSelection({ team, playerId });
+        return;
+      }
+      const reassign = (p: typeof playerA, newGroup: PositionGroup) => {
+        if (p.primaryPosition === "GK") return p;
+        const primaryGroup = getPositionGroup(p.primaryPosition);
+        const reason = primaryGroup === newGroup
+          ? "주포지션 그룹 배정"
+          : hasGroup(p.secondaryPositions, newGroup)
+            ? "부포지션 그룹 배정"
+            : "인원 균형을 위한 포지션 변경";
+        return {
+          ...p,
+          assignedGroup: newGroup,
+          assignmentReason: reason,
+          isPositionOverride: primaryGroup !== newGroup,
+        };
+      };
+      const updated = teamPlayers.map((p) => {
+        if (p.id === playerA.id) return reassign(p, playerB.assignedGroup);
+        if (p.id === playerB.id) return reassign(p, playerA.assignedGroup);
+        return p;
+      });
+      try {
+        const next = team === "A"
+          ? summarizeTeams(updated, teamResult.teamB.players)
+          : summarizeTeams(teamResult.teamA.players, updated);
+        setTeamResult(next);
+        setSwapSelection(null);
+      } catch (error) {
+        setErrors([error instanceof Error ? error.message : String(error)]);
+      }
       return;
     }
     const teamAPlayers = teamResult.teamA.players;
@@ -671,8 +710,34 @@ function TeamResultView({
         </p>
       )}
       <div className="mt-6 grid gap-4 md:grid-cols-2">
-        <TeamCard title="A팀" players={result.teamA.players} team="A" selection={selection} onPlayerClick={onPlayerClick} interactive={!confirmed} />
-        <TeamCard title="B팀" players={result.teamB.players} team="B" selection={selection} onPlayerClick={onPlayerClick} interactive={!confirmed} />
+        <TeamCard
+          title="A팀"
+          players={result.teamA.players}
+          team="A"
+          selection={selection}
+          onPlayerClick={onPlayerClick}
+          interactive={!confirmed}
+          groupScores={{ ATTACK: s.attackScoreA, MID: s.midScoreA, DEFENSE: s.defenseScoreA }}
+          groupMax={{
+            ATTACK: Math.max(s.attackScoreA, s.attackScoreB),
+            MID: Math.max(s.midScoreA, s.midScoreB),
+            DEFENSE: Math.max(s.defenseScoreA, s.defenseScoreB),
+          }}
+        />
+        <TeamCard
+          title="B팀"
+          players={result.teamB.players}
+          team="B"
+          selection={selection}
+          onPlayerClick={onPlayerClick}
+          interactive={!confirmed}
+          groupScores={{ ATTACK: s.attackScoreB, MID: s.midScoreB, DEFENSE: s.defenseScoreB }}
+          groupMax={{
+            ATTACK: Math.max(s.attackScoreA, s.attackScoreB),
+            MID: Math.max(s.midScoreA, s.midScoreB),
+            DEFENSE: Math.max(s.defenseScoreA, s.defenseScoreB),
+          }}
+        />
       </div>
       <p className="mt-4 text-xs text-slate-500"><span className="font-bold">*</span> 부포지션으로 배정된 선수 · <span className="font-bold">**</span> 인원 균형을 위해 주·부와 무관한 포지션으로 강제 배정된 선수</p>
     </section>
@@ -685,6 +750,13 @@ function overrideMark(reason: string): string {
   return "";
 }
 
+function gradientForScore(score: number, max: number): string {
+  if (max <= 0) return "rgba(96, 165, 250, 0.1)";
+  const ratio = Math.min(1, score / max);
+  const opacity = 0.12 + ratio * 0.5;
+  return `rgba(96, 165, 250, ${opacity.toFixed(3)})`;
+}
+
 function TeamCard({
   title,
   players,
@@ -692,6 +764,8 @@ function TeamCard({
   selection,
   onPlayerClick,
   interactive,
+  groupScores,
+  groupMax,
 }: {
   title: string;
   players: TeamBalanceResult["teamA"]["players"];
@@ -699,37 +773,47 @@ function TeamCard({
   selection: SwapSelection;
   onPlayerClick: (team: "A" | "B", playerId: string) => void;
   interactive: boolean;
+  groupScores: Record<PositionGroup, number>;
+  groupMax: Record<PositionGroup, number>;
 }) {
   return (
     <div className="rounded-2xl border border-slate-200 p-4">
       <h3 className="font-bold">{title}</h3>
-      {(["ATTACK", "MID", "DEFENSE"] as PositionGroup[]).map((g) => (
-        <div key={g} className="mt-4">
-          <GroupBadge group={g} />
-          <div className="mt-2 flex flex-wrap gap-2">
-            {players.filter((p) => p.assignedGroup === g).map((p) => {
-              const isSelected = selection?.team === team && selection.playerId === p.id;
-              const className = isSelected
-                ? "rounded-full bg-blue-600 px-3 py-1 text-sm font-semibold text-white shadow"
-                : interactive
-                  ? "rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-700 hover:bg-blue-50 cursor-pointer"
-                  : "rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-700";
-              return (
-                <button
-                  key={p.id}
-                  type="button"
-                  title={p.assignmentReason}
-                  className={className}
-                  disabled={!interactive}
-                  onClick={() => onPlayerClick(team, p.id)}
-                >
-                  {p.name}{overrideMark(p.assignmentReason)}
-                </button>
-              );
-            })}
+      {(["ATTACK", "MID", "DEFENSE"] as PositionGroup[]).map((g) => {
+        const score = groupScores[g];
+        const max = groupMax[g];
+        const bg = gradientForScore(score, max);
+        return (
+          <div key={g} className="mt-3 rounded-xl p-3" style={{ backgroundColor: bg }}>
+            <div className="flex items-center justify-between">
+              <GroupBadge group={g} />
+              <span className="text-xs font-bold text-slate-700">합계 {score}</span>
+            </div>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {players.filter((p) => p.assignedGroup === g).map((p) => {
+                const isSelected = selection?.team === team && selection.playerId === p.id;
+                const className = isSelected
+                  ? "rounded-full bg-blue-600 px-3 py-1 text-sm font-semibold text-white shadow"
+                  : interactive
+                    ? "rounded-full bg-white/80 px-3 py-1 text-sm font-semibold text-slate-700 hover:bg-blue-100 cursor-pointer"
+                    : "rounded-full bg-white/80 px-3 py-1 text-sm font-semibold text-slate-700";
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    title={p.assignmentReason}
+                    className={className}
+                    disabled={!interactive}
+                    onClick={() => onPlayerClick(team, p.id)}
+                  >
+                    {p.name}{overrideMark(p.assignmentReason)}
+                  </button>
+                );
+              })}
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
