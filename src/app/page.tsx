@@ -771,8 +771,8 @@ function TeamResultView({
 
 function qualityBadgeClass(quality: TeamBalanceResult["quality"]): string {
   if (quality === "좋음") return "bg-emerald-100 text-emerald-700";
-  if (quality === "주의") return "bg-rose-100 text-rose-700";
-  return "bg-red-200 text-red-800";
+  if (quality === "주의") return "bg-amber-100 text-amber-700";
+  return "bg-rose-100 text-rose-700";
 }
 
 function overrideMark(reason: string): string {
