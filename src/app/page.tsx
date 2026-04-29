@@ -7,7 +7,7 @@ import type { TeamBalanceResult } from "@/types/team";
 import { appConfig } from "@/config/appConfig";
 import { loadPlayersFromCsv } from "@/lib/loadPlayersFromCsv";
 import { POSITIONS, getPositionGroup, hasGroup } from "@/lib/positions";
-import { balanceTeams, rebalanceTeams, summarizeTeams } from "@/lib/teamBalancer";
+import { balanceTeams, summarizeTeams } from "@/lib/teamBalancer";
 import { generateLineups } from "@/lib/lineupGenerator";
 import { planMatchLineup, type MatchPlanResult, type MatchSelection, type MatchQuarterLimits } from "@/lib/matchPlanner";
 import { clearStoredAll, loadStored, saveStored } from "@/lib/persistedState";
@@ -374,10 +374,27 @@ export default function Home() {
       setSwapSelection(null);
       return;
     }
-    const newA = teamAPlayers.map((p) => (p.id === aPlayer.id ? bPlayer : p));
-    const newB = teamBPlayers.map((p) => (p.id === bPlayer.id ? aPlayer : p));
+    const reassign = <T extends { primaryPosition: Player["primaryPosition"]; secondaryPositions: FieldPosition[] }>(p: T, newGroup: PositionGroup): T & { assignedGroup: PositionGroup; assignmentReason: string; isPositionOverride: boolean } => {
+      if (p.primaryPosition === "GK") {
+        return { ...p, assignedGroup: newGroup, assignmentReason: "주포지션 그룹 배정", isPositionOverride: false };
+      }
+      const primaryGroup = getPositionGroup(p.primaryPosition);
+      const reason = primaryGroup === newGroup
+        ? "주포지션 그룹 배정"
+        : hasGroup(p.secondaryPositions, newGroup)
+          ? "부포지션 그룹 배정"
+          : "인원 균형을 위한 포지션 변경";
+      return {
+        ...p,
+        assignedGroup: newGroup,
+        assignmentReason: reason,
+        isPositionOverride: primaryGroup !== newGroup,
+      };
+    };
+    const newA = teamAPlayers.map((p) => (p.id === aPlayer.id ? reassign(bPlayer, aPlayer.assignedGroup) : p));
+    const newB = teamBPlayers.map((p) => (p.id === bPlayer.id ? reassign(aPlayer, bPlayer.assignedGroup) : p));
     try {
-      const next = rebalanceTeams(newA, newB);
+      const next = summarizeTeams(newA, newB);
       setTeamResult(next);
       setSwapSelection(null);
     } catch (error) {
