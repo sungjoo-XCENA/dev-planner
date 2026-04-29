@@ -641,19 +641,30 @@ function RoleBadge({ role }: { role: LineupRole }) {
   return <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold ${cls}`}>{label}</span>;
 }
 
-function MetricCard({ label, a, b, highlight }: { label: string; a: number; b: number; highlight?: boolean }) {
-  const containerClass = highlight ? "rounded-2xl bg-slate-900 p-3 text-white" : "rounded-2xl bg-slate-50 p-3";
-  const labelClass = highlight ? "text-xs font-bold text-slate-300" : "text-xs font-bold text-slate-500";
-  const subLabelClass = highlight ? "text-xs text-slate-400" : "text-xs text-slate-500";
+function MetricRow({ label, a, b, highlight, small }: { label: string; a: number; b: number; highlight?: boolean; small?: boolean }) {
+  const valueClass = highlight
+    ? "font-black text-3xl text-slate-900"
+    : small
+      ? "font-bold text-base text-slate-600"
+      : "font-black text-2xl text-slate-800";
+  const labelClass = highlight
+    ? "font-bold text-base text-slate-900"
+    : small
+      ? "font-semibold text-xs text-slate-500"
+      : "font-semibold text-sm text-slate-600";
+  const diff = Math.abs(a - b);
+  const diffClass = diff === 0
+    ? "text-xs font-medium text-emerald-600"
+    : "text-xs font-medium text-slate-500";
   return (
-    <div className={containerClass}>
-      <p className={labelClass}>{label}</p>
-      <div className="mt-2 flex items-end justify-between gap-3">
-        <div><p className={subLabelClass}>A팀</p><p className="text-lg font-black">{a}</p></div>
-        <div className="text-center"><p className={subLabelClass}>차이</p><p className="text-sm font-bold">{Math.abs(a - b)}</p></div>
-        <div className="text-right"><p className={subLabelClass}>B팀</p><p className="text-lg font-black">{b}</p></div>
+    <>
+      <div className={`text-right ${valueClass}`}>{a}</div>
+      <div className="text-center">
+        <div className={labelClass}>{label}</div>
+        <div className={diffClass}>차이 {diff}</div>
       </div>
-    </div>
+      <div className={`text-left ${valueClass}`}>{b}</div>
+    </>
   );
 }
 
@@ -694,15 +705,22 @@ function TeamResultView({
         </div>
       </div>
       {result.warnings.length > 0 && <div className="mt-4"><MessageBox title="팀 경고" items={result.warnings} tone="warning" /></div>}
-      <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <MetricCard label="공격 점수" a={s.attackScoreA} b={s.attackScoreB} />
-        <MetricCard label="미드 점수" a={s.midScoreA} b={s.midScoreB} />
-        <MetricCard label="수비 점수" a={s.defenseScoreA} b={s.defenseScoreB} />
-        <MetricCard label="활동량" a={s.activityA} b={s.activityB} />
-        <MetricCard label="총합" a={totalA} b={totalB} highlight />
-        <MetricCard label="정규" a={s.regularA} b={s.regularB} />
-        <MetricCard label="용병" a={s.guestA} b={s.guestB} />
-        <MetricCard label="포지션 변경자" a={overridesA} b={overridesB} />
+      <div className="mt-4 rounded-2xl bg-slate-50 p-5">
+        <div className="grid grid-cols-3 items-center gap-y-3">
+          <div className="text-right text-xs font-bold text-slate-500">A팀</div>
+          <div />
+          <div className="text-left text-xs font-bold text-slate-500">B팀</div>
+          <MetricRow label="공격" a={s.attackScoreA} b={s.attackScoreB} />
+          <MetricRow label="미드" a={s.midScoreA} b={s.midScoreB} />
+          <MetricRow label="수비" a={s.defenseScoreA} b={s.defenseScoreB} />
+          <MetricRow label="활동" a={s.activityA} b={s.activityB} />
+          <div className="col-span-3 my-1 border-t border-slate-200" />
+          <MetricRow label="총합" a={totalA} b={totalB} highlight />
+          <div className="col-span-3 my-1 border-t border-slate-200" />
+          <MetricRow label="정규" a={s.regularA} b={s.regularB} small />
+          <MetricRow label="용병" a={s.guestA} b={s.guestB} small />
+          <MetricRow label="포지션 변경자" a={overridesA} b={overridesB} small />
+        </div>
       </div>
       {!confirmed && (
         <p className="mt-4 rounded-2xl bg-blue-50 px-4 py-3 text-sm text-blue-800">
