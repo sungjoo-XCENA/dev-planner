@@ -39,14 +39,24 @@ function comparePlayersForPair(group: PositionGroup, a: FieldPlayer, b: FieldPla
   return a.name.localeCompare(b.name, "ko");
 }
 
-function compareSurplusForRelocation(a: FieldPlayer, b: FieldPlayer): number {
-  const aGroup = getPositionGroup(a.primaryPosition);
-  const bGroup = getPositionGroup(b.primaryPosition);
-  const metricDiff = groupActivityScore(a, aGroup) - groupActivityScore(b, bGroup);
-  if (metricDiff !== 0) return metricDiff;
-  const compositeDiff = compositeScore(a) - compositeScore(b);
-  if (compositeDiff !== 0) return compositeDiff;
-  return a.name.localeCompare(b.name, "ko");
+function groupTiebreakRank(player: FieldPlayer, group: PositionGroup): number {
+  const primary = getPositionGroup(player.primaryPosition);
+  if (group === primary) return 0;
+  if (hasGroup(player.secondaryPositions, group)) return 1;
+  return 2;
+}
+
+function naturalGroupOf(player: FieldPlayer): PositionGroup {
+  const candidates = POSITION_GROUPS.map((group) => ({
+    group,
+    metric: groupActivityScore(player, group),
+    rank: groupTiebreakRank(player, group),
+  }));
+  candidates.sort((a, b) => {
+    if (a.metric !== b.metric) return b.metric - a.metric;
+    return a.rank - b.rank;
+  });
+  return candidates[0].group;
 }
 
 function assignmentReason(player: FieldPlayer, group: PositionGroup): string {
@@ -56,46 +66,46 @@ function assignmentReason(player: FieldPlayer, group: PositionGroup): string {
   return "인원 균형을 위한 포지션 변경";
 }
 
+const DEFICIT_FILL_PRIORITY: PositionGroup[] = ["MID", "ATTACK", "DEFENSE"];
+
 function assignRoles(players: FieldPlayer[], roleTargets: RoleTargets): AssignedFieldPlayer[] {
-  const byPrimary = new Map<PositionGroup, FieldPlayer[]>();
-  POSITION_GROUPS.forEach((group) => byPrimary.set(group, []));
+  const byNatural = new Map<PositionGroup, FieldPlayer[]>();
+  POSITION_GROUPS.forEach((group) => byNatural.set(group, []));
   for (const player of players) {
-    byPrimary.get(getPositionGroup(player.primaryPosition))!.push(player);
+    byNatural.get(naturalGroupOf(player))!.push(player);
   }
 
   POSITION_GROUPS.forEach((group) => {
-    byPrimary.get(group)!.sort((a, b) => comparePlayersForPair(group, a, b));
+    byNatural.get(group)!.sort((a, b) => comparePlayersForPair(group, a, b));
   });
 
   const counts: RoleTargets = { ATTACK: 0, MID: 0, DEFENSE: 0 };
   const groupOf = new Map<string, PositionGroup>();
-  const surplus: FieldPlayer[] = [];
+  let leftover: FieldPlayer[] = [];
 
   for (const group of POSITION_GROUPS) {
-    const pool = byPrimary.get(group)!;
+    const pool = byNatural.get(group)!;
     const target = roleTargets[group];
     pool.slice(0, target).forEach((player) => {
       groupOf.set(player.id, group);
       counts[group] += 1;
     });
-    pool.slice(target).forEach((player) => surplus.push(player));
+    leftover = leftover.concat(pool.slice(target));
   }
 
-  surplus.sort(compareSurplusForRelocation);
-
-  for (const player of surplus) {
-    const deficits = POSITION_GROUPS.filter((group) => counts[group] < roleTargets[group]);
-    if (deficits.length === 0) {
-      throw new Error("역할 배정에 실패했습니다.");
+  for (const targetGroup of DEFICIT_FILL_PRIORITY) {
+    while (counts[targetGroup] < roleTargets[targetGroup] && leftover.length > 0) {
+      leftover.sort((a, b) => {
+        const scoreDiff = scoreForGroup(targetGroup, b) - scoreForGroup(targetGroup, a);
+        if (scoreDiff !== 0) return scoreDiff;
+        const compositeDiff = compositeScore(b) - compositeScore(a);
+        if (compositeDiff !== 0) return compositeDiff;
+        return a.name.localeCompare(b.name, "ko");
+      });
+      const picked = leftover.shift()!;
+      groupOf.set(picked.id, targetGroup);
+      counts[targetGroup] += 1;
     }
-    deficits.sort((a, b) => {
-      const scoreDiff = scoreForGroup(b, player) - scoreForGroup(a, player);
-      if (scoreDiff !== 0) return scoreDiff;
-      return (roleTargets[b] - counts[b]) - (roleTargets[a] - counts[a]);
-    });
-    const target = deficits[0];
-    groupOf.set(player.id, target);
-    counts[target] += 1;
   }
 
   if (POSITION_GROUPS.some((group) => counts[group] !== roleTargets[group])) {
@@ -166,17 +176,17 @@ function calcTeamScore(teamA: AssignedFieldPlayer[], teamB: AssignedFieldPlayer[
   };
 }
 
-function pairCostByPrimary(teamA: FieldPlayer[], teamB: FieldPlayer[]): number {
-  const primarySum = (team: FieldPlayer[], group: PositionGroup, scoreFn: (player: FieldPlayer) => number) =>
-    team.filter((player) => getPositionGroup(player.primaryPosition) === group)
+function pairCostByNatural(teamA: FieldPlayer[], teamB: FieldPlayer[]): number {
+  const naturalSum = (team: FieldPlayer[], group: PositionGroup, scoreFn: (player: FieldPlayer) => number) =>
+    team.filter((player) => naturalGroupOf(player) === group)
       .reduce((acc, player) => acc + scoreFn(player), 0);
-  const aAtt = primarySum(teamA, "ATTACK", (p) => p.attackScore);
-  const aMid = primarySum(teamA, "MID", (p) => p.midScore);
-  const aDef = primarySum(teamA, "DEFENSE", (p) => p.defenseScore);
+  const aAtt = naturalSum(teamA, "ATTACK", (p) => p.attackScore);
+  const aMid = naturalSum(teamA, "MID", (p) => p.midScore);
+  const aDef = naturalSum(teamA, "DEFENSE", (p) => p.defenseScore);
   const aAct = teamA.reduce((acc, p) => acc + p.activityScore, 0);
-  const bAtt = primarySum(teamB, "ATTACK", (p) => p.attackScore);
-  const bMid = primarySum(teamB, "MID", (p) => p.midScore);
-  const bDef = primarySum(teamB, "DEFENSE", (p) => p.defenseScore);
+  const bAtt = naturalSum(teamB, "ATTACK", (p) => p.attackScore);
+  const bMid = naturalSum(teamB, "MID", (p) => p.midScore);
+  const bDef = naturalSum(teamB, "DEFENSE", (p) => p.defenseScore);
   const bAct = teamB.reduce((acc, p) => acc + p.activityScore, 0);
   const aTotal = aAtt + aMid + aDef + aAct;
   const bTotal = bAtt + bMid + bDef + bAct;
@@ -191,11 +201,11 @@ type PairAndSplitResult = {
   partnerById: Map<string, string>;
 };
 
-function pairByPosition(players: FieldPlayer[]): PairAndSplitResult {
+function pairByNaturalGroup(players: FieldPlayer[]): PairAndSplitResult {
   const byGroup = new Map<PositionGroup, FieldPlayer[]>();
   POSITION_GROUPS.forEach((g) => byGroup.set(g, []));
   for (const player of players) {
-    byGroup.get(getPositionGroup(player.primaryPosition))!.push(player);
+    byGroup.get(naturalGroupOf(player))!.push(player);
   }
   POSITION_GROUPS.forEach((group) => {
     byGroup.get(group)!.sort((a, b) => comparePlayersForPair(group, a, b));
@@ -217,16 +227,16 @@ function pairByPosition(players: FieldPlayer[]): PairAndSplitResult {
         } else if (teamB.length < teamA.length) {
           teamB.push(stronger);
         } else {
-          const costA = pairCostByPrimary([...teamA, stronger], teamB);
-          const costB = pairCostByPrimary(teamA, [...teamB, stronger]);
+          const costA = pairCostByNatural([...teamA, stronger], teamB);
+          const costB = pairCostByNatural(teamA, [...teamB, stronger]);
           if (costA <= costB) teamA.push(stronger);
           else teamB.push(stronger);
         }
         continue;
       }
 
-      const cost1 = pairCostByPrimary([...teamA, stronger], [...teamB, weaker]);
-      const cost2 = pairCostByPrimary([...teamA, weaker], [...teamB, stronger]);
+      const cost1 = pairCostByNatural([...teamA, stronger], [...teamB, weaker]);
+      const cost2 = pairCostByNatural([...teamA, weaker], [...teamB, stronger]);
       if (cost1 <= cost2) {
         teamA.push(stronger);
         teamB.push(weaker);
@@ -315,7 +325,7 @@ export function balanceTeams(players: Player[]): TeamBalanceResult {
 
   const fieldPlayers = players.filter(isFieldPlayer);
 
-  const initial = pairByPosition(fieldPlayers);
+  const initial = pairByNaturalGroup(fieldPlayers);
   if (initial.teamA.length < MIN_TEAM_SIZE || initial.teamA.length > MAX_TEAM_SIZE
       || initial.teamB.length < MIN_TEAM_SIZE || initial.teamB.length > MAX_TEAM_SIZE) {
     throw new Error(`한 팀은 ${MIN_TEAM_SIZE}명~${MAX_TEAM_SIZE}명이어야 합니다. 현재 A팀 ${initial.teamA.length}명, B팀 ${initial.teamB.length}명입니다.`);
