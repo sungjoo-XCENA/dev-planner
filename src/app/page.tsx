@@ -698,7 +698,7 @@ function TeamResultView({
     <section className="mb-6 rounded-3xl bg-white p-6 shadow-sm">
       <div className="flex flex-wrap items-center gap-2">
         <h2 className="text-xl font-bold">팀 분배 결과</h2>
-        <span className="rounded-full bg-slate-900 px-3 py-1 text-xs font-bold text-white">{result.quality}</span>
+        <span className={`rounded-full px-3 py-1 text-xs font-bold ${qualityBadgeClass(result.quality)}`}>{result.quality}</span>
         {!confirmed && <span className="rounded-full bg-blue-100 px-3 py-1 text-xs font-bold text-blue-700">조정 가능</span>}
       </div>
       {result.warnings.length > 0 && <div className="mt-4"><MessageBox title="팀 경고" items={result.warnings} tone="warning" /></div>}
@@ -767,6 +767,12 @@ function TeamResultView({
       </div>
     </section>
   );
+}
+
+function qualityBadgeClass(quality: TeamBalanceResult["quality"]): string {
+  if (quality === "좋음") return "bg-emerald-100 text-emerald-700";
+  if (quality === "주의") return "bg-rose-100 text-rose-700";
+  return "bg-red-200 text-red-800";
 }
 
 function overrideMark(reason: string): string {
