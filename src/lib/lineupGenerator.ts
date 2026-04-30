@@ -1,4 +1,4 @@
-import type { AssignedPlayer, DedicatedGoalkeeper, PositionGroup } from "@/types/player";
+import type { AssignedPlayer, DedicatedGoalkeeper, Player, PositionGroup } from "@/types/player";
 import type { LineupResult, LineupRole, PlayerLineupSummary, Quarter, TeamQuarterLineup } from "@/types/lineup";
 import type { Team, TeamName } from "@/types/team";
 import { playersByGroup } from "./teamBalancer";
@@ -166,12 +166,20 @@ function lineupForTeam(team: Team, dedicatedGks: DedicatedGoalkeeper[]) {
   return { quarters, summaries, warnings, rotation };
 }
 
-export function generateLineups(teamA: Team, teamB: Team, dedicatedGks: DedicatedGoalkeeper[]): LineupResult {
+export function generateLineups(
+  teamA: Team,
+  teamB: Team,
+  dedicatedGks: DedicatedGoalkeeper[],
+  waitingPlayers: Player[] = [],
+): LineupResult {
   const warnings: string[] = [];
   if (dedicatedGks.length > MAX_DEDICATED_GK_AUTO_ASSIGN) warnings.push("전담 GK가 3명 이상입니다. 2명만 자동 배정합니다.");
 
   const a = lineupForTeam(teamA, dedicatedGks);
   const b = lineupForTeam(teamB, dedicatedGks);
+
+  applyWaitingCallups(a.quarters, b.quarters, waitingPlayers);
+
   const rotation: Record<string, string[]> = { ...a.rotation };
   Object.entries(b.rotation).forEach(([name, items]) => {
     rotation[name] = [...(rotation[name] ?? []), ...items];
@@ -179,6 +187,13 @@ export function generateLineups(teamA: Team, teamB: Team, dedicatedGks: Dedicate
   dedicatedGks.slice(MAX_DEDICATED_GK_AUTO_ASSIGN).forEach((gk) => {
     rotation[gk.name] = ["교대/대기"];
   });
+  waitingPlayers.forEach((wp) => {
+    rotation[wp.name] = [...(rotation[wp.name] ?? []), "대기 콜업"];
+  });
+
+  if (waitingPlayers.length > 0) {
+    warnings.push(`대기 ${waitingPlayers.length}명이 A·B 팀 가장 약한 쿼터에 콜업되었습니다.`);
+  }
 
   return {
     quarters: [...a.quarters, ...b.quarters].sort((x, y) => x.quarter - y.quarter || x.team.localeCompare(y.team)),
@@ -186,4 +201,48 @@ export function generateLineups(teamA: Team, teamB: Team, dedicatedGks: Dedicate
     dedicatedGkRotation: rotation,
     warnings: [...warnings, ...a.warnings, ...b.warnings],
   };
+}
+
+function applyWaitingCallups(
+  aQuarters: TeamQuarterLineup[],
+  bQuarters: TeamQuarterLineup[],
+  waitingPlayers: Player[],
+) {
+  const positionToGroup: Record<string, "attack" | "mid" | "defense"> = {
+    CF: "attack", LW: "attack", RW: "attack",
+    MF: "mid",
+    CB: "defense", LB: "defense", RB: "defense",
+  };
+
+  const usedQuarters = new Set<string>();
+  for (const wp of waitingPlayers) {
+    if (wp.primaryPosition === "GK") continue;
+    const targetSection = positionToGroup[wp.primaryPosition] ?? "mid";
+    insertWaitingPlayer(aQuarters, wp.name, targetSection, usedQuarters);
+    insertWaitingPlayer(bQuarters, wp.name, targetSection, usedQuarters);
+  }
+}
+
+function insertWaitingPlayer(
+  quarters: TeamQuarterLineup[],
+  name: string,
+  section: "attack" | "mid" | "defense",
+  usedQuarters: Set<string>,
+) {
+  const candidates = quarters.filter((q) => !usedQuarters.has(`${q.team}-${q.quarter}`));
+  if (candidates.length === 0) return;
+  const sorted = [...candidates].sort((a, b) => totalStrength(a) - totalStrength(b));
+  const target = sorted[0];
+  const arr = target[section];
+  if (arr.length === 0) {
+    arr.push(name);
+  } else {
+    target.bench.push(arr[arr.length - 1]);
+    arr[arr.length - 1] = name;
+  }
+  usedQuarters.add(`${target.team}-${target.quarter}`);
+}
+
+function totalStrength(q: TeamQuarterLineup): number {
+  return q.attack.length + q.mid.length + q.defense.length;
 }
