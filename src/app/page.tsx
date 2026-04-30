@@ -53,6 +53,7 @@ export default function Home() {
   const [tempGuests, setTempGuests] = useState<Player[]>([]);
   const [tempGks, setTempGks] = useState<DedicatedGoalkeeper[]>([]);
   const [fieldIds, setFieldIds] = useState<string[]>([]);
+  const [waitingIds, setWaitingIds] = useState<string[]>([]);
   const [dedicatedGks, setDedicatedGks] = useState<DedicatedGoalkeeper[]>([]);
   const [errors, setErrors] = useState<string[]>([]);
   const [warnings, setWarnings] = useState<string[]>([]);
@@ -78,6 +79,7 @@ export default function Home() {
       const storedMode = loadStored<PlannerMode>("plannerMode", "BALANCE");
       const storedLimits = loadStored<MatchQuarterLimits>("matchQuarterLimits", {});
       const storedFieldIds = loadStored<string[]>("fieldIds", []);
+      const storedWaitingIds = loadStored<string[]>("waitingIds", []);
       const storedGkIds = loadStored<string[]>("dedicatedGkIds", []);
       const storedTempGuests = loadStored<Player[]>("tempGuests", []);
       const storedTempGks = loadStored<DedicatedGoalkeeper[]>("tempGks", []);
@@ -98,6 +100,8 @@ export default function Home() {
 
       const validFieldIds = storedFieldIds.filter((id) => allPlayers.some((p) => p.id === id));
       setFieldIds(validFieldIds);
+      const validWaitingIds = storedWaitingIds.filter((id) => allPlayers.some((p) => p.id === id));
+      setWaitingIds(validWaitingIds);
 
       const sheetGkPool: DedicatedGoalkeeper[] = result.players
         .filter((p) => p.primaryPosition === "GK")
@@ -130,6 +134,10 @@ export default function Home() {
   }, [fieldIds, hydrated]);
   useEffect(() => {
     if (!hydrated) return;
+    saveStored("waitingIds", waitingIds);
+  }, [waitingIds, hydrated]);
+  useEffect(() => {
+    if (!hydrated) return;
     saveStored("dedicatedGkIds", dedicatedGks.map((gk) => gk.id));
   }, [dedicatedGks, hydrated]);
   useEffect(() => {
@@ -146,8 +154,12 @@ export default function Home() {
   }, [matchQuarterLimits, hydrated]);
 
   const fieldPlayers = useMemo(() => players.filter((p) => fieldIds.includes(p.id)), [players, fieldIds]);
-  const activeFieldPlayers = useMemo(() => fieldPlayers.filter((p) => p.memberType !== "WAITING"), [fieldPlayers]);
-  const waitingPlayers = useMemo(() => fieldPlayers.filter((p) => p.memberType === "WAITING"), [fieldPlayers]);
+  const isWaitingPlayer = useMemo(() => {
+    const set = new Set(waitingIds);
+    return (p: Player) => set.has(p.id) || p.memberType === "WAITING";
+  }, [waitingIds]);
+  const activeFieldPlayers = useMemo(() => fieldPlayers.filter((p) => !isWaitingPlayer(p)), [fieldPlayers, isWaitingPlayer]);
+  const waitingPlayers = useMemo(() => fieldPlayers.filter((p) => isWaitingPlayer(p)), [fieldPlayers, isWaitingPlayer]);
   const regularCount = fieldPlayers.filter((p) => p.memberType === "REGULAR").length;
   const guestCount = fieldPlayers.filter((p) => p.memberType === "GUEST").length;
   const waitingCount = waitingPlayers.length;
@@ -215,11 +227,16 @@ export default function Home() {
 
   function removeFieldPlayer(id: string) {
     setFieldIds((prev) => prev.filter((item) => item !== id));
+    setWaitingIds((prev) => prev.filter((item) => item !== id));
     setMatchQuarterLimits((prev) => {
       const next = { ...prev };
       delete next[id];
       return next;
     });
+  }
+
+  function toggleWaiting(id: string) {
+    setWaitingIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   }
 
   function addDedicatedGk(player: Player) {
@@ -260,6 +277,9 @@ export default function Home() {
     setPlayers((prev) => [...prev, player]);
     setTempGuests((prev) => [...prev, player]);
     setFieldIds((prev) => [...prev, player.id]);
+    if (memberMode === "WAITING") {
+      setWaitingIds((prev) => [...prev, player.id]);
+    }
     setMatchQuarterLimits((prev) => ({ ...prev, [player.id]: DEFAULT_MATCH_QUARTERS }));
     resetGuest();
   }
@@ -555,7 +575,11 @@ export default function Home() {
           <Stat label="GK" value={`${dedicatedGks.length}`} />
         </div>
         <h3 className="mt-5 font-semibold">필드 참석자</h3>
-        <div className="mt-2 flex flex-wrap gap-2">{fieldPlayers.map((p) => <Chip key={p.id} label={`${p.name}(${p.primaryPosition})`} tone={p.memberType === "WAITING" ? "waiting" : p.memberType === "GUEST" ? "guest" : "regular"} onRemove={() => removeFieldPlayer(p.id)} />)}</div>
+        <div className="mt-2 flex flex-wrap gap-2">{fieldPlayers.map((p) => {
+          const waitingState = isWaitingPlayer(p);
+          const tone = waitingState ? "waiting" : p.memberType === "GUEST" ? "guest" : "regular";
+          return <Chip key={p.id} label={`${p.name}(${p.primaryPosition})`} tone={tone} onRemove={() => removeFieldPlayer(p.id)} onToggleWaiting={() => toggleWaiting(p.id)} isWaiting={waitingState} />;
+        })}</div>
         <h3 className="mt-5 font-semibold">전담 GK</h3>
         <div className="mt-2 flex flex-wrap gap-2">{dedicatedGks.map((gk) => <Chip key={gk.id} label={gk.name} onRemove={() => removeDedicatedGk(gk.id)} />)}</div>
       </section>
@@ -646,13 +670,23 @@ function MessageBox({ title, items, tone }: { title: string; items: string[]; to
   return <div className={`rounded-3xl p-5 ${tone === "error" ? "bg-red-50 text-red-900" : "bg-amber-50 text-amber-900"}`}><h3 className="font-bold">{title}</h3><ul className="mt-2 list-disc pl-5 text-sm">{items.map((item, i) => <li key={i}>{item}</li>)}</ul></div>;
 }
 
-function Chip({ label, onRemove, tone = "regular" }: { label: string; onRemove: () => void; tone?: "regular" | "guest" | "waiting" }) {
+function Chip({ label, onRemove, tone = "regular", onToggleWaiting, isWaiting }: { label: string; onRemove: () => void; tone?: "regular" | "guest" | "waiting"; onToggleWaiting?: () => void; isWaiting?: boolean }) {
   const className = tone === "waiting"
     ? "bg-orange-100 text-orange-800"
     : tone === "guest"
       ? "bg-violet-100 text-violet-800"
       : "bg-slate-100 text-slate-700";
-  return <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-sm ${className}`}>{label}<button className="font-bold opacity-70" onClick={onRemove}>×</button></span>;
+  return (
+    <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm ${className}`}>
+      {label}
+      {onToggleWaiting && (
+        <button className={`rounded px-1.5 text-[10px] font-bold ${isWaiting ? "bg-orange-300 text-orange-900" : "bg-slate-300 text-slate-700"}`} onClick={onToggleWaiting} title={isWaiting ? "정규로 전환" : "대기로 전환"}>
+          {isWaiting ? "대기" : "정규"}
+        </button>
+      )}
+      <button className="font-bold opacity-70" onClick={onRemove}>×</button>
+    </span>
+  );
 }
 
 function PlayerSearchRow({ player, isField, isGk, onAddField, onRemoveField, onAddGk, onRemoveGk }: { player: Player; isField: boolean; isGk: boolean; onAddField: () => void; onRemoveField: () => void; onAddGk: () => void; onRemoveGk: () => void }) {
