@@ -146,8 +146,11 @@ export default function Home() {
   }, [matchQuarterLimits, hydrated]);
 
   const fieldPlayers = useMemo(() => players.filter((p) => fieldIds.includes(p.id)), [players, fieldIds]);
+  const activeFieldPlayers = useMemo(() => fieldPlayers.filter((p) => p.memberType !== "WAITING"), [fieldPlayers]);
+  const waitingPlayers = useMemo(() => fieldPlayers.filter((p) => p.memberType === "WAITING"), [fieldPlayers]);
   const regularCount = fieldPlayers.filter((p) => p.memberType === "REGULAR").length;
   const guestCount = fieldPlayers.filter((p) => p.memberType === "GUEST").length;
+  const waitingCount = waitingPlayers.length;
   const sortedPlayers = useMemo(() => [...players].sort((a, b) => a.name.localeCompare(b.name, "ko")), [players]);
   const searchedPlayers = useMemo(() => {
     const query = playerQuery.trim().toLowerCase();
@@ -159,8 +162,8 @@ export default function Home() {
   }, [playerQuery, sortedPlayers]);
 
   const canGenerate = plannerMode === "BALANCE"
-    ? fieldPlayers.length >= 22 && fieldPlayers.length <= 36
-    : fieldPlayers.length >= 10 && fieldPlayers.length <= 18;
+    ? activeFieldPlayers.length >= 22 && activeFieldPlayers.length <= 36
+    : activeFieldPlayers.length >= 10 && activeFieldPlayers.length <= 18;
 
   function resetResults() {
     setTeamResult(null);
@@ -282,9 +285,9 @@ export default function Home() {
     resetResults();
     try {
       if (plannerMode === "MATCH") {
-        setMatchResult(planMatchLineup(fieldPlayers, dedicatedGks, matchQuarterLimits));
+        setMatchResult(planMatchLineup(activeFieldPlayers, dedicatedGks, matchQuarterLimits));
       } else {
-        const team = balanceTeams(fieldPlayers);
+        const team = balanceTeams(activeFieldPlayers);
         setTeamResult(team);
       }
       setErrors([]);
@@ -296,7 +299,7 @@ export default function Home() {
   function handleConfirmTeams() {
     if (!teamResult) return;
     try {
-      const lineup = generateLineups(teamResult.teamA, teamResult.teamB, dedicatedGks);
+      const lineup = generateLineups(teamResult.teamA, teamResult.teamB, dedicatedGks, waitingPlayers);
       setLineupResult(lineup);
       setTeamsConfirmed(true);
       setSwapSelection(null);
@@ -544,14 +547,15 @@ export default function Home() {
 
       <section className="mb-6 rounded-3xl bg-white p-6 shadow-sm">
         <h2 className="text-xl font-bold">참석자</h2>
-        <div className="mt-4 grid gap-3 sm:grid-cols-3 lg:grid-cols-4">
+        <div className="mt-4 grid gap-3 sm:grid-cols-3 lg:grid-cols-5">
           <Stat label="정규" value={`${regularCount}명`} />
           <Stat label="용병" value={`${guestCount}명`} />
-          <Stat label="필드" value={`${fieldIds.length}명`} />
+          <Stat label="대기" value={`${waitingCount}명`} />
+          <Stat label="필드" value={`${activeFieldPlayers.length}명`} />
           <Stat label="GK" value={`${dedicatedGks.length}`} />
         </div>
         <h3 className="mt-5 font-semibold">필드 참석자</h3>
-        <div className="mt-2 flex flex-wrap gap-2">{fieldPlayers.map((p) => <Chip key={p.id} label={`${p.name}(${p.primaryPosition})`} tone={p.memberType === "GUEST" ? "guest" : "regular"} onRemove={() => removeFieldPlayer(p.id)} />)}</div>
+        <div className="mt-2 flex flex-wrap gap-2">{fieldPlayers.map((p) => <Chip key={p.id} label={`${p.name}(${p.primaryPosition})`} tone={p.memberType === "WAITING" ? "waiting" : p.memberType === "GUEST" ? "guest" : "regular"} onRemove={() => removeFieldPlayer(p.id)} />)}</div>
         <h3 className="mt-5 font-semibold">전담 GK</h3>
         <div className="mt-2 flex flex-wrap gap-2">{dedicatedGks.map((gk) => <Chip key={gk.id} label={gk.name} onRemove={() => removeDedicatedGk(gk.id)} />)}</div>
       </section>
@@ -616,7 +620,7 @@ export default function Home() {
       <div className="fixed inset-x-0 bottom-0 z-10 border-t border-slate-200 bg-white/95 p-3 backdrop-blur">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-3">
           <div className="text-sm font-semibold">
-            {plannerMode === "BALANCE" ? "내부전" : "매치"} · 필드 {fieldIds.length}명 · 전담 GK {dedicatedGks.length}
+            {plannerMode === "BALANCE" ? "내부전" : "매치"} · 필드 {activeFieldPlayers.length}명{waitingCount > 0 ? ` (대기 ${waitingCount})` : ""} · 전담 GK {dedicatedGks.length}
             {!canGenerate && <p className="text-xs font-normal text-slate-500">{plannerMode === "BALANCE" ? "내부전은 24명 이상 권장, 22명부터 가능" : "매치는 필드 10명~18명 필요"}</p>}
           </div>
           <button className="rounded-xl bg-slate-900 px-5 py-3 text-sm font-bold text-white disabled:bg-slate-300" onClick={runPlanner} disabled={!canGenerate}>자동 생성</button>
@@ -642,8 +646,12 @@ function MessageBox({ title, items, tone }: { title: string; items: string[]; to
   return <div className={`rounded-3xl p-5 ${tone === "error" ? "bg-red-50 text-red-900" : "bg-amber-50 text-amber-900"}`}><h3 className="font-bold">{title}</h3><ul className="mt-2 list-disc pl-5 text-sm">{items.map((item, i) => <li key={i}>{item}</li>)}</ul></div>;
 }
 
-function Chip({ label, onRemove, tone = "regular" }: { label: string; onRemove: () => void; tone?: "regular" | "guest" }) {
-  const className = tone === "guest" ? "bg-violet-100 text-violet-800" : "bg-slate-100 text-slate-700";
+function Chip({ label, onRemove, tone = "regular" }: { label: string; onRemove: () => void; tone?: "regular" | "guest" | "waiting" }) {
+  const className = tone === "waiting"
+    ? "bg-orange-100 text-orange-800"
+    : tone === "guest"
+      ? "bg-violet-100 text-violet-800"
+      : "bg-slate-100 text-slate-700";
   return <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-sm ${className}`}>{label}<button className="font-bold opacity-70" onClick={onRemove}>×</button></span>;
 }
 
