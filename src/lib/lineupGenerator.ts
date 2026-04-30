@@ -214,12 +214,12 @@ function applyWaitingCallups(
     CB: "defense", LB: "defense", RB: "defense",
   };
 
-  const usedQuarters = new Set<string>();
   for (const wp of waitingPlayers) {
     if (wp.primaryPosition === "GK") continue;
     const targetSection = positionToGroup[wp.primaryPosition] ?? "mid";
-    insertWaitingPlayer(aQuarters, wp.name, targetSection, usedQuarters);
-    insertWaitingPlayer(bQuarters, wp.name, targetSection, usedQuarters);
+    const usedQuarterNumbers = new Set<number>();
+    insertWaitingPlayer(aQuarters, wp.name, targetSection, usedQuarterNumbers);
+    insertWaitingPlayer(bQuarters, wp.name, targetSection, usedQuarterNumbers);
   }
 }
 
@@ -227,9 +227,9 @@ function insertWaitingPlayer(
   quarters: TeamQuarterLineup[],
   name: string,
   section: "attack" | "mid" | "defense",
-  usedQuarters: Set<string>,
+  usedQuarterNumbers: Set<number>,
 ) {
-  const candidates = quarters.filter((q) => !usedQuarters.has(`${q.team}-${q.quarter}`));
+  const candidates = quarters.filter((q) => !usedQuarterNumbers.has(q.quarter));
   if (candidates.length === 0) return;
   const sorted = [...candidates].sort((a, b) => totalStrength(a) - totalStrength(b));
   const target = sorted[0];
@@ -240,7 +240,7 @@ function insertWaitingPlayer(
     target.bench.push(arr[arr.length - 1]);
     arr[arr.length - 1] = name;
   }
-  usedQuarters.add(`${target.team}-${target.quarter}`);
+  usedQuarterNumbers.add(target.quarter);
 }
 
 function totalStrength(q: TeamQuarterLineup): number {
