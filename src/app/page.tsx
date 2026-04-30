@@ -58,6 +58,7 @@ export default function Home() {
   const [warnings, setWarnings] = useState<string[]>([]);
   const [guest, setGuest] = useState<GuestForm>(emptyGuest);
   const [guestRole, setGuestRole] = useState<"FIELD" | "GK">("FIELD");
+  const [memberMode, setMemberMode] = useState<"GUEST" | "WAITING">("GUEST");
   const [plannerMode, setPlannerMode] = useState<PlannerMode>("BALANCE");
   const [teamResult, setTeamResult] = useState<TeamBalanceResult | null>(null);
   const [lineupResult, setLineupResult] = useState<LineupResult | null>(null);
@@ -241,7 +242,7 @@ export default function Home() {
     const player: Player = {
       id: `temp_${Date.now()}_${guest.name}`,
       source: "TEMP_GUEST",
-      memberType: "GUEST",
+      memberType: memberMode,
       active: true,
       name: guest.name.trim(),
       primaryPosition: guest.primaryPosition,
@@ -506,8 +507,16 @@ export default function Home() {
       </section>
 
       <section className="mb-6 rounded-3xl bg-white p-6 shadow-sm">
-        <h2 className="text-xl font-bold">용병추가</h2>
+        <h2 className="text-xl font-bold">선수추가</h2>
         <div className="mt-4 grid gap-4">
+          <div>
+            <p className="mb-2 text-sm font-semibold text-slate-600">유형</p>
+            <div className="flex gap-2">
+              <button type="button" className={`flex-1 rounded-xl px-4 py-2 text-sm font-bold ${memberMode === "GUEST" ? "bg-violet-600 text-white" : "bg-slate-100 text-slate-600"}`} onClick={() => setMemberMode("GUEST")}>용병</button>
+              <button type="button" className={`flex-1 rounded-xl px-4 py-2 text-sm font-bold ${memberMode === "WAITING" ? "bg-orange-500 text-white" : "bg-slate-100 text-slate-600"}`} onClick={() => setMemberMode("WAITING")}>대기</button>
+            </div>
+            <p className="mt-2 text-xs text-slate-500">{memberMode === "GUEST" ? "시트에 없는 선수를 정식 참석자로 추가합니다." : "26명 마감 시 콜업되어 A·B팀 1쿼터씩 뛰는 대기 인원입니다."}</p>
+          </div>
           <input className="rounded-xl border border-slate-300 px-3 py-3" placeholder="이름" value={guest.name} onChange={(e) => setGuest({ ...guest, name: e.target.value })} />
           <PositionPicker title="주포지션" includeGk selectedRole={guestRole} primary={guest.primaryPosition} onGk={() => setGuestRole("GK")} onField={(position) => { setGuestRole("FIELD"); setGuest({ ...guest, primaryPosition: position }); }} />
           <div>
@@ -527,7 +536,9 @@ export default function Home() {
             <ScoreSelect label="활동" value={guest.activityScore} onChange={(v) => setGuest({ ...guest, activityScore: v })} />
           </div>
           <input className="rounded-xl border border-slate-300 px-3 py-2" placeholder="메모" value={guest.memo} onChange={(e) => setGuest({ ...guest, memo: e.target.value })} />
-          <button className={`w-full rounded-xl px-4 py-3 font-semibold text-white ${guestRole === "GK" ? "bg-emerald-600" : "bg-blue-600"}`} onClick={guestRole === "GK" ? addTempGk : addTempGuest}>{guestRole === "GK" ? "임시 GK 추가" : "임시 용병 추가"}</button>
+          <button className={`w-full rounded-xl px-4 py-3 font-semibold text-white ${guestRole === "GK" ? "bg-emerald-600" : memberMode === "WAITING" ? "bg-orange-500" : "bg-violet-600"}`} onClick={guestRole === "GK" ? addTempGk : addTempGuest}>
+            {guestRole === "GK" ? "임시 GK 추가" : memberMode === "WAITING" ? "대기 추가" : "용병 추가"}
+          </button>
         </div>
       </section>
 
@@ -696,19 +707,10 @@ function TeamResultView({
   const overridesB = result.teamB.players.filter((p) => p.isPositionOverride).length;
   return (
     <section className="mb-6 rounded-3xl bg-white p-6 shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <h2 className="text-xl font-bold">팀 분배 결과</h2>
-          <span className="rounded-full bg-slate-900 px-3 py-1 text-xs font-bold text-white">{result.quality}</span>
-          {!confirmed && <span className="rounded-full bg-blue-100 px-3 py-1 text-xs font-bold text-blue-700">조정 가능</span>}
-        </div>
-        <div className="flex gap-2">
-          {confirmed ? (
-            <button className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold" onClick={onReadjust}>팀 다시 조정</button>
-          ) : (
-            <button className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-bold text-white" onClick={onConfirm}>팀 확정 → 라인업 생성</button>
-          )}
-        </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <h2 className="text-xl font-bold">팀 분배 결과</h2>
+        <span className={`rounded-full px-3 py-1 text-xs font-bold ${qualityBadgeClass(result.quality)}`}>{result.quality}</span>
+        {!confirmed && <span className="rounded-full bg-blue-100 px-3 py-1 text-xs font-bold text-blue-700">조정 가능</span>}
       </div>
       {result.warnings.length > 0 && <div className="mt-4"><MessageBox title="팀 경고" items={result.warnings} tone="warning" /></div>}
       <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -723,7 +725,7 @@ function TeamResultView({
       </div>
       {!confirmed && (
         <p className="mt-4 rounded-2xl bg-blue-50 px-4 py-3 text-sm text-blue-800">
-          선수를 한 명 누르면 선택되고, 다른 팀 선수를 누르면 자리를 바꿔요. 조정이 끝나면 <strong>팀 확정</strong> 버튼을 누르세요.
+          선수를 한 명 누르면 선택되고, 다른 팀 선수를 누르면 자리를 바꿔요. <span className="rounded-md bg-amber-100 px-1.5 py-0.5 text-amber-900">노란 테두리</span>는 종합 점수(공+미+수+활)가 ±3 이내라 swap해도 균형이 잘 유지되는 후보예요. 조정이 끝나면 <strong>팀 확정</strong> 버튼을 누르세요.
         </p>
       )}
       {selection && (() => {
@@ -733,12 +735,14 @@ function TeamResultView({
         const composite = sel.attackScore + sel.midScore + sel.defenseScore + sel.activityScore;
         const secondary = sel.secondaryPositions.length > 0 ? sel.secondaryPositions.join(",") : "-";
         return (
-          <div className="mt-4 flex flex-col gap-2 rounded-2xl border border-blue-200 bg-blue-50 p-4 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <p className="text-sm font-bold text-blue-900">선택: {selection.team}팀 · {sel.name}</p>
-              <p className="text-xs text-blue-800">주포 {sel.primaryPosition} · 부포 {secondary} · 종합 {composite}</p>
+          <div className="fixed inset-x-3 bottom-24 z-30 mx-auto max-w-3xl rounded-2xl border border-blue-300 bg-blue-50/95 p-3 shadow-xl backdrop-blur sm:bottom-6">
+            <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                <p className="text-sm font-bold text-blue-900">선택: {selection.team}팀 · {sel.name}</p>
+                <p className="text-xs text-blue-800">주포 {sel.primaryPosition} · 부포 {secondary} · 종합 {composite}</p>
+              </div>
+              <p className="text-xs font-mono text-blue-900">공 {sel.attackScore} · 미 {sel.midScore} · 수 {sel.defenseScore} · 활 {sel.activityScore}</p>
             </div>
-            <p className="text-xs font-mono text-blue-900">공 {sel.attackScore} · 미 {sel.midScore} · 수 {sel.defenseScore} · 활 {sel.activityScore}</p>
           </div>
         );
       })()}
@@ -774,6 +778,12 @@ function TeamResultView({
       </div>
     </section>
   );
+}
+
+function qualityBadgeClass(quality: TeamBalanceResult["quality"]): string {
+  if (quality === "좋음") return "bg-emerald-100 text-emerald-700";
+  if (quality === "주의") return "bg-amber-100 text-amber-700";
+  return "bg-rose-100 text-rose-700";
 }
 
 function overrideMark(reason: string): string {
@@ -883,23 +893,32 @@ async function downloadElementAsImage(elem: HTMLElement, filename: string) {
   });
 }
 
-function PlayerChip({ name, accent }: { name: string; accent?: "gk" }) {
-  const className = accent === "gk"
-    ? "rounded-full bg-amber-300 px-3 py-1.5 text-sm font-extrabold text-amber-950 shadow whitespace-nowrap"
-    : "rounded-full bg-white px-3 py-1.5 text-sm font-extrabold text-slate-900 shadow whitespace-nowrap";
-  return <span className={className}>{name}</span>;
+type LineupSection = "attack" | "mid" | "defense" | "gk" | "bench";
+
+function PitchChip({ name, accent, selected, onClick }: { name: string; accent?: "gk" | "bench"; selected?: boolean; onClick?: () => void }) {
+  const base = "rounded-full px-3 py-1.5 text-sm font-extrabold shadow whitespace-nowrap transition";
+  const palette = accent === "gk"
+    ? "bg-amber-300 text-amber-950"
+    : accent === "bench"
+      ? "bg-slate-200 text-slate-700"
+      : "bg-white text-slate-900";
+  const ring = selected ? "ring-2 ring-offset-1 ring-yellow-400" : "";
+  const Tag = onClick ? "button" : "span";
+  return <Tag type={onClick ? "button" : undefined} className={`${base} ${palette} ${ring}`} onClick={onClick}>{name}</Tag>;
 }
 
-function PlayerRow({ players }: { players: string[] }) {
+function PitchRow({ players, section, selectedKey, onSelect }: { players: string[]; section: LineupSection; selectedKey: string | null; onSelect?: (section: LineupSection, name: string) => void }) {
   if (!players.length) return <div className="flex h-6" />;
   return (
     <div className="flex flex-wrap items-center justify-around gap-1.5 px-2">
-      {players.map((name) => <PlayerChip key={name} name={name} />)}
+      {players.map((name) => (
+        <PitchChip key={name} name={name} selected={selectedKey === `${section}|${name}`} onClick={onSelect ? () => onSelect(section, name) : undefined} />
+      ))}
     </div>
   );
 }
 
-function Pitch({ title, gk, attack, mid, defense, bench, accent = "emerald" }: {
+function Pitch({ title, gk, attack, mid, defense, bench, accent = "emerald", selectedKey, onSelect }: {
   title: string;
   gk: string;
   attack: string[];
@@ -907,14 +926,16 @@ function Pitch({ title, gk, attack, mid, defense, bench, accent = "emerald" }: {
   defense: string[];
   bench: string[];
   accent?: "emerald" | "blue";
+  selectedKey?: string | null;
+  onSelect?: (section: LineupSection, name: string) => void;
 }) {
   const headerClass = accent === "blue" ? "from-blue-700 to-blue-900" : "from-emerald-700 to-emerald-900";
   const fieldClass = accent === "blue" ? "from-blue-500 to-blue-700" : "from-emerald-500 to-emerald-700";
+  const sel = selectedKey ?? null;
   return (
     <div className="overflow-hidden rounded-2xl shadow-lg">
-      <div className={`bg-gradient-to-r ${headerClass} flex items-center justify-between gap-3 px-5 py-3 text-white`}>
+      <div className={`bg-gradient-to-r ${headerClass} px-5 py-3 text-white`}>
         <p className="text-lg font-black">{title}</p>
-        <span className="rounded-full bg-amber-300 px-3 py-1 text-xs font-extrabold text-amber-950">GK {gk}</span>
       </div>
       <div className={`relative bg-gradient-to-b ${fieldClass} p-3`} style={{ aspectRatio: "5 / 4" }}>
         <div className="absolute inset-3 rounded-lg border-2 border-white/40" />
@@ -923,28 +944,80 @@ function Pitch({ title, gk, attack, mid, defense, bench, accent = "emerald" }: {
         <div className="absolute left-1/4 right-1/4 top-3 h-9 rounded-b-md border-2 border-t-0 border-white/40" />
         <div className="absolute left-1/4 right-1/4 bottom-3 h-9 rounded-t-md border-2 border-b-0 border-white/40" />
         <div className="relative flex h-full flex-col justify-around py-1">
-          <PlayerRow players={attack} />
-          <PlayerRow players={mid} />
-          <PlayerRow players={defense} />
+          <PitchRow players={attack} section="attack" selectedKey={sel} onSelect={onSelect} />
+          <PitchRow players={mid} section="mid" selectedKey={sel} onSelect={onSelect} />
+          <PitchRow players={defense} section="defense" selectedKey={sel} onSelect={onSelect} />
           <div className="flex justify-center">
-            <PlayerChip name={gk} accent="gk" />
+            <PitchChip name={gk} accent="gk" selected={sel === `gk|${gk}`} onClick={onSelect ? () => onSelect("gk", gk) : undefined} />
           </div>
         </div>
       </div>
       <div className="bg-slate-50 px-4 py-3">
         <p className="text-xs font-bold text-slate-500">대기</p>
         <div className="mt-1 flex flex-wrap gap-1">
-          {(bench.length ? bench : ["없음"]).map((name) => (
-            <span key={name} className="rounded-full bg-slate-200 px-2 py-1 text-xs font-semibold text-slate-700">{name}</span>
-          ))}
+          {bench.length === 0 ? (
+            <span className="rounded-full bg-slate-200 px-2 py-1 text-xs font-semibold text-slate-500">없음</span>
+          ) : (
+            bench.map((name) => (
+              <PitchChip key={name} name={name} accent="bench" selected={sel === `bench|${name}`} onClick={onSelect ? () => onSelect("bench", name) : undefined} />
+            ))
+          )}
         </div>
       </div>
     </div>
   );
 }
 
+function swapInsideQuarter(q: LineupResult["quarters"][0], sec1: LineupSection, name1: string, sec2: LineupSection, name2: string): LineupResult["quarters"][0] {
+  const setSection = (
+    target: LineupResult["quarters"][0],
+    section: LineupSection,
+    oldName: string,
+    newName: string,
+  ): LineupResult["quarters"][0] => {
+    if (section === "gk") return { ...target, gk: newName };
+    const arr = (target[section] as string[]).map((n) => (n === oldName ? newName : n));
+    return { ...target, [section]: arr };
+  };
+  let updated = setSection(q, sec1, name1, name2);
+  updated = setSection(updated, sec2, name2, name1);
+  return updated;
+}
+
 function LineupResultView({ result }: { result: LineupResult }) {
+  const [quarters, setQuarters] = useState(result.quarters);
+  const [selection, setSelection] = useState<{ key: string; section: LineupSection; name: string } | null>(null);
   const refs = useRef<Map<string, HTMLDivElement | null>>(new Map());
+
+  useEffect(() => {
+    setQuarters(result.quarters);
+    setSelection(null);
+  }, [result]);
+
+  function handleSelect(key: string, section: LineupSection, name: string) {
+    if (!selection) {
+      setSelection({ key, section, name });
+      return;
+    }
+    if (selection.key === key && selection.section === section && selection.name === name) {
+      setSelection(null);
+      return;
+    }
+    if (selection.key !== key) {
+      setSelection({ key, section, name });
+      return;
+    }
+    if (selection.section === section && selection.name === name) {
+      setSelection(null);
+      return;
+    }
+    setQuarters((prev) => prev.map((q) => {
+      const qKey = `${q.team}-${q.quarter}`;
+      if (qKey !== key) return q;
+      return swapInsideQuarter(q, selection.section, selection.name, section, name);
+    }));
+    setSelection(null);
+  }
 
   async function downloadOne(team: string, quarter: number) {
     const key = `${team}-${quarter}`;
@@ -954,7 +1027,7 @@ function LineupResultView({ result }: { result: LineupResult }) {
   }
 
   async function downloadAll() {
-    for (const q of result.quarters) {
+    for (const q of quarters) {
       const key = `${q.team}-${q.quarter}`;
       const elem = refs.current.get(key);
       if (!elem) continue;
@@ -968,10 +1041,12 @@ function LineupResultView({ result }: { result: LineupResult }) {
         <h2 className="text-xl font-bold">라인업 결과</h2>
         <button className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-bold text-white" onClick={downloadAll}>전체 이미지 저장</button>
       </div>
+      <p className="mt-2 text-xs text-slate-500">선수 칩을 누르고 같은 쿼터의 다른 선수를 누르면 자리를 바꿀 수 있어요. 대기 ↔ 필드, 포지션 간 이동, GK 교체 모두 가능.</p>
       {result.warnings.length > 0 && <div className="mt-4"><MessageBox title="라인업 경고" items={result.warnings} tone="warning" /></div>}
       <div className="mt-4 grid gap-4 md:grid-cols-2">
-        {result.quarters.map((q) => {
+        {quarters.map((q) => {
           const key = `${q.team}-${q.quarter}`;
+          const selectedKey = selection && selection.key === key ? `${selection.section}|${selection.name}` : null;
           return (
             <div key={key} className="space-y-2">
               <div ref={(el) => { refs.current.set(key, el); }}>
@@ -983,6 +1058,8 @@ function LineupResultView({ result }: { result: LineupResult }) {
                   defense={q.defense}
                   bench={q.bench}
                   accent={q.team === "A" ? "emerald" : "blue"}
+                  selectedKey={selectedKey}
+                  onSelect={(section, name) => handleSelect(key, section, name)}
                 />
               </div>
               <button className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700" onClick={() => downloadOne(q.team, q.quarter)}>이 화면 이미지 저장</button>

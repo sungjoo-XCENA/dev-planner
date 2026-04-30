@@ -13,7 +13,7 @@ export type PositionGroup = "ATTACK" | "MID" | "DEFENSE";
 
 export type PlayerSource = "SHEET" | "TEMP_GUEST" | "LOCAL_GUEST";
 
-export type MemberType = "REGULAR" | "GUEST";
+export type MemberType = "REGULAR" | "GUEST" | "WAITING";
 
 export type Player = {
   id: string;
