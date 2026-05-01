@@ -1080,7 +1080,15 @@ async function downloadElementAsImage(elem: HTMLElement, filename: string) {
 
 type LineupSection = "attack" | "mid" | "defense" | "gk" | "bench";
 
-function PitchChip({ name, accent, selected, onClick }: { name: string; accent?: "gk" | "bench"; selected?: boolean; onClick?: () => void }) {
+type PlayerCount = { field: number; gk: number };
+
+function formatCount(c: PlayerCount | undefined): string {
+  if (!c) return "";
+  const gkPart = c.gk > 0 ? `·G${c.gk > 1 ? c.gk : ""}` : "";
+  return `(${c.field}${gkPart})`;
+}
+
+function PitchChip({ name, accent, selected, onClick, count }: { name: string; accent?: "gk" | "bench"; selected?: boolean; onClick?: () => void; count?: PlayerCount }) {
   const base = "rounded-full px-3 py-1.5 text-sm font-extrabold shadow whitespace-nowrap transition";
   const palette = accent === "gk"
     ? "bg-amber-300 text-amber-950"
@@ -1089,21 +1097,27 @@ function PitchChip({ name, accent, selected, onClick }: { name: string; accent?:
       : "bg-white text-slate-900";
   const ring = selected ? "ring-2 ring-offset-1 ring-yellow-400" : "";
   const Tag = onClick ? "button" : "span";
-  return <Tag type={onClick ? "button" : undefined} className={`${base} ${palette} ${ring}`} onClick={onClick}>{name}</Tag>;
+  const countText = formatCount(count);
+  return (
+    <Tag type={onClick ? "button" : undefined} className={`${base} ${palette} ${ring}`} onClick={onClick}>
+      {name}
+      {countText && <span className="ml-1 text-[11px] font-bold opacity-70">{countText}</span>}
+    </Tag>
+  );
 }
 
-function PitchRow({ players, section, selectedKey, onSelect }: { players: string[]; section: LineupSection; selectedKey: string | null; onSelect?: (section: LineupSection, name: string) => void }) {
+function PitchRow({ players, section, selectedKey, onSelect, counts }: { players: string[]; section: LineupSection; selectedKey: string | null; onSelect?: (section: LineupSection, name: string) => void; counts?: Map<string, PlayerCount> }) {
   if (!players.length) return <div className="flex h-6" />;
   return (
     <div className="flex flex-wrap items-center justify-around gap-1.5 px-2">
       {players.map((name) => (
-        <PitchChip key={name} name={name} selected={selectedKey === `${section}|${name}`} onClick={onSelect ? () => onSelect(section, name) : undefined} />
+        <PitchChip key={name} name={name} selected={selectedKey === `${section}|${name}`} onClick={onSelect ? () => onSelect(section, name) : undefined} count={counts?.get(name)} />
       ))}
     </div>
   );
 }
 
-function Pitch({ title, gk, attack, mid, defense, bench, accent = "emerald", selectedKey, onSelect }: {
+function Pitch({ title, gk, attack, mid, defense, bench, accent = "emerald", selectedKey, onSelect, counts }: {
   title: string;
   gk: string;
   attack: string[];
@@ -1113,6 +1127,7 @@ function Pitch({ title, gk, attack, mid, defense, bench, accent = "emerald", sel
   accent?: "emerald" | "blue";
   selectedKey?: string | null;
   onSelect?: (section: LineupSection, name: string) => void;
+  counts?: Map<string, PlayerCount>;
 }) {
   const headerClass = accent === "blue" ? "from-blue-700 to-blue-900" : "from-emerald-700 to-emerald-900";
   const fieldClass = accent === "blue" ? "from-blue-500 to-blue-700" : "from-emerald-500 to-emerald-700";
@@ -1129,11 +1144,11 @@ function Pitch({ title, gk, attack, mid, defense, bench, accent = "emerald", sel
         <div className="absolute left-1/4 right-1/4 top-3 h-9 rounded-b-md border-2 border-t-0 border-white/40" />
         <div className="absolute left-1/4 right-1/4 bottom-3 h-9 rounded-t-md border-2 border-b-0 border-white/40" />
         <div className="relative flex h-full flex-col justify-around py-1">
-          <PitchRow players={attack} section="attack" selectedKey={sel} onSelect={onSelect} />
-          <PitchRow players={mid} section="mid" selectedKey={sel} onSelect={onSelect} />
-          <PitchRow players={defense} section="defense" selectedKey={sel} onSelect={onSelect} />
+          <PitchRow players={attack} section="attack" selectedKey={sel} onSelect={onSelect} counts={counts} />
+          <PitchRow players={mid} section="mid" selectedKey={sel} onSelect={onSelect} counts={counts} />
+          <PitchRow players={defense} section="defense" selectedKey={sel} onSelect={onSelect} counts={counts} />
           <div className="flex justify-center">
-            <PitchChip name={gk} accent="gk" selected={sel === `gk|${gk}`} onClick={onSelect ? () => onSelect("gk", gk) : undefined} />
+            <PitchChip name={gk} accent="gk" selected={sel === `gk|${gk}`} onClick={onSelect ? () => onSelect("gk", gk) : undefined} count={counts?.get(gk)} />
           </div>
         </div>
       </div>
@@ -1144,7 +1159,7 @@ function Pitch({ title, gk, attack, mid, defense, bench, accent = "emerald", sel
             <span className="rounded-full bg-slate-200 px-2 py-1 text-xs font-semibold text-slate-500">없음</span>
           ) : (
             bench.map((name) => (
-              <PitchChip key={name} name={name} accent="bench" selected={sel === `bench|${name}`} onClick={onSelect ? () => onSelect("bench", name) : undefined} />
+              <PitchChip key={name} name={name} accent="bench" selected={sel === `bench|${name}`} onClick={onSelect ? () => onSelect("bench", name) : undefined} count={counts?.get(name)} />
             ))
           )}
         </div>
@@ -1178,6 +1193,31 @@ function LineupResultView({ result }: { result: LineupResult }) {
     setQuarters(result.quarters);
     setSelection(null);
   }, [result]);
+
+  const countsByTeam = useMemo(() => {
+    const map = new Map<string, Map<string, PlayerCount>>();
+    for (const q of quarters) {
+      let teamMap = map.get(q.team);
+      if (!teamMap) {
+        teamMap = new Map<string, PlayerCount>();
+        map.set(q.team, teamMap);
+      }
+      const bumpField = (name: string) => {
+        const c = teamMap!.get(name) ?? { field: 0, gk: 0 };
+        teamMap!.set(name, { field: c.field + 1, gk: c.gk });
+      };
+      const bumpGk = (name: string) => {
+        if (!name || name === "없음") return;
+        const c = teamMap!.get(name) ?? { field: 0, gk: 0 };
+        teamMap!.set(name, { field: c.field, gk: c.gk + 1 });
+      };
+      q.attack.forEach(bumpField);
+      q.mid.forEach(bumpField);
+      q.defense.forEach(bumpField);
+      bumpGk(q.gk);
+    }
+    return map;
+  }, [quarters]);
 
   function handleSelect(key: string, section: LineupSection, name: string) {
     if (!selection) {
@@ -1245,6 +1285,7 @@ function LineupResultView({ result }: { result: LineupResult }) {
                   accent={q.team === "A" ? "emerald" : "blue"}
                   selectedKey={selectedKey}
                   onSelect={(section, name) => handleSelect(key, section, name)}
+                  counts={countsByTeam.get(q.team)}
                 />
               </div>
               <button className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700" onClick={() => downloadOne(q.team, q.quarter)}>이 화면 이미지 저장</button>
