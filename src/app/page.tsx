@@ -163,15 +163,18 @@ export default function Home() {
   const regularCount = fieldPlayers.filter((p) => p.memberType === "REGULAR").length;
   const guestCount = fieldPlayers.filter((p) => p.memberType === "GUEST").length;
   const waitingCount = waitingPlayers.length;
-  const sortedPlayers = useMemo(() => [...players].sort((a, b) => a.name.localeCompare(b.name, "ko")), [players]);
+  const sortedSheetPlayers = useMemo(
+    () => players.filter((p) => p.source === "SHEET").sort((a, b) => a.name.localeCompare(b.name, "ko")),
+    [players],
+  );
   const searchedPlayers = useMemo(() => {
     const query = playerQuery.trim().toLowerCase();
     if (!query) return [];
-    if (query === ".") return sortedPlayers;
-    return sortedPlayers
+    if (query === ".") return sortedSheetPlayers;
+    return sortedSheetPlayers
       .filter((player) => [player.name, player.primaryPosition, player.secondaryPositions.join(",")].join(" ").toLowerCase().includes(query))
       .slice(0, 20);
-  }, [playerQuery, sortedPlayers]);
+  }, [playerQuery, sortedSheetPlayers]);
 
   const canGenerate = plannerMode === "BALANCE"
     ? activeFieldPlayers.length >= 22 && activeFieldPlayers.length <= 36
