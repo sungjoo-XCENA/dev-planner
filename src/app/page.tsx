@@ -59,7 +59,6 @@ export default function Home() {
   const [warnings, setWarnings] = useState<string[]>([]);
   const [guest, setGuest] = useState<GuestForm>(emptyGuest);
   const [guestRole, setGuestRole] = useState<"FIELD" | "GK">("FIELD");
-  const [memberMode, setMemberMode] = useState<"GUEST" | "WAITING">("GUEST");
   const [plannerMode, setPlannerMode] = useState<PlannerMode>("BALANCE");
   const [teamResult, setTeamResult] = useState<TeamBalanceResult | null>(null);
   const [lineupResult, setLineupResult] = useState<LineupResult | null>(null);
@@ -286,8 +285,26 @@ export default function Home() {
       setWarnings((prev) => [...prev, `${player.name}은 이미 전담 GK로 추가되어 있습니다.`]);
       return;
     }
-    if (fieldIds.includes(player.id)) return;
-    setFieldIds((prev) => [...prev, player.id]);
+    if (!fieldIds.includes(player.id)) {
+      setFieldIds((prev) => [...prev, player.id]);
+    }
+    setWaitingIds((prev) => prev.filter((x) => x !== player.id));
+    setMatchQuarterLimits((prev) => ({ ...prev, [player.id]: prev[player.id] ?? DEFAULT_MATCH_QUARTERS }));
+  }
+
+  function addWaitingFieldPlayer(player: Player) {
+    if (player.primaryPosition === "GK") {
+      setWarnings((prev) => [...prev, `${player.name}은 GK입니다. 전담 GK로 추가해주세요.`]);
+      return;
+    }
+    if (dedicatedGks.some((gk) => gk.id === player.id)) {
+      setWarnings((prev) => [...prev, `${player.name}은 이미 전담 GK로 추가되어 있습니다.`]);
+      return;
+    }
+    if (!fieldIds.includes(player.id)) {
+      setFieldIds((prev) => [...prev, player.id]);
+    }
+    setWaitingIds((prev) => (prev.includes(player.id) ? prev : [...prev, player.id]));
     setMatchQuarterLimits((prev) => ({ ...prev, [player.id]: prev[player.id] ?? DEFAULT_MATCH_QUARTERS }));
   }
 
@@ -299,10 +316,6 @@ export default function Home() {
       delete next[id];
       return next;
     });
-  }
-
-  function toggleWaiting(id: string) {
-    setWaitingIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   }
 
   function addDedicatedGk(player: Player) {
@@ -332,19 +345,15 @@ export default function Home() {
         setFieldIds((prev) => [...prev, existing.id]);
       }
       setMatchQuarterLimits((prev) => ({ ...prev, [existing.id]: prev[existing.id] ?? DEFAULT_MATCH_QUARTERS }));
-      if (memberMode === "WAITING") {
-        setWaitingIds((prev) => (prev.includes(existing.id) ? prev : [...prev, existing.id]));
-      } else {
-        setWaitingIds((prev) => prev.filter((x) => x !== existing.id));
-      }
-      setWarnings((prev) => [...prev, `${trimmedName}은 이미 시트에 있어 임시 등록 대신 해당 선수를 ${memberMode === "WAITING" ? "대기" : "필드"}로 추가했습니다.`]);
+      setWaitingIds((prev) => prev.filter((x) => x !== existing.id));
+      setWarnings((prev) => [...prev, `${trimmedName}은 이미 시트에 있어 임시 등록 대신 해당 선수를 필드로 추가했습니다.`]);
       resetGuest();
       return;
     }
     const player: Player = {
       id: `temp_${Date.now()}_${guest.name}`,
       source: "TEMP_GUEST",
-      memberType: memberMode,
+      memberType: "GUEST",
       active: true,
       name: trimmedName,
       primaryPosition: guest.primaryPosition,
@@ -359,9 +368,6 @@ export default function Home() {
     setPlayers((prev) => [...prev, player]);
     setTempGuests((prev) => [...prev, player]);
     setFieldIds((prev) => [...prev, player.id]);
-    if (memberMode === "WAITING") {
-      setWaitingIds((prev) => [...prev, player.id]);
-    }
     setMatchQuarterLimits((prev) => ({ ...prev, [player.id]: DEFAULT_MATCH_QUARTERS }));
     resetGuest();
   }
@@ -604,7 +610,8 @@ export default function Home() {
           {searchedPlayers.map((p) => {
             const isField = fieldIds.includes(p.id);
             const isGk = dedicatedGks.some((gk) => gk.id === p.id);
-            return <PlayerSearchRow key={p.id} player={p} isField={isField} isGk={isGk} onAddField={() => addFieldPlayer(p)} onRemoveField={() => removeFieldPlayer(p.id)} onAddGk={() => addDedicatedGk(p)} onRemoveGk={() => removeDedicatedGk(p.id)} />;
+            const isWaiting = waitingIds.includes(p.id);
+            return <PlayerSearchRow key={p.id} player={p} isField={isField} isWaiting={isWaiting} isGk={isGk} onAddField={() => addFieldPlayer(p)} onRemoveField={() => removeFieldPlayer(p.id)} onAddWaiting={() => addWaitingFieldPlayer(p)} onAddGk={() => addDedicatedGk(p)} onRemoveGk={() => removeDedicatedGk(p.id)} />;
           })}
           {players.length > 0 && playerQuery.trim() && searchedPlayers.length === 0 && <p className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">검색 결과가 없습니다.</p>}
           {players.length > 0 && !playerQuery.trim() && <p className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">검색어를 입력하거나 . 을 입력하면 전체 목록을 볼 수 있습니다.</p>}
@@ -613,15 +620,8 @@ export default function Home() {
 
       <section className="mb-6 rounded-3xl bg-white p-6 shadow-sm">
         <h2 className="text-xl font-bold">선수추가</h2>
+        <p className="mt-1 text-xs text-slate-500">시트에 없는 용병을 정식 참석자로 추가합니다. 대기는 시트 선수만 가능 — 선수검색의 대기 버튼을 사용하세요.</p>
         <div className="mt-4 grid gap-4">
-          <div>
-            <p className="mb-2 text-sm font-semibold text-slate-600">유형</p>
-            <div className="flex gap-2">
-              <button type="button" className={`flex-1 rounded-xl px-4 py-2 text-sm font-bold ${memberMode === "GUEST" ? "bg-violet-600 text-white" : "bg-slate-100 text-slate-600"}`} onClick={() => setMemberMode("GUEST")}>용병</button>
-              <button type="button" className={`flex-1 rounded-xl px-4 py-2 text-sm font-bold ${memberMode === "WAITING" ? "bg-orange-500 text-white" : "bg-slate-100 text-slate-600"}`} onClick={() => setMemberMode("WAITING")}>대기</button>
-            </div>
-            <p className="mt-2 text-xs text-slate-500">{memberMode === "GUEST" ? "시트에 없는 선수를 정식 참석자로 추가합니다." : "26명 마감 시 콜업되어 A·B팀 1쿼터씩 뛰는 대기 인원입니다."}</p>
-          </div>
           <input className="rounded-xl border border-slate-300 px-3 py-3" placeholder="이름" value={guest.name} onChange={(e) => setGuest({ ...guest, name: e.target.value })} />
           <PositionPicker title="주포지션" includeGk selectedRole={guestRole} primary={guest.primaryPosition} onGk={() => setGuestRole("GK")} onField={(position) => { setGuestRole("FIELD"); setGuest({ ...guest, primaryPosition: position }); }} />
           <div>
@@ -641,8 +641,8 @@ export default function Home() {
             <ScoreSelect label="활동" value={guest.activityScore} onChange={(v) => setGuest({ ...guest, activityScore: v })} />
           </div>
           <input className="rounded-xl border border-slate-300 px-3 py-2" placeholder="메모" value={guest.memo} onChange={(e) => setGuest({ ...guest, memo: e.target.value })} />
-          <button className={`w-full rounded-xl px-4 py-3 font-semibold text-white ${guestRole === "GK" ? "bg-emerald-600" : memberMode === "WAITING" ? "bg-orange-500" : "bg-violet-600"}`} onClick={guestRole === "GK" ? addTempGk : addTempGuest}>
-            {guestRole === "GK" ? "임시 GK 추가" : memberMode === "WAITING" ? "대기 추가" : "용병 추가"}
+          <button className={`w-full rounded-xl px-4 py-3 font-semibold text-white ${guestRole === "GK" ? "bg-emerald-600" : "bg-violet-600"}`} onClick={guestRole === "GK" ? addTempGk : addTempGuest}>
+            {guestRole === "GK" ? "임시 GK 추가" : "용병 추가"}
           </button>
         </div>
       </section>
@@ -660,7 +660,7 @@ export default function Home() {
         <div className="mt-2 flex flex-wrap gap-2">{fieldPlayers.map((p) => {
           const waitingState = isWaitingPlayer(p);
           const tone = waitingState ? "waiting" : p.memberType === "GUEST" ? "guest" : "regular";
-          return <Chip key={p.id} label={`${p.name}(${p.primaryPosition})`} tone={tone} onRemove={() => removeFieldPlayer(p.id)} onToggleWaiting={() => toggleWaiting(p.id)} isWaiting={waitingState} />;
+          return <Chip key={p.id} label={`${p.name}(${p.primaryPosition})`} tone={tone} onRemove={() => removeFieldPlayer(p.id)} />;
         })}</div>
         <h3 className="mt-5 font-semibold">전담 GK</h3>
         <div className="mt-2 flex flex-wrap gap-2">{dedicatedGks.map((gk) => <Chip key={gk.id} label={gk.name} onRemove={() => removeDedicatedGk(gk.id)} />)}</div>
@@ -752,7 +752,7 @@ function MessageBox({ title, items, tone }: { title: string; items: string[]; to
   return <div className={`rounded-3xl p-5 ${tone === "error" ? "bg-red-50 text-red-900" : "bg-amber-50 text-amber-900"}`}><h3 className="font-bold">{title}</h3><ul className="mt-2 list-disc pl-5 text-sm">{items.map((item, i) => <li key={i}>{item}</li>)}</ul></div>;
 }
 
-function Chip({ label, onRemove, tone = "regular", onToggleWaiting, isWaiting }: { label: string; onRemove: () => void; tone?: "regular" | "guest" | "waiting"; onToggleWaiting?: () => void; isWaiting?: boolean }) {
+function Chip({ label, onRemove, tone = "regular" }: { label: string; onRemove: () => void; tone?: "regular" | "guest" | "waiting" }) {
   const className = tone === "waiting"
     ? "bg-orange-100 text-orange-800"
     : tone === "guest"
@@ -761,20 +761,42 @@ function Chip({ label, onRemove, tone = "regular", onToggleWaiting, isWaiting }:
   return (
     <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm ${className}`}>
       {label}
-      {onToggleWaiting && (
-        <button className={`rounded px-1.5 text-[10px] font-bold ${isWaiting ? "bg-orange-300 text-orange-900" : "bg-slate-300 text-slate-700"}`} onClick={onToggleWaiting} title={isWaiting ? "정규로 전환" : "대기로 전환"}>
-          {isWaiting ? "대기" : "정규"}
-        </button>
-      )}
       <button className="font-bold opacity-70" onClick={onRemove}>×</button>
     </span>
   );
 }
 
-function PlayerSearchRow({ player, isField, isGk, onAddField, onRemoveField, onAddGk, onRemoveGk }: { player: Player; isField: boolean; isGk: boolean; onAddField: () => void; onRemoveField: () => void; onAddGk: () => void; onRemoveGk: () => void }) {
+function PlayerSearchRow({ player, isField, isWaiting, isGk, onAddField, onRemoveField, onAddWaiting, onAddGk, onRemoveGk }: { player: Player; isField: boolean; isWaiting: boolean; isGk: boolean; onAddField: () => void; onRemoveField: () => void; onAddWaiting: () => void; onAddGk: () => void; onRemoveGk: () => void }) {
   const secondary = player.secondaryPositions.length > 0 ? player.secondaryPositions.join(",") : "-";
   const isSheetGk = player.primaryPosition === "GK";
-  return <div className={`rounded-2xl border p-3 ${isField || isGk ? "border-blue-200 bg-blue-50" : "border-slate-200 bg-white"}`}><div className="flex items-center justify-between gap-2"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><p className="font-bold">{player.name}</p>{isField && <RoleBadge role="FIELD" />}{(isGk || isSheetGk) && <RoleBadge role="GK" />}</div><p className="mt-1 text-xs text-slate-500">주 {player.primaryPosition} · 부 {secondary}</p><p className="mt-0.5 text-xs text-slate-400">공격{player.attackScore} · 미드{player.midScore} · 수비{player.defenseScore} · 활동{player.activityScore}</p></div><div className="flex shrink-0 gap-1">{isField ? <button className="rounded-lg bg-red-50 px-2.5 py-2 text-xs font-bold text-red-700" onClick={onRemoveField}>해제</button> : <button className="rounded-lg bg-blue-600 px-2.5 py-2 text-xs font-bold text-white disabled:bg-slate-300" onClick={onAddField} disabled={isGk || isSheetGk}>필드</button>}{isGk ? <button className="rounded-lg bg-red-50 px-2.5 py-2 text-xs font-bold text-red-700" onClick={onRemoveGk}>해제</button> : <button className="rounded-lg bg-amber-500 px-2.5 py-2 text-xs font-bold text-white disabled:bg-slate-300" onClick={onAddGk} disabled={isField}>GK</button>}</div></div></div>;
+  const fieldRegular = isField && !isWaiting;
+  return (
+    <div className={`rounded-2xl border p-3 ${isField || isGk ? "border-blue-200 bg-blue-50" : "border-slate-200 bg-white"}`}>
+      <div className="flex items-center justify-between gap-2">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="font-bold">{player.name}</p>
+            {fieldRegular && <RoleBadge role="FIELD" />}
+            {isField && isWaiting && <span className="inline-flex rounded-full bg-orange-100 px-2 py-0.5 text-xs font-bold text-orange-700">대기</span>}
+            {(isGk || isSheetGk) && <RoleBadge role="GK" />}
+          </div>
+          <p className="mt-1 text-xs text-slate-500">주 {player.primaryPosition} · 부 {secondary}</p>
+          <p className="mt-0.5 text-xs text-slate-400">공격{player.attackScore} · 미드{player.midScore} · 수비{player.defenseScore} · 활동{player.activityScore}</p>
+        </div>
+        <div className="flex shrink-0 gap-1">
+          {fieldRegular
+            ? <button className="rounded-lg bg-red-50 px-2.5 py-2 text-xs font-bold text-red-700" onClick={onRemoveField}>해제</button>
+            : <button className="rounded-lg bg-blue-600 px-2.5 py-2 text-xs font-bold text-white disabled:bg-slate-300" onClick={onAddField} disabled={isGk || isSheetGk}>필드</button>}
+          {isField && isWaiting
+            ? <button className="rounded-lg bg-red-50 px-2.5 py-2 text-xs font-bold text-red-700" onClick={onRemoveField}>해제</button>
+            : <button className="rounded-lg bg-orange-500 px-2.5 py-2 text-xs font-bold text-white disabled:bg-slate-300" onClick={onAddWaiting} disabled={isGk || isSheetGk}>대기</button>}
+          {isGk
+            ? <button className="rounded-lg bg-red-50 px-2.5 py-2 text-xs font-bold text-red-700" onClick={onRemoveGk}>해제</button>
+            : <button className="rounded-lg bg-amber-500 px-2.5 py-2 text-xs font-bold text-white disabled:bg-slate-300" onClick={onAddGk} disabled={isField}>GK</button>}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function ScoreSelect({ label, value, onChange }: { label: string; value: number; onChange: (v: number) => void }) {
