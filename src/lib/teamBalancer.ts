@@ -256,7 +256,7 @@ function combinations<T>(items: T[], k: number): T[][] {
   return withFirst.concat(withoutFirst);
 }
 
-function buildPools(fieldPlayers: FieldPlayer[], teamTargets: RoleTargets): {
+function buildPools(fieldPlayers: FieldPlayer[], teamTargets: RoleTargets, variant: number): {
   attPool: FieldPlayer[];
   midPool: FieldPlayer[];
   defPool: FieldPlayer[];
@@ -284,26 +284,25 @@ function buildPools(fieldPlayers: FieldPlayer[], teamTargets: RoleTargets): {
   const lastAttCount = totalAtt - strongAttCount;
   const lastDefCount = totalDef - strongDefCount;
 
-  let bestAdj = Infinity;
-  let bestAtt: FieldPlayer[] = [...strongAtt];
-  let bestDef: FieldPlayer[] = [...strongDef];
-
   if (lastN.length === lastAttCount + lastDefCount) {
+    const candidates: { adjScore: number; att: FieldPlayer[]; def: FieldPlayer[]; key: string }[] = [];
     for (const lastAttCombo of combinations(lastN, lastAttCount)) {
       const attCandidate = [...strongAtt, ...lastAttCombo];
       const defCandidate = [...strongDef, ...lastN.filter((p) => !lastAttCombo.includes(p))];
       const result = evaluatePoolAssignment(attCandidate, midPool, defCandidate);
-      if (result.adjScore < bestAdj) {
-        bestAdj = result.adjScore;
-        bestAtt = attCandidate;
-        bestDef = defCandidate;
-      }
+      const key = [...attCandidate.map((p) => p.id).sort(), "|", ...defCandidate.map((p) => p.id).sort()].join(",");
+      candidates.push({ adjScore: result.adjScore, att: attCandidate, def: defCandidate, key });
     }
-  } else {
-    bestAtt = [...strongAtt, ...lastN.slice(0, lastAttCount)];
-    bestDef = [...strongDef, ...lastN.slice(lastAttCount)];
+    candidates.sort((a, b) => {
+      if (a.adjScore !== b.adjScore) return a.adjScore - b.adjScore;
+      return a.key.localeCompare(b.key);
+    });
+    const pick = candidates[((variant % candidates.length) + candidates.length) % candidates.length];
+    return { attPool: pick.att, midPool, defPool: pick.def };
   }
 
+  const bestAtt = [...strongAtt, ...lastN.slice(0, lastAttCount)];
+  const bestDef = [...strongDef, ...lastN.slice(lastAttCount)];
   return { attPool: bestAtt, midPool, defPool: bestDef };
 }
 
@@ -375,7 +374,7 @@ function buildResult(teamA: AssignedFieldPlayer[], teamB: AssignedFieldPlayer[],
   };
 }
 
-export function balanceTeams(players: Player[]): TeamBalanceResult {
+export function balanceTeams(players: Player[], variant = 0): TeamBalanceResult {
   if (players.length < MIN_TEAM_SIZE * 2 || players.length > MAX_TEAM_SIZE * 2) {
     throw new Error(`필드 참석자는 ${MIN_TEAM_SIZE * 2}명~${MAX_TEAM_SIZE * 2}명이어야 합니다. 현재 ${players.length}명입니다.`);
   }
@@ -389,7 +388,7 @@ export function balanceTeams(players: Player[]): TeamBalanceResult {
   const halfSize = Math.ceil(fieldPlayers.length / 2);
   const teamTargets = targetForTeamSize(halfSize);
 
-  const { attPool, midPool, defPool } = buildPools(fieldPlayers, teamTargets);
+  const { attPool, midPool, defPool } = buildPools(fieldPlayers, teamTargets, variant);
   const initial = evaluatePoolAssignment(attPool, midPool, defPool);
 
   if (initial.teamA.length < MIN_TEAM_SIZE || initial.teamA.length > MAX_TEAM_SIZE
@@ -401,8 +400,8 @@ export function balanceTeams(players: Player[]): TeamBalanceResult {
   return buildResult(refined.teamA, refined.teamB, refined.summary);
 }
 
-export function rebalanceTeams(teamAPlayers: Player[], teamBPlayers: Player[]): TeamBalanceResult {
-  return balanceTeams([...teamAPlayers, ...teamBPlayers]);
+export function rebalanceTeams(teamAPlayers: Player[], teamBPlayers: Player[], variant = 0): TeamBalanceResult {
+  return balanceTeams([...teamAPlayers, ...teamBPlayers], variant);
 }
 
 export function summarizeTeams(teamAPlayers: AssignedPlayer[], teamBPlayers: AssignedPlayer[]): TeamBalanceResult {

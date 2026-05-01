@@ -70,6 +70,8 @@ export default function Home() {
   const [teamsConfirmed, setTeamsConfirmed] = useState(false);
   const [swapSelection, setSwapSelection] = useState<SwapSelection>(null);
   const [hydrated, setHydrated] = useState(false);
+  const balanceVariantRef = useRef(0);
+  const lastBalanceKeyRef = useRef("");
 
   useEffect(() => {
     let cancelled = false;
@@ -395,7 +397,13 @@ export default function Home() {
       if (plannerMode === "MATCH") {
         setMatchResult(planMatchLineup(activeFieldPlayers, dedicatedGks, matchQuarterLimits));
       } else {
-        const team = balanceTeams(activeFieldPlayers);
+        const balanceKey = activeFieldPlayers.map((p) => p.id).sort().join(",");
+        if (lastBalanceKeyRef.current !== balanceKey) {
+          balanceVariantRef.current = 0;
+          lastBalanceKeyRef.current = balanceKey;
+        }
+        const team = balanceTeams(activeFieldPlayers, balanceVariantRef.current);
+        balanceVariantRef.current += 1;
         setTeamResult(team);
       }
       setErrors([]);
