@@ -436,6 +436,24 @@ export default function Home() {
     setTeamsConfirmed(false);
   }
 
+  function handleGroupTarget(targetTeam: "A" | "B", targetGroup: PositionGroup) {
+    if (!teamResult || teamsConfirmed || !swapSelection) return;
+    if (swapSelection.team === targetTeam) return;
+    const sourceTeamPlayers = swapSelection.team === "A" ? teamResult.teamA.players : teamResult.teamB.players;
+    const targetTeamPlayers = targetTeam === "A" ? teamResult.teamA.players : teamResult.teamB.players;
+    const sourcePlayer = sourceTeamPlayers.find((p) => p.id === swapSelection.playerId);
+    if (!sourcePlayer) return;
+    const candidates = targetTeamPlayers.filter((p) => p.assignedGroup === targetGroup);
+    if (candidates.length === 0) return;
+    const sourceComposite = sourcePlayer.attackScore + sourcePlayer.midScore + sourcePlayer.defenseScore + sourcePlayer.activityScore;
+    const closest = candidates.reduce((best, p) => {
+      const cP = p.attackScore + p.midScore + p.defenseScore + p.activityScore;
+      const cBest = best.attackScore + best.midScore + best.defenseScore + best.activityScore;
+      return Math.abs(cP - sourceComposite) < Math.abs(cBest - sourceComposite) ? p : best;
+    });
+    handlePlayerClick(targetTeam, closest.id);
+  }
+
   function handlePlayerClick(team: "A" | "B", playerId: string) {
     if (!teamResult || teamsConfirmed) return;
     if (!swapSelection) {
@@ -724,6 +742,7 @@ export default function Home() {
           selectedVariantIdx={selectedVariantIdx}
           onSelectVariant={selectVariant}
           onPlayerClick={handlePlayerClick}
+          onGroupTarget={handleGroupTarget}
           onConfirm={handleConfirmTeams}
           onReadjust={handleReadjustTeams}
         />
@@ -857,6 +876,7 @@ function TeamResultView({
   selectedVariantIdx,
   onSelectVariant,
   onPlayerClick,
+  onGroupTarget,
   onConfirm,
   onReadjust,
 }: {
@@ -867,6 +887,7 @@ function TeamResultView({
   selectedVariantIdx: number;
   onSelectVariant: (idx: number) => void;
   onPlayerClick: (team: "A" | "B", playerId: string) => void;
+  onGroupTarget: (targetTeam: "A" | "B", targetGroup: PositionGroup) => void;
   onConfirm: () => void;
   onReadjust: () => void;
 }) {
@@ -924,6 +945,7 @@ function TeamResultView({
           selection={selection}
           otherTeamPlayers={result.teamB.players}
           onPlayerClick={onPlayerClick}
+          onGroupTarget={onGroupTarget}
           interactive={!confirmed}
           groupScores={{ ATTACK: s.attackScoreA, MID: s.midScoreA, DEFENSE: s.defenseScoreA }}
         />
@@ -934,6 +956,7 @@ function TeamResultView({
           selection={selection}
           otherTeamPlayers={result.teamA.players}
           onPlayerClick={onPlayerClick}
+          onGroupTarget={onGroupTarget}
           interactive={!confirmed}
           groupScores={{ ATTACK: s.attackScoreB, MID: s.midScoreB, DEFENSE: s.defenseScoreB }}
         />
@@ -984,6 +1007,7 @@ function TeamCard({
   selection,
   otherTeamPlayers,
   onPlayerClick,
+  onGroupTarget,
   interactive,
   groupScores,
 }: {
@@ -993,6 +1017,7 @@ function TeamCard({
   selection: SwapSelection;
   otherTeamPlayers: TeamBalanceResult["teamA"]["players"];
   onPlayerClick: (team: "A" | "B", playerId: string) => void;
+  onGroupTarget: (targetTeam: "A" | "B", targetGroup: PositionGroup) => void;
   interactive: boolean;
   groupScores: Record<PositionGroup, number>;
 }) {
@@ -1012,8 +1037,20 @@ function TeamCard({
         const score = groupScores[g];
         return (
           <div key={g} className="mt-3">
-            <div className="flex items-center justify-between">
-              <GroupBadge group={g} />
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <GroupBadge group={g} />
+                {showSwapHints && interactive && (
+                  <button
+                    type="button"
+                    className="rounded-full bg-amber-200 px-2 py-0.5 text-[10px] font-bold text-amber-900 hover:bg-amber-300"
+                    onClick={() => onGroupTarget(team, g)}
+                    title="선택한 선수를 이 그룹으로 보내기"
+                  >
+                    여기로
+                  </button>
+                )}
+              </div>
               <span className="text-xs font-bold text-slate-600">합계 {score}</span>
             </div>
             <div className="mt-1.5 grid gap-1" style={{ gridTemplateColumns: `repeat(${players.filter((p) => p.assignedGroup === g).length}, minmax(0, 1fr))` }}>
