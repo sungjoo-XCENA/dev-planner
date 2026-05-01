@@ -1168,20 +1168,25 @@ function Pitch({ title, gk, attack, mid, defense, bench, accent = "emerald", sel
   );
 }
 
+function setSectionName(
+  target: LineupResult["quarters"][0],
+  section: LineupSection,
+  oldName: string,
+  newName: string,
+): LineupResult["quarters"][0] {
+  if (section === "gk") return { ...target, gk: newName };
+  const arr = (target[section] as string[]).map((n) => (n === oldName ? newName : n));
+  return { ...target, [section]: arr };
+}
+
 function swapInsideQuarter(q: LineupResult["quarters"][0], sec1: LineupSection, name1: string, sec2: LineupSection, name2: string): LineupResult["quarters"][0] {
-  const setSection = (
-    target: LineupResult["quarters"][0],
-    section: LineupSection,
-    oldName: string,
-    newName: string,
-  ): LineupResult["quarters"][0] => {
-    if (section === "gk") return { ...target, gk: newName };
-    const arr = (target[section] as string[]).map((n) => (n === oldName ? newName : n));
-    return { ...target, [section]: arr };
-  };
-  let updated = setSection(q, sec1, name1, name2);
-  updated = setSection(updated, sec2, name2, name1);
+  let updated = setSectionName(q, sec1, name1, name2);
+  updated = setSectionName(updated, sec2, name2, name1);
   return updated;
+}
+
+function teamFromKey(key: string): string {
+  return key.split("-")[0];
 }
 
 function LineupResultView({ result }: { result: LineupResult }) {
@@ -1228,18 +1233,28 @@ function LineupResultView({ result }: { result: LineupResult }) {
       setSelection(null);
       return;
     }
-    if (selection.key !== key) {
+    // Cross-team selection: replace selection (cross-team swap not supported in lineup)
+    if (teamFromKey(selection.key) !== teamFromKey(key)) {
       setSelection({ key, section, name });
       return;
     }
-    if (selection.section === section && selection.name === name) {
+    // Same quarter, same player → toggle off
+    if (selection.key === key && selection.section === section && selection.name === name) {
       setSelection(null);
       return;
     }
     setQuarters((prev) => prev.map((q) => {
       const qKey = `${q.team}-${q.quarter}`;
-      if (qKey !== key) return q;
-      return swapInsideQuarter(q, selection.section, selection.name, section, name);
+      if (qKey === selection.key && qKey === key) {
+        return swapInsideQuarter(q, selection.section, selection.name, section, name);
+      }
+      if (qKey === selection.key) {
+        return setSectionName(q, selection.section, selection.name, name);
+      }
+      if (qKey === key) {
+        return setSectionName(q, section, name, selection.name);
+      }
+      return q;
     }));
     setSelection(null);
   }
