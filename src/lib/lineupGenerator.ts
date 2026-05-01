@@ -43,51 +43,54 @@ function sortByCompositeDesc(players: AssignedPlayer[]): AssignedPlayer[] {
 }
 
 type PerQuarterRotation = {
-  bench: AssignedPlayer | null;
+  benches: AssignedPlayer[];
   gk: AssignedPlayer | null;
 };
 
 function planRotation(
   nonIronmen: AssignedPlayer[],
   hasDedicatedGk: boolean[],
+  benchPerQuarter: number[],
 ): PerQuarterRotation[] {
-  const benchCount = new Map<string, number>();
-  const gkCount = new Map<string, number>();
+  // bench·GK 합산을 events 로 추적 → 같은 사람이 두 번 이벤트 받지 않게
+  const eventCount = new Map<string, number>();
   const slots: PerQuarterRotation[] = [];
 
+  const pickLowest = (pool: AssignedPlayer[], excluded: Set<string>): AssignedPlayer | null => {
+    const filtered = pool.filter((p) => !excluded.has(p.id));
+    if (filtered.length === 0) return null;
+    return [...filtered].sort((a, b) => {
+      const diff = (eventCount.get(a.id) ?? 0) - (eventCount.get(b.id) ?? 0);
+      if (diff !== 0) return diff;
+      const compDiff = compositeScore(a) - compositeScore(b);
+      if (compDiff !== 0) return compDiff;
+      return a.name.localeCompare(b.name, "ko");
+    })[0] ?? null;
+  };
+
   for (let qIdx = 0; qIdx < 4; qIdx += 1) {
-    let bench: AssignedPlayer | null = null;
+    const benches: AssignedPlayer[] = [];
     let gk: AssignedPlayer | null = null;
+    const usedThisQ = new Set<string>();
 
-    if (nonIronmen.length > 0) {
-      const benchCandidates = sortByCompositeDesc([...nonIronmen]).reverse();
-      benchCandidates.sort((a, b) => {
-        const diff = (benchCount.get(a.id) ?? 0) - (benchCount.get(b.id) ?? 0);
-        if (diff !== 0) return diff;
-        const compDiff = compositeScore(a) - compositeScore(b);
-        if (compDiff !== 0) return compDiff;
-        return a.name.localeCompare(b.name, "ko");
-      });
-      bench = benchCandidates[0] ?? null;
-      if (bench) benchCount.set(bench.id, (benchCount.get(bench.id) ?? 0) + 1);
+    const benchTarget = Math.min(benchPerQuarter[qIdx] ?? 0, nonIronmen.length);
+    for (let bIdx = 0; bIdx < benchTarget; bIdx += 1) {
+      const b = pickLowest(nonIronmen, usedThisQ);
+      if (!b) break;
+      benches.push(b);
+      usedThisQ.add(b.id);
+      eventCount.set(b.id, (eventCount.get(b.id) ?? 0) + 1);
     }
 
-    if (!hasDedicatedGk[qIdx] && nonIronmen.length > 0) {
-      const gkCandidates = nonIronmen.filter((p) => !bench || p.id !== bench.id);
-      gkCandidates.sort((a, b) => {
-        const diff = (gkCount.get(a.id) ?? 0) - (gkCount.get(b.id) ?? 0);
-        if (diff !== 0) return diff;
-        const benchDiff = (benchCount.get(a.id) ?? 0) - (benchCount.get(b.id) ?? 0);
-        if (benchDiff !== 0) return benchDiff;
-        const compDiff = compositeScore(a) - compositeScore(b);
-        if (compDiff !== 0) return compDiff;
-        return a.name.localeCompare(b.name, "ko");
-      });
-      gk = gkCandidates[0] ?? null;
-      if (gk) gkCount.set(gk.id, (gkCount.get(gk.id) ?? 0) + 1);
+    if (!hasDedicatedGk[qIdx]) {
+      gk = pickLowest(nonIronmen, usedThisQ);
+      if (gk) {
+        usedThisQ.add(gk.id);
+        eventCount.set(gk.id, (eventCount.get(gk.id) ?? 0) + 1);
+      }
     }
 
-    slots.push({ bench, gk });
+    slots.push({ benches, gk });
   }
   return slots;
 }
@@ -145,7 +148,11 @@ function lineupForTeam(
   const willHaveWaiting = waitingPlayer !== null && waitingQuarter !== null;
 
   const hasDedicatedGk = QUARTERS.map((q) => dedicatedByQuarter[q] !== null);
-  const rotation = planRotation(nonIronmen, hasDedicatedGk);
+  // Per-Q nonIM bench count: 정상 팀이면 teamSize - 11.
+  // 대기 콜업 쿼터: 대기 들어오면서 ironman 1명 양보 → 추가 bench는 ironman으로 채우므로 nonIM은 baseBench 그대로.
+  const baseBench = Math.max(0, teamSize - TOTAL_DEPLOYED);
+  const benchPerQuarter = QUARTERS.map(() => baseBench);
+  const rotation = planRotation(nonIronmen, hasDedicatedGk, benchPerQuarter);
 
   const warnings: string[] = [];
   const dedicatedRotation: Record<string, string[]> = {};
@@ -156,7 +163,7 @@ function lineupForTeam(
     const isWaitingQuarter = willHaveWaiting && waitingQuarter === quarter;
     const dedicated = dedicatedByQuarter[quarter];
 
-    let benchPlayer = rotation[qIdx].bench;
+    let benchPlayers = [...rotation[qIdx].benches];
     let gkPlayer = rotation[qIdx].gk;
 
     let gkName = "";
@@ -172,11 +179,13 @@ function lineupForTeam(
     }
 
     if (isWaitingQuarter && topIronman) {
-      benchPlayer = topIronman;
+      // 대기 들어오는 쿼터는 ironman 양보. benches 마지막에 ironman 추가 (rotation에서 이미 추가 1명 산정됨)
+      benchPlayers = benchPlayers.filter((p) => p.id !== topIronman.id);
+      benchPlayers.push(topIronman);
     }
 
     const excluded = new Set<string>();
-    if (benchPlayer) excluded.add(benchPlayer.id);
+    benchPlayers.forEach((p) => excluded.add(p.id));
     if (gkPlayer) excluded.add(gkPlayer.id);
 
     const outfieldPool = team.players.filter((p) => !excluded.has(p.id));
@@ -199,13 +208,7 @@ function lineupForTeam(
       else if (slotGroup === "DEFENSE") defenseNames = [...defenseNames, waitingPlayer.name];
     }
 
-    const benchNames: string[] = [];
-    if (benchPlayer) benchNames.push(benchPlayer.name);
-    const totalDeployed = attackNames.length + midNames.length + defenseNames.length + (gkName && gkName !== "없음" ? 1 : 0);
-    if (totalDeployed !== TOTAL_DEPLOYED && !isWaitingQuarter) {
-      // sanity guard: shouldn't normally trigger, but warn if formation broken
-      warnings.push(`${team.name}팀 ${quarter}Q 라인업 인원 ${totalDeployed} (목표 ${TOTAL_DEPLOYED})`);
-    }
+    const benchNames = benchPlayers.map((p) => p.name);
 
     quarters.push({
       quarter,
