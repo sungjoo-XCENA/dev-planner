@@ -29,10 +29,6 @@ function compositeScore(player: FieldPlayer): number {
   return player.attackScore + player.midScore + player.defenseScore + player.activityScore;
 }
 
-function groupActivityScore(player: FieldPlayer, group: PositionGroup): number {
-  return scoreForGroup(group, player) + player.activityScore;
-}
-
 function primaryRank(player: FieldPlayer, group: PositionGroup): number {
   const primary = getPositionGroup(player.primaryPosition);
   if (group === primary) return 0;
@@ -48,8 +44,10 @@ function assignmentReason(player: FieldPlayer, group: PositionGroup): string {
 }
 
 function comparePlayersForPair(group: PositionGroup, a: FieldPlayer, b: FieldPlayer): number {
-  const metricDiff = groupActivityScore(b, group) - groupActivityScore(a, group);
-  if (metricDiff !== 0) return metricDiff;
+  const posDiff = scoreForGroup(group, b) - scoreForGroup(group, a);
+  if (posDiff !== 0) return posDiff;
+  const actDiff = b.activityScore - a.activityScore;
+  if (actDiff !== 0) return actDiff;
   const compositeDiff = compositeScore(b) - compositeScore(a);
   if (compositeDiff !== 0) return compositeDiff;
   return a.name.localeCompare(b.name, "ko");
@@ -57,16 +55,19 @@ function comparePlayersForPair(group: PositionGroup, a: FieldPlayer, b: FieldPla
 
 function compareForMidPool(a: FieldPlayer, b: FieldPlayer): number {
   if (b.midScore !== a.midScore) return b.midScore - a.midScore;
-  const aMaxOther = Math.max(groupActivityScore(a, "ATTACK"), groupActivityScore(a, "DEFENSE"));
-  const bMaxOther = Math.max(groupActivityScore(b, "ATTACK"), groupActivityScore(b, "DEFENSE"));
+  if (b.activityScore !== a.activityScore) return b.activityScore - a.activityScore;
+  const aMaxOther = Math.max(a.attackScore, a.defenseScore);
+  const bMaxOther = Math.max(b.attackScore, b.defenseScore);
   if (aMaxOther !== bMaxOther) return aMaxOther - bMaxOther;
   if (compositeScore(b) !== compositeScore(a)) return compositeScore(b) - compositeScore(a);
   return a.name.localeCompare(b.name, "ko");
 }
 
 function compareForStrongPool(group: PositionGroup, a: FieldPlayer, b: FieldPlayer): number {
-  const metricDiff = groupActivityScore(b, group) - groupActivityScore(a, group);
-  if (metricDiff !== 0) return metricDiff;
+  const posDiff = scoreForGroup(group, b) - scoreForGroup(group, a);
+  if (posDiff !== 0) return posDiff;
+  const actDiff = b.activityScore - a.activityScore;
+  if (actDiff !== 0) return actDiff;
   const aRank = primaryRank(a, group);
   const bRank = primaryRank(b, group);
   if (aRank !== bRank) return aRank - bRank;
