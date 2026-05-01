@@ -1327,9 +1327,16 @@ function LineupResultView({ result }: { result: LineupResult }) {
   }
 
   const combinedRef = useRef<HTMLDivElement | null>(null);
+  const today = useMemo(() => {
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  }, []);
   async function downloadCombined() {
     if (!combinedRef.current) return;
-    await downloadElementAsImage(combinedRef.current, `dev_fc_lineup.png`);
+    await downloadElementAsImage(combinedRef.current, `dev_fc_lineup_${today}.png`);
   }
 
   const teamOverview = useMemo(() => {
@@ -1355,7 +1362,10 @@ function LineupResultView({ result }: { result: LineupResult }) {
       {result.warnings.length > 0 && <div className="mt-4"><MessageBox title="라인업 경고" items={result.warnings} tone="warning" /></div>}
 
       <div ref={combinedRef} className="mt-4 rounded-2xl border-2 border-slate-300 bg-white p-5">
-        <h3 className="mb-3 text-center text-lg font-black text-slate-900">DEV FC 라인업</h3>
+        <div className="mb-3 flex items-baseline justify-center gap-2">
+          <h3 className="text-lg font-black text-slate-900">DEV FC 라인업</h3>
+          <span className="text-sm font-semibold text-slate-500">{today}</span>
+        </div>
         <div className="grid gap-4 md:grid-cols-2">
           {(["A", "B"] as const).map((team) => (
             <div key={team} className={`rounded-xl p-3 ${team === "A" ? "bg-emerald-50" : "bg-blue-50"}`}>
