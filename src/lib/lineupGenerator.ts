@@ -27,14 +27,21 @@ function compositeScore(p: AssignedPlayer): number {
   return p.attackScore + p.midScore + p.defenseScore + p.activityScore;
 }
 
-function findIronman(team: Team): AssignedPlayer | null {
-  if (team.players.length === 0) return null;
-  return team.players.reduce((best, p) => {
-    const diff = compositeScore(p) - compositeScore(best);
-    if (diff > 0) return p;
-    if (diff === 0 && p.name.localeCompare(best.name, "ko") < 0) return p;
-    return best;
-  }, team.players[0]);
+function findIronmen(team: Team, count: number): AssignedPlayer[] {
+  const sorted = [...team.players].sort((a, b) => {
+    const diff = compositeScore(b) - compositeScore(a);
+    if (diff !== 0) return diff;
+    return a.name.localeCompare(b.name, "ko");
+  });
+  return sorted.slice(0, Math.max(0, Math.min(count, sorted.length)));
+}
+
+function ironmanCount(teamSize: number): number {
+  // Math: 4-Q players (forced) = max(1, team_size − bench-events − GK-events)
+  // bench-events/Q = team_size − 11; total bench-events = 4 × (team_size − 11)
+  // GK-events = 4
+  // forced = team_size − 4(team_size − 11) − 4 = 40 − 3 × team_size
+  return Math.max(1, 40 - 3 * teamSize);
 }
 
 function rotateRest(members: AssignedPlayer[], restPerQ: number): Record<Quarter, AssignedPlayer[]> {
@@ -82,20 +89,27 @@ function lineupForTeam(
     DEFENSE: playersByGroup(team, "DEFENSE"),
   };
 
-  const ironman = findIronman(team);
-  const ironmanGroup: PositionGroup | null = ironman ? ironman.assignedGroup : null;
+  const ironmen = findIronmen(team, ironmanCount(team.players.length));
+  const topIronman: AssignedPlayer | null = ironmen[0] ?? null;
+  const ironmanIds = new Set(ironmen.map((p) => p.id));
+  const ironmenByGroup: Record<PositionGroup, number> = {
+    ATTACK: ironmen.filter((p) => p.assignedGroup === "ATTACK").length,
+    MID: ironmen.filter((p) => p.assignedGroup === "MID").length,
+    DEFENSE: ironmen.filter((p) => p.assignedGroup === "DEFENSE").length,
+  };
+  const topIronmanGroup: PositionGroup | null = topIronman ? topIronman.assignedGroup : null;
   const willHaveWaiting = waitingPlayer !== null && waitingQuarter !== null;
 
   const nonIronmanByGroup: Record<PositionGroup, AssignedPlayer[]> = {
-    ATTACK: groupedPlayers.ATTACK.filter((p) => !ironman || p.id !== ironman.id),
-    MID: groupedPlayers.MID.filter((p) => !ironman || p.id !== ironman.id),
-    DEFENSE: groupedPlayers.DEFENSE.filter((p) => !ironman || p.id !== ironman.id),
+    ATTACK: groupedPlayers.ATTACK.filter((p) => !ironmanIds.has(p.id)),
+    MID: groupedPlayers.MID.filter((p) => !ironmanIds.has(p.id)),
+    DEFENSE: groupedPlayers.DEFENSE.filter((p) => !ironmanIds.has(p.id)),
   };
 
   const demandByGroup: Record<PositionGroup, number> = {
-    ATTACK: ironmanGroup === "ATTACK" ? FORMATION_OUTFIELD.ATTACK - 1 : FORMATION_OUTFIELD.ATTACK,
-    MID: ironmanGroup === "MID" ? FORMATION_OUTFIELD.MID - 1 : FORMATION_OUTFIELD.MID,
-    DEFENSE: ironmanGroup === "DEFENSE" ? FORMATION_OUTFIELD.DEFENSE - 1 : FORMATION_OUTFIELD.DEFENSE,
+    ATTACK: Math.max(0, FORMATION_OUTFIELD.ATTACK - ironmenByGroup.ATTACK),
+    MID: Math.max(0, FORMATION_OUTFIELD.MID - ironmenByGroup.MID),
+    DEFENSE: Math.max(0, FORMATION_OUTFIELD.DEFENSE - ironmenByGroup.DEFENSE),
   };
 
   const restByGroup: Record<PositionGroup, Record<Quarter, AssignedPlayer[]>> = {
@@ -151,9 +165,10 @@ function lineupForTeam(
       const restingHere = restingByGroup[group];
       const groupMembers = groupedPlayers[group];
       const inSlot = groupMembers.filter((p) => {
-        if (ironman && p.id === ironman.id) {
-          return ironmanGroup === group ? !isWaitingQuarter : true;
+        if (topIronman && p.id === topIronman.id) {
+          return topIronmanGroup === group ? !isWaitingQuarter : true;
         }
+        if (ironmanIds.has(p.id)) return true;
         if (gkPlayer && p.id === gkPlayer.id) return false;
         return !restingHere.has(p.id);
       });
@@ -164,14 +179,14 @@ function lineupForTeam(
     let midNames = buildField("MID");
     let defenseNames = buildField("DEFENSE");
 
-    if (isWaitingQuarter && waitingPlayer && ironmanGroup) {
-      if (ironmanGroup === "ATTACK") attackNames = [...attackNames, waitingPlayer.name];
-      else if (ironmanGroup === "MID") midNames = [...midNames, waitingPlayer.name];
-      else if (ironmanGroup === "DEFENSE") defenseNames = [...defenseNames, waitingPlayer.name];
+    if (isWaitingQuarter && waitingPlayer && topIronmanGroup) {
+      if (topIronmanGroup === "ATTACK") attackNames = [...attackNames, waitingPlayer.name];
+      else if (topIronmanGroup === "MID") midNames = [...midNames, waitingPlayer.name];
+      else if (topIronmanGroup === "DEFENSE") defenseNames = [...defenseNames, waitingPlayer.name];
     }
 
     const benchPlayers: AssignedPlayer[] = [];
-    if (isWaitingQuarter && ironman) benchPlayers.push(ironman);
+    if (isWaitingQuarter && topIronman) benchPlayers.push(topIronman);
     for (const group of POSITION_GROUPS) {
       for (const p of restByGroup[group][quarter]) {
         if (gkPlayer && p.id === gkPlayer.id) continue;
