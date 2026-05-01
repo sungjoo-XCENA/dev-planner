@@ -1253,13 +1253,15 @@ function LineupResultView({ result }: { result: LineupResult }) {
       const q1 = prev.find((q) => `${q.team}-${q.quarter}` === quarterSwapKey);
       const q2 = prev.find((q) => `${q.team}-${q.quarter}` === key);
       if (!q1 || !q2) return prev;
+      // 쿼터 번호(라벨)만 swap. 라인업 내용은 그대로 두고 라벨만 바뀜.
+      // → 1Q 카드 자리에 있던 카드가 이제 "3Q" 타이틀로 보임 (기존 라인업 그대로)
       return prev.map((q) => {
         const qKey = `${q.team}-${q.quarter}`;
         if (qKey === quarterSwapKey) {
-          return { ...q2, team: q.team, quarter: q.quarter };
+          return { ...q, quarter: q2.quarter };
         }
         if (qKey === key) {
-          return { ...q1, team: q.team, quarter: q.quarter };
+          return { ...q, quarter: q1.quarter };
         }
         return q;
       });
@@ -1333,13 +1335,52 @@ function LineupResultView({ result }: { result: LineupResult }) {
     }
   }
 
+  const teamOverviewRef = useRef<HTMLDivElement | null>(null);
+  async function downloadTeamOverview() {
+    if (!teamOverviewRef.current) return;
+    await downloadElementAsImage(teamOverviewRef.current, `team_overview.png`);
+  }
+
+  const teamOverview = useMemo(() => {
+    const grouped: Record<string, Record<PositionGroup, string[]>> = {
+      A: { ATTACK: [], MID: [], DEFENSE: [] },
+      B: { ATTACK: [], MID: [], DEFENSE: [] },
+    };
+    for (const s of result.playerSummaries) {
+      const teamKey = s.team;
+      if (!grouped[teamKey]) continue;
+      grouped[teamKey][s.assignedGroup].push(s.playerName);
+    }
+    return grouped;
+  }, [result.playerSummaries]);
+
   return (
     <section className="mb-6 rounded-3xl bg-white p-6 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-xl font-bold">라인업 결과</h2>
-        <button className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-bold text-white" onClick={downloadAll}>전체 이미지 저장</button>
+        <div className="flex gap-2">
+          <button className="rounded-xl bg-slate-700 px-3 py-2 text-xs font-bold text-white" onClick={downloadTeamOverview}>팀 구성 이미지</button>
+          <button className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-bold text-white" onClick={downloadAll}>전체 이미지 저장</button>
+        </div>
       </div>
-      <p className="mt-2 text-xs text-slate-500">선수 칩을 누르고 같은 쿼터의 다른 선수를 누르면 자리를 바꿔요. 쿼터 자체를 다른 쿼터와 통째로 바꾸려면 각 피치 아래의 <span className="font-bold">쿼터 통째 바꾸기</span> 버튼을 사용하세요.</p>
+
+      <div ref={teamOverviewRef} className="mt-4 rounded-2xl border-2 border-slate-300 bg-white p-5">
+        <h3 className="mb-3 text-center text-lg font-black text-slate-900">DEV FC 팀 구성</h3>
+        <div className="grid gap-4 md:grid-cols-2">
+          {(["A", "B"] as const).map((team) => (
+            <div key={team} className={`rounded-xl p-3 ${team === "A" ? "bg-emerald-50" : "bg-blue-50"}`}>
+              <p className={`text-base font-extrabold ${team === "A" ? "text-emerald-900" : "text-blue-900"}`}>{team}팀</p>
+              <div className="mt-2 space-y-1.5 text-sm text-slate-800">
+                <p><span className="inline-block w-9 font-bold text-rose-700">공격</span> {teamOverview[team].ATTACK.join(", ")}</p>
+                <p><span className="inline-block w-9 font-bold text-blue-700">미드</span> {teamOverview[team].MID.join(", ")}</p>
+                <p><span className="inline-block w-9 font-bold text-emerald-700">수비</span> {teamOverview[team].DEFENSE.join(", ")}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <p className="mt-3 text-xs text-slate-500">선수 칩을 누르고 같은 쿼터의 다른 선수를 누르면 자리를 바꿔요. 쿼터 자체를 다른 쿼터와 통째로 바꾸려면 각 피치 아래의 <span className="font-bold">쿼터 통째 바꾸기</span> 버튼을 사용하세요.</p>
       {result.warnings.length > 0 && <div className="mt-4"><MessageBox title="라인업 경고" items={result.warnings} tone="warning" /></div>}
       <div className="mt-4 grid gap-4 md:grid-cols-2">
         {quarters.map((q) => {
