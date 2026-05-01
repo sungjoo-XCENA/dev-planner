@@ -882,21 +882,6 @@ function TeamResultView({
         <span className={`rounded-full px-3 py-1 text-xs font-bold ${qualityBadgeClass(result.quality)}`}>{result.quality}</span>
         {!confirmed && <span className="rounded-full bg-blue-100 px-3 py-1 text-xs font-bold text-blue-700">조정 가능</span>}
       </div>
-      {variantCount > 1 && !confirmed && (
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <span className="text-xs font-semibold text-slate-500">버전</span>
-          {Array.from({ length: variantCount }, (_, i) => (
-            <button
-              key={i}
-              type="button"
-              className={`min-w-[2.25rem] rounded-lg px-2.5 py-1 text-sm font-bold ${i === selectedVariantIdx ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-700 hover:bg-slate-200"}`}
-              onClick={() => onSelectVariant(i)}
-            >
-              {i + 1}
-            </button>
-          ))}
-        </div>
-      )}
       {result.warnings.length > 0 && <div className="mt-4"><MessageBox title="팀 경고" items={result.warnings} tone="warning" /></div>}
       <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <MetricCard label="공격 점수" a={s.attackScoreA} b={s.attackScoreB} />
@@ -954,6 +939,21 @@ function TeamResultView({
         />
       </div>
       <p className="mt-4 text-xs text-slate-500"><span className="font-bold">*</span> 부포지션으로 배정된 선수 · <span className="font-bold">**</span> 인원 균형을 위해 주·부와 무관한 포지션으로 강제 배정된 선수</p>
+      {variantCount > 1 && !confirmed && (
+        <div className="mt-5 flex flex-wrap items-center gap-2 rounded-2xl bg-slate-50 px-3 py-3">
+          <span className="text-xs font-semibold text-slate-500">버전</span>
+          {Array.from({ length: variantCount }, (_, i) => (
+            <button
+              key={i}
+              type="button"
+              className={`min-w-[2.25rem] rounded-lg px-2.5 py-1.5 text-sm font-bold ${i === selectedVariantIdx ? "bg-slate-900 text-white" : "bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100"}`}
+              onClick={() => onSelectVariant(i)}
+            >
+              {i + 1}
+            </button>
+          ))}
+        </div>
+      )}
       <div className="mt-5 flex justify-end">
         {confirmed ? (
           <button className="w-full rounded-xl border border-slate-300 px-5 py-3 text-sm font-semibold sm:w-auto" onClick={onReadjust}>팀 다시 조정</button>
