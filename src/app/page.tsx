@@ -1224,12 +1224,48 @@ function swapInsideQuarter(q: LineupResult["quarters"][0], sec1: LineupSection, 
 function LineupResultView({ result }: { result: LineupResult }) {
   const [quarters, setQuarters] = useState(result.quarters);
   const [selection, setSelection] = useState<{ key: string; section: LineupSection; name: string } | null>(null);
+  const [quarterSwapKey, setQuarterSwapKey] = useState<string | null>(null);
   const refs = useRef<Map<string, HTMLDivElement | null>>(new Map());
 
   useEffect(() => {
     setQuarters(result.quarters);
     setSelection(null);
+    setQuarterSwapKey(null);
   }, [result]);
+
+  function handleQuarterSwap(key: string) {
+    if (!quarterSwapKey) {
+      setQuarterSwapKey(key);
+      setSelection(null);
+      return;
+    }
+    if (quarterSwapKey === key) {
+      setQuarterSwapKey(null);
+      return;
+    }
+    const team1 = quarterSwapKey.split("-")[0];
+    const team2 = key.split("-")[0];
+    if (team1 !== team2) {
+      setQuarterSwapKey(key);
+      return;
+    }
+    setQuarters((prev) => {
+      const q1 = prev.find((q) => `${q.team}-${q.quarter}` === quarterSwapKey);
+      const q2 = prev.find((q) => `${q.team}-${q.quarter}` === key);
+      if (!q1 || !q2) return prev;
+      return prev.map((q) => {
+        const qKey = `${q.team}-${q.quarter}`;
+        if (qKey === quarterSwapKey) {
+          return { ...q2, team: q.team, quarter: q.quarter };
+        }
+        if (qKey === key) {
+          return { ...q1, team: q.team, quarter: q.quarter };
+        }
+        return q;
+      });
+    });
+    setQuarterSwapKey(null);
+  }
 
   const countsByTeam = useMemo(() => {
     const map = new Map<string, Map<string, PlayerCount>>();
@@ -1303,15 +1339,18 @@ function LineupResultView({ result }: { result: LineupResult }) {
         <h2 className="text-xl font-bold">라인업 결과</h2>
         <button className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-bold text-white" onClick={downloadAll}>전체 이미지 저장</button>
       </div>
-      <p className="mt-2 text-xs text-slate-500">선수 칩을 누르고 같은 쿼터의 다른 선수를 누르면 자리를 바꿀 수 있어요. 대기 ↔ 필드, 포지션 간 이동, GK 교체 모두 가능.</p>
+      <p className="mt-2 text-xs text-slate-500">선수 칩을 누르고 같은 쿼터의 다른 선수를 누르면 자리를 바꿔요. 쿼터 자체를 다른 쿼터와 통째로 바꾸려면 각 피치 아래의 <span className="font-bold">쿼터 통째 바꾸기</span> 버튼을 사용하세요.</p>
       {result.warnings.length > 0 && <div className="mt-4"><MessageBox title="라인업 경고" items={result.warnings} tone="warning" /></div>}
       <div className="mt-4 grid gap-4 md:grid-cols-2">
         {quarters.map((q) => {
           const key = `${q.team}-${q.quarter}`;
           const selectedKey = selection && selection.key === key ? `${selection.section}|${selection.name}` : null;
+          const isSwapSelected = quarterSwapKey === key;
+          const isSwapPending = quarterSwapKey !== null && !isSwapSelected;
+          const isSameTeamPending = isSwapPending && quarterSwapKey?.split("-")[0] === q.team;
           return (
             <div key={key} className="space-y-2">
-              <div ref={(el) => { refs.current.set(key, el); }}>
+              <div ref={(el) => { refs.current.set(key, el); }} className={isSwapSelected ? "ring-2 ring-amber-400 rounded-2xl" : ""}>
                 <Pitch
                   title={`${q.team}팀 ${q.quarter}Q`}
                   gk={q.gk}
@@ -1325,7 +1364,15 @@ function LineupResultView({ result }: { result: LineupResult }) {
                   counts={countsByTeam.get(q.team)}
                 />
               </div>
-              <button className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700" onClick={() => downloadOne(q.team, q.quarter)}>이 화면 이미지 저장</button>
+              <div className="flex gap-2">
+                <button
+                  className={`flex-1 rounded-xl px-3 py-2 text-xs font-semibold ${isSwapSelected ? "bg-amber-400 text-amber-950" : isSameTeamPending ? "bg-amber-100 text-amber-900 hover:bg-amber-200" : "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"}`}
+                  onClick={() => handleQuarterSwap(key)}
+                >
+                  {isSwapSelected ? "선택됨 (취소)" : isSameTeamPending ? "여기와 바꾸기" : "쿼터 통째 바꾸기"}
+                </button>
+                <button className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700" onClick={() => downloadOne(q.team, q.quarter)}>이미지 저장</button>
+              </div>
             </div>
           );
         })}
