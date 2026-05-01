@@ -191,12 +191,75 @@ export default function Home() {
     setErrors([]);
     setWarnings([]);
     const result = await loadPlayersFromCsv(csvUrl);
-    setPlayers([...result.players, ...tempGuests]);
+
+    const sheetByName = new Map(result.players.map((p) => [p.name.trim(), p]));
+    const idMigration = new Map<string, string>();
+    const overriddenNames: string[] = [];
+    const filteredTempGuests = tempGuests.filter((tg) => {
+      const sheetMatch = sheetByName.get(tg.name.trim());
+      if (sheetMatch) {
+        idMigration.set(tg.id, sheetMatch.id);
+        overriddenNames.push(tg.name.trim());
+        return false;
+      }
+      return true;
+    });
+    const migrate = (id: string) => idMigration.get(id) ?? id;
+
+    const mergedPlayers = [...result.players, ...filteredTempGuests];
+    const validIds = new Set(mergedPlayers.map((p) => p.id));
+
+    setPlayers(mergedPlayers);
+    if (filteredTempGuests.length !== tempGuests.length) {
+      setTempGuests(filteredTempGuests);
+    }
     setErrors(result.errors);
-    setWarnings(result.warnings);
+    setWarnings([
+      ...result.warnings,
+      ...(overriddenNames.length > 0
+        ? [`시트와 이름이 같은 임시 등록 선수 ${overriddenNames.length}명을 시트 데이터로 갱신했습니다: ${overriddenNames.join(", ")}`]
+        : []),
+    ]);
     setPlayerQuery("");
-    setFieldIds((prev) => prev.filter((id) => result.players.some((p) => p.id === id) || tempGuests.some((p) => p.id === id)));
-    setDedicatedGks((prev) => prev.filter((gk) => gk.source !== "SHEET" || result.players.some((p) => p.id === gk.id)));
+    setFieldIds((prev) => {
+      const next: string[] = [];
+      const seen = new Set<string>();
+      for (const id of prev) {
+        const mig = migrate(id);
+        if (!validIds.has(mig) || seen.has(mig)) continue;
+        seen.add(mig);
+        next.push(mig);
+      }
+      return next;
+    });
+    setWaitingIds((prev) => {
+      const next: string[] = [];
+      const seen = new Set<string>();
+      for (const id of prev) {
+        const mig = migrate(id);
+        if (!validIds.has(mig) || seen.has(mig)) continue;
+        seen.add(mig);
+        next.push(mig);
+      }
+      return next;
+    });
+    setMatchQuarterLimits((prev) => {
+      const next: Record<string, number> = {};
+      for (const [id, val] of Object.entries(prev)) {
+        const mig = migrate(id);
+        if (validIds.has(mig)) next[mig] = val;
+      }
+      return next;
+    });
+    setDedicatedGks((prev) =>
+      prev
+        .map((gk) => {
+          const mig = migrate(gk.id);
+          if (mig === gk.id) return gk;
+          return { ...gk, id: mig, source: "SHEET" as const };
+        })
+        .filter((gk) => gk.source !== "SHEET" || result.players.some((p) => p.id === gk.id)),
+    );
   }
 
   function handleResetAll() {
@@ -258,13 +321,29 @@ export default function Home() {
   }
 
   function addTempGuest() {
-    if (!guest.name.trim()) return;
+    const trimmedName = guest.name.trim();
+    if (!trimmedName) return;
+    const existing = players.find((p) => p.source === "SHEET" && p.name.trim() === trimmedName);
+    if (existing) {
+      if (!fieldIds.includes(existing.id)) {
+        setFieldIds((prev) => [...prev, existing.id]);
+      }
+      setMatchQuarterLimits((prev) => ({ ...prev, [existing.id]: prev[existing.id] ?? DEFAULT_MATCH_QUARTERS }));
+      if (memberMode === "WAITING") {
+        setWaitingIds((prev) => (prev.includes(existing.id) ? prev : [...prev, existing.id]));
+      } else {
+        setWaitingIds((prev) => prev.filter((x) => x !== existing.id));
+      }
+      setWarnings((prev) => [...prev, `${trimmedName}은 이미 시트에 있어 임시 등록 대신 해당 선수를 ${memberMode === "WAITING" ? "대기" : "필드"}로 추가했습니다.`]);
+      resetGuest();
+      return;
+    }
     const player: Player = {
       id: `temp_${Date.now()}_${guest.name}`,
       source: "TEMP_GUEST",
       memberType: memberMode,
       active: true,
-      name: guest.name.trim(),
+      name: trimmedName,
       primaryPosition: guest.primaryPosition,
       secondaryPositions: guest.secondaryPositions,
       attackScore: guest.attackScore,
