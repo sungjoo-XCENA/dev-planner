@@ -284,21 +284,24 @@ function buildPools(fieldPlayers: FieldPlayer[], teamTargets: RoleTargets, varia
   const lastAttCount = totalAtt - strongAttCount;
   const lastDefCount = totalDef - strongDefCount;
 
-  if (lastN.length === lastAttCount + lastDefCount) {
+  const attPickCount = Math.min(lastAttCount, lastN.length);
+  if (attPickCount > 0 && lastN.length > 0) {
     const candidates: { adjScore: number; att: FieldPlayer[]; def: FieldPlayer[]; key: string }[] = [];
-    for (const lastAttCombo of combinations(lastN, lastAttCount)) {
+    for (const lastAttCombo of combinations(lastN, attPickCount)) {
       const attCandidate = [...strongAtt, ...lastAttCombo];
       const defCandidate = [...strongDef, ...lastN.filter((p) => !lastAttCombo.includes(p))];
       const result = evaluatePoolAssignment(attCandidate, midPool, defCandidate);
       const key = [...attCandidate.map((p) => p.id).sort(), "|", ...defCandidate.map((p) => p.id).sort()].join(",");
       candidates.push({ adjScore: result.adjScore, att: attCandidate, def: defCandidate, key });
     }
-    candidates.sort((a, b) => {
-      if (a.adjScore !== b.adjScore) return a.adjScore - b.adjScore;
-      return a.key.localeCompare(b.key);
-    });
-    const pick = candidates[((variant % candidates.length) + candidates.length) % candidates.length];
-    return { attPool: pick.att, midPool, defPool: pick.def };
+    if (candidates.length > 0) {
+      candidates.sort((a, b) => {
+        if (a.adjScore !== b.adjScore) return a.adjScore - b.adjScore;
+        return a.key.localeCompare(b.key);
+      });
+      const pick = candidates[((variant % candidates.length) + candidates.length) % candidates.length];
+      return { attPool: pick.att, midPool, defPool: pick.def };
+    }
   }
 
   const bestAtt = [...strongAtt, ...lastN.slice(0, lastAttCount)];
