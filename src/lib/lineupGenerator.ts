@@ -27,21 +27,34 @@ function compositeScore(p: AssignedPlayer): number {
   return p.attackScore + p.midScore + p.defenseScore + p.activityScore;
 }
 
-function findIronmen(team: Team, count: number): AssignedPlayer[] {
-  const sorted = [...team.players].sort((a, b) => {
-    const diff = compositeScore(b) - compositeScore(a);
-    if (diff !== 0) return diff;
-    return a.name.localeCompare(b.name, "ko");
-  });
-  return sorted.slice(0, Math.max(0, Math.min(count, sorted.length)));
+function findIronman(team: Team): AssignedPlayer | null {
+  if (team.players.length === 0) return null;
+  return team.players.reduce((best, p) => {
+    const diff = compositeScore(p) - compositeScore(best);
+    if (diff > 0) return p;
+    if (diff === 0 && p.name.localeCompare(best.name, "ko") < 0) return p;
+    return best;
+  }, team.players[0]);
 }
 
-function ironmanCount(teamSize: number): number {
-  // Math: 4-Q players (forced) = max(1, team_size − bench-events − GK-events)
-  // bench-events/Q = team_size − 11; total bench-events = 4 × (team_size − 11)
-  // GK-events = 4
-  // forced = team_size − 4(team_size − 11) − 4 = 40 − 3 × team_size
-  return Math.max(1, 40 - 3 * teamSize);
+function pickIronmen(team: Team, formation: Record<PositionGroup, number>): Set<string> {
+  // 4쿼터 풀가동 멤버:
+  //  1) 풀=슬롯 인 그룹은 전원 강제 (회전 불가능)
+  //  2) 종합점수 1위 (양보 후보)
+  const ironmen = new Set<string>();
+  const grouped: Record<PositionGroup, AssignedPlayer[]> = {
+    ATTACK: playersByGroup(team, "ATTACK"),
+    MID: playersByGroup(team, "MID"),
+    DEFENSE: playersByGroup(team, "DEFENSE"),
+  };
+  for (const g of POSITION_GROUPS) {
+    if (grouped[g].length === formation[g]) {
+      grouped[g].forEach((p) => ironmen.add(p.id));
+    }
+  }
+  const top = findIronman(team);
+  if (top) ironmen.add(top.id);
+  return ironmen;
 }
 
 function rotateRest(members: AssignedPlayer[], restPerQ: number): Record<Quarter, AssignedPlayer[]> {
@@ -89,15 +102,14 @@ function lineupForTeam(
     DEFENSE: playersByGroup(team, "DEFENSE"),
   };
 
-  const ironmen = findIronmen(team, ironmanCount(team.players.length));
-  const topIronman: AssignedPlayer | null = ironmen[0] ?? null;
-  const ironmanIds = new Set(ironmen.map((p) => p.id));
-  const ironmenByGroup: Record<PositionGroup, number> = {
-    ATTACK: ironmen.filter((p) => p.assignedGroup === "ATTACK").length,
-    MID: ironmen.filter((p) => p.assignedGroup === "MID").length,
-    DEFENSE: ironmen.filter((p) => p.assignedGroup === "DEFENSE").length,
-  };
+  const ironmanIds = pickIronmen(team, FORMATION_OUTFIELD);
+  const topIronman = findIronman(team);
   const topIronmanGroup: PositionGroup | null = topIronman ? topIronman.assignedGroup : null;
+  const ironmenByGroup: Record<PositionGroup, number> = {
+    ATTACK: groupedPlayers.ATTACK.filter((p) => ironmanIds.has(p.id)).length,
+    MID: groupedPlayers.MID.filter((p) => ironmanIds.has(p.id)).length,
+    DEFENSE: groupedPlayers.DEFENSE.filter((p) => ironmanIds.has(p.id)).length,
+  };
   const willHaveWaiting = waitingPlayer !== null && waitingQuarter !== null;
 
   const nonIronmanByGroup: Record<PositionGroup, AssignedPlayer[]> = {
