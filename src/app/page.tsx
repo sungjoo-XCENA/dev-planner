@@ -7,7 +7,7 @@ import type { TeamBalanceResult } from "@/types/team";
 import { appConfig } from "@/config/appConfig";
 import { loadPlayersFromCsv } from "@/lib/loadPlayersFromCsv";
 import { POSITIONS, getPositionGroup, hasGroup } from "@/lib/positions";
-import { balanceTeams, summarizeTeams } from "@/lib/teamBalancer";
+import { balanceTeamsVariants, summarizeTeams } from "@/lib/teamBalancer";
 import { generateLineups } from "@/lib/lineupGenerator";
 import { planMatchLineup, type MatchPlanResult, type MatchSelection, type MatchQuarterLimits } from "@/lib/matchPlanner";
 import { clearStoredAll, loadStored, saveStored } from "@/lib/persistedState";
@@ -61,6 +61,8 @@ export default function Home() {
   const [guestRole, setGuestRole] = useState<"FIELD" | "GK">("FIELD");
   const [plannerMode, setPlannerMode] = useState<PlannerMode>("BALANCE");
   const [teamResult, setTeamResult] = useState<TeamBalanceResult | null>(null);
+  const [teamVariants, setTeamVariants] = useState<TeamBalanceResult[]>([]);
+  const [selectedVariantIdx, setSelectedVariantIdx] = useState(0);
   const [lineupResult, setLineupResult] = useState<LineupResult | null>(null);
   const [matchResult, setMatchResult] = useState<MatchPlanResult | null>(null);
   const [matchQuarterLimits, setMatchQuarterLimits] = useState<MatchQuarterLimits>({});
@@ -70,8 +72,6 @@ export default function Home() {
   const [teamsConfirmed, setTeamsConfirmed] = useState(false);
   const [swapSelection, setSwapSelection] = useState<SwapSelection>(null);
   const [hydrated, setHydrated] = useState(false);
-  const balanceVariantRef = useRef(0);
-  const lastBalanceKeyRef = useRef("");
 
   useEffect(() => {
     let cancelled = false;
@@ -183,6 +183,8 @@ export default function Home() {
 
   function resetResults() {
     setTeamResult(null);
+    setTeamVariants([]);
+    setSelectedVariantIdx(0);
     setLineupResult(null);
     setMatchResult(null);
     setCopied(false);
@@ -397,19 +399,24 @@ export default function Home() {
       if (plannerMode === "MATCH") {
         setMatchResult(planMatchLineup(activeFieldPlayers, dedicatedGks, matchQuarterLimits));
       } else {
-        const balanceKey = activeFieldPlayers.map((p) => p.id).sort().join(",");
-        if (lastBalanceKeyRef.current !== balanceKey) {
-          balanceVariantRef.current = 0;
-          lastBalanceKeyRef.current = balanceKey;
-        }
-        const team = balanceTeams(activeFieldPlayers, balanceVariantRef.current);
-        balanceVariantRef.current += 1;
-        setTeamResult(team);
+        const variants = balanceTeamsVariants(activeFieldPlayers, 10);
+        setTeamVariants(variants);
+        setSelectedVariantIdx(0);
+        setTeamResult(variants[0]);
       }
       setErrors([]);
     } catch (error) {
       setErrors([error instanceof Error ? error.message : String(error)]);
     }
+  }
+
+  function selectVariant(idx: number) {
+    if (idx < 0 || idx >= teamVariants.length) return;
+    setSelectedVariantIdx(idx);
+    setTeamResult(teamVariants[idx]);
+    setSwapSelection(null);
+    setLineupResult(null);
+    setTeamsConfirmed(false);
   }
 
   function handleConfirmTeams() {
@@ -713,6 +720,9 @@ export default function Home() {
           result={teamResult}
           confirmed={teamsConfirmed}
           selection={swapSelection}
+          variantCount={teamVariants.length}
+          selectedVariantIdx={selectedVariantIdx}
+          onSelectVariant={selectVariant}
           onPlayerClick={handlePlayerClick}
           onConfirm={handleConfirmTeams}
           onReadjust={handleReadjustTeams}
@@ -843,6 +853,9 @@ function TeamResultView({
   result,
   confirmed,
   selection,
+  variantCount,
+  selectedVariantIdx,
+  onSelectVariant,
   onPlayerClick,
   onConfirm,
   onReadjust,
@@ -850,6 +863,9 @@ function TeamResultView({
   result: TeamBalanceResult;
   confirmed: boolean;
   selection: SwapSelection;
+  variantCount: number;
+  selectedVariantIdx: number;
+  onSelectVariant: (idx: number) => void;
   onPlayerClick: (team: "A" | "B", playerId: string) => void;
   onConfirm: () => void;
   onReadjust: () => void;
@@ -866,6 +882,21 @@ function TeamResultView({
         <span className={`rounded-full px-3 py-1 text-xs font-bold ${qualityBadgeClass(result.quality)}`}>{result.quality}</span>
         {!confirmed && <span className="rounded-full bg-blue-100 px-3 py-1 text-xs font-bold text-blue-700">조정 가능</span>}
       </div>
+      {variantCount > 1 && !confirmed && (
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <span className="text-xs font-semibold text-slate-500">버전</span>
+          {Array.from({ length: variantCount }, (_, i) => (
+            <button
+              key={i}
+              type="button"
+              className={`min-w-[2.25rem] rounded-lg px-2.5 py-1 text-sm font-bold ${i === selectedVariantIdx ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-700 hover:bg-slate-200"}`}
+              onClick={() => onSelectVariant(i)}
+            >
+              {i + 1}
+            </button>
+          ))}
+        </div>
+      )}
       {result.warnings.length > 0 && <div className="mt-4"><MessageBox title="팀 경고" items={result.warnings} tone="warning" /></div>}
       <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <MetricCard label="공격 점수" a={s.attackScoreA} b={s.attackScoreB} />

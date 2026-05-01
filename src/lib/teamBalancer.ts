@@ -407,6 +407,31 @@ export function rebalanceTeams(teamAPlayers: Player[], teamBPlayers: Player[], v
   return balanceTeams([...teamAPlayers, ...teamBPlayers], variant);
 }
 
+export function balanceTeamsVariants(players: Player[], maxVariants = 10): TeamBalanceResult[] {
+  const results: TeamBalanceResult[] = [];
+  const seen = new Set<string>();
+  const probe = maxVariants * 4;
+  for (let v = 0; v < probe && results.length < maxVariants; v += 1) {
+    let r: TeamBalanceResult;
+    try {
+      r = balanceTeams(players, v);
+    } catch {
+      if (results.length === 0) throw new Error("팀 분배 실패");
+      break;
+    }
+    const aIds = r.teamA.players.map((p) => p.id).sort().join(",");
+    const bIds = r.teamB.players.map((p) => p.id).sort().join(",");
+    const aGroups = r.teamA.players.map((p) => `${p.id}:${p.assignedGroup}`).sort().join(",");
+    const bGroups = r.teamB.players.map((p) => `${p.id}:${p.assignedGroup}`).sort().join(",");
+    const key = `${aIds}|${bIds}|${aGroups}|${bGroups}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    results.push(r);
+  }
+  if (results.length === 0) throw new Error("팀 분배 실패");
+  return results;
+}
+
 export function summarizeTeams(teamAPlayers: AssignedPlayer[], teamBPlayers: AssignedPlayer[]): TeamBalanceResult {
   const a = teamAPlayers as AssignedFieldPlayer[];
   const b = teamBPlayers as AssignedFieldPlayer[];
