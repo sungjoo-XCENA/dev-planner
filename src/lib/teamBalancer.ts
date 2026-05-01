@@ -410,7 +410,7 @@ export function rebalanceTeams(teamAPlayers: Player[], teamBPlayers: Player[], v
 export function balanceTeamsVariants(players: Player[], maxVariants = 10): TeamBalanceResult[] {
   const results: TeamBalanceResult[] = [];
   const seen = new Set<string>();
-  const probe = maxVariants * 4;
+  const probe = Math.max(maxVariants * 10, 100);
   for (let v = 0; v < probe && results.length < maxVariants; v += 1) {
     let r: TeamBalanceResult;
     try {
@@ -421,9 +421,7 @@ export function balanceTeamsVariants(players: Player[], maxVariants = 10): TeamB
     }
     const aIds = r.teamA.players.map((p) => p.id).sort().join(",");
     const bIds = r.teamB.players.map((p) => p.id).sort().join(",");
-    const aGroups = r.teamA.players.map((p) => `${p.id}:${p.assignedGroup}`).sort().join(",");
-    const bGroups = r.teamB.players.map((p) => `${p.id}:${p.assignedGroup}`).sort().join(",");
-    const key = `${aIds}|${bIds}|${aGroups}|${bGroups}`;
+    const key = aIds < bIds ? `${aIds}|${bIds}` : `${bIds}|${aIds}`;
     if (seen.has(key)) continue;
     seen.add(key);
     results.push(r);
