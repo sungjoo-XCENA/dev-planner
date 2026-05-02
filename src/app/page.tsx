@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { DedicatedGoalkeeper, FieldPosition, Player, PositionGroup } from "@/types/player";
-import type { LineupResult, LineupRole } from "@/types/lineup";
-import type { TeamBalanceResult } from "@/types/team";
+import type { LineupResult, LineupRole, Quarter } from "@/types/lineup";
+import type { TeamBalanceResult, TeamName } from "@/types/team";
 import { appConfig } from "@/config/appConfig";
 import { loadPlayersFromCsv } from "@/lib/loadPlayersFromCsv";
 import { POSITIONS, getPositionGroup, hasGroup } from "@/lib/positions";
@@ -11,6 +11,7 @@ import { balanceTeamsVariants, summarizeTeams } from "@/lib/teamBalancer";
 import { generateLineups } from "@/lib/lineupGenerator";
 import { planMatchLineup, type MatchPlanResult, type MatchSelection, type MatchQuarterLimits } from "@/lib/matchPlanner";
 import { clearStoredAll, loadStored, saveStored } from "@/lib/persistedState";
+import { formatTeamName } from "@/lib/teamLabels";
 
 const SCORE_OPTIONS = Array.from({ length: 10 }, (_, index) => index + 1);
 const QUARTER_OPTIONS = [1, 2, 3, 4];
@@ -41,8 +42,100 @@ const emptyGuest: GuestForm = {
 
 function modeHelp(mode: PlannerMode): string {
   return mode === "BALANCE"
-    ? "내부전은 24명 이상 권장, 22명부터 생성 가능합니다. A/B팀 밸런스를 맞춥니다."
+    ? "내부전은 24명 이상 권장, 22명부터 생성 가능합니다. 형광/주황팀 밸런스를 맞춥니다."
     : "매치는 필드 10명~18명과 전담 GK 기준으로 베스트 11과 1~4Q 라인업을 추천합니다.";
+}
+
+const LINEUP_SHARE_HASH_KEY = "lineup";
+const COMPRESSED_LINEUP_PREFIX = "gz.";
+
+type SharedLineupPayload = {
+  version: 1;
+  lineup: LineupResult;
+};
+
+function bytesToBase64Url(bytes: Uint8Array): string {
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.subarray(i, i + chunkSize);
+    for (let j = 0; j < chunk.length; j += 1) {
+      binary += String.fromCharCode(chunk[j]);
+    }
+  }
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+function base64UrlToBytes(value: string): Uint8Array {
+  const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
+  const padded = normalized.padEnd(normalized.length + ((4 - (normalized.length % 4)) % 4), "=");
+  const binary = atob(padded);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
+function toBlobPart(bytes: Uint8Array): ArrayBuffer {
+  const copy = new Uint8Array(bytes.byteLength);
+  copy.set(bytes);
+  return copy.buffer;
+}
+
+async function gzip(bytes: Uint8Array): Promise<Uint8Array> {
+  if (typeof CompressionStream === "undefined") {
+    throw new Error("현재 브라우저가 압축 URL 생성을 지원하지 않습니다.");
+  }
+  const stream = new Blob([toBlobPart(bytes)]).stream().pipeThrough(new CompressionStream("gzip"));
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+
+async function gunzip(bytes: Uint8Array): Promise<Uint8Array> {
+  if (typeof DecompressionStream === "undefined") {
+    throw new Error("현재 브라우저가 압축 URL 열기를 지원하지 않습니다.");
+  }
+  const stream = new Blob([toBlobPart(bytes)]).stream().pipeThrough(new DecompressionStream("gzip"));
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+
+async function encodeSharedLineup(lineup: LineupResult): Promise<string> {
+  const payload: SharedLineupPayload = { version: 1, lineup };
+  const bytes = new TextEncoder().encode(JSON.stringify(payload));
+  return `${COMPRESSED_LINEUP_PREFIX}${bytesToBase64Url(await gzip(bytes))}`;
+}
+
+async function decodeSharedLineup(value: string): Promise<LineupResult> {
+  if (!value.startsWith(COMPRESSED_LINEUP_PREFIX)) {
+    throw new Error("라인업 공유 URL 형식이 올바르지 않습니다.");
+  }
+  const compressed = base64UrlToBytes(value.slice(COMPRESSED_LINEUP_PREFIX.length));
+  const json = new TextDecoder().decode(await gunzip(compressed));
+  const payload = JSON.parse(json) as Partial<SharedLineupPayload>;
+  if (payload.version !== 1 || !payload.lineup || !Array.isArray(payload.lineup.quarters)) {
+    throw new Error("라인업 공유 데이터 형식이 올바르지 않습니다.");
+  }
+  return payload.lineup;
+}
+
+async function buildLineupShareUrl(lineup: LineupResult): Promise<string | null> {
+  if (typeof window === "undefined") return null;
+  const url = new URL(window.location.href);
+  url.search = "";
+  const params = new URLSearchParams();
+  params.set(LINEUP_SHARE_HASH_KEY, await encodeSharedLineup(lineup));
+  url.hash = params.toString();
+  return url.toString();
+}
+
+function clearLineupShareHash() {
+  if (typeof window === "undefined") return;
+  const url = new URL(window.location.href);
+  const params = new URLSearchParams(url.hash.startsWith("#") ? url.hash.slice(1) : url.hash);
+  if (!params.has(LINEUP_SHARE_HASH_KEY)) return;
+  params.delete(LINEUP_SHARE_HASH_KEY);
+  url.hash = params.toString();
+  window.history.replaceState(null, "", url.toString());
 }
 
 type SwapSelection = { team: "A" | "B"; playerId: string } | null;
@@ -154,6 +247,38 @@ export default function Home() {
     saveStored("matchQuarterLimits", matchQuarterLimits);
   }, [matchQuarterLimits, hydrated]);
 
+  useEffect(() => {
+    if (!hydrated) return;
+    let cancelled = false;
+    const applySharedLineup = async () => {
+      const params = new URLSearchParams(window.location.hash.startsWith("#") ? window.location.hash.slice(1) : window.location.hash);
+      const encoded = params.get(LINEUP_SHARE_HASH_KEY);
+      if (!encoded) return;
+      try {
+        const sharedLineup = await decodeSharedLineup(encoded);
+        if (cancelled) return;
+        setPlannerMode("BALANCE");
+        setTeamResult(null);
+        setTeamVariants([]);
+        setSelectedVariantIdx(0);
+        setLineupResult(sharedLineup);
+        setMatchResult(null);
+        setTeamsConfirmed(true);
+        setSwapSelection(null);
+        setCopied(false);
+        window.setTimeout(() => document.getElementById("lineup-result")?.scrollIntoView({ block: "start" }), 0);
+      } catch (error) {
+        if (!cancelled) setErrors([error instanceof Error ? error.message : String(error)]);
+      }
+    };
+    applySharedLineup();
+    window.addEventListener("hashchange", applySharedLineup);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("hashchange", applySharedLineup);
+    };
+  }, [hydrated]);
+
   const fieldPlayers = useMemo(() => players.filter((p) => fieldIds.includes(p.id)), [players, fieldIds]);
   const isWaitingPlayer = useMemo(() => {
     const set = new Set(waitingIds);
@@ -182,6 +307,7 @@ export default function Home() {
     : activeFieldPlayers.length >= 10 && activeFieldPlayers.length <= 18;
 
   function resetResults() {
+    clearLineupShareHash();
     setTeamResult(null);
     setTeamVariants([]);
     setSelectedVariantIdx(0);
@@ -547,47 +673,25 @@ export default function Home() {
     }
   }
 
-  const shareText = useMemo(() => {
-    if (matchResult) {
-      const lines: string[] = ["[DEV FC 매치 라인업]", ""];
-      lines.push("[베스트 라인업]");
-      lines.push(`GK: ${matchResult.starters.gk?.name ?? "없음"}`);
-      lines.push(`공격: ${matchResult.starters.attack.map((item) => item.player.name).join(", ")}`);
-      lines.push(`미드: ${matchResult.starters.mid.map((item) => item.player.name).join(", ")}`);
-      lines.push(`수비: ${matchResult.starters.defense.map((item) => item.player.name).join(", ")}`);
-      lines.push("");
-      matchResult.quarters.forEach((q) => {
-        lines.push(`${q.quarter}Q`);
-        lines.push(`GK: ${q.gk}`);
-        lines.push(`공격: ${q.attack.join(", ")}`);
-        lines.push(`미드: ${q.mid.join(", ")}`);
-        lines.push(`수비: ${q.defense.join(", ")}`);
-        lines.push(`대기: ${q.bench.join(", ") || "없음"}`);
-        lines.push("");
-      });
-      lines.push(`후보: ${matchResult.bench.map((item) => item.player.name).join(", ") || "없음"}`);
-      return lines.join("\n");
-    }
-    if (!teamResult || !lineupResult) return "";
-    const lines: string[] = ["[DEV FC 라인업]", ""];
-    for (const team of ["A", "B"] as const) {
-      lines.push(`[${team}팀]`);
-      lineupResult.quarters.filter((q) => q.team === team).forEach((q) => {
-        lines.push(`${q.quarter}Q`);
-        lines.push(`공격: ${q.attack.join(", ")}`);
-        lines.push(`미드: ${q.mid.join(", ")}`);
-        lines.push(`수비: ${q.defense.join(", ")}`);
-        lines.push(`GK: ${q.gk}`);
-        lines.push(`대기: ${q.bench.join(", ") || "없음"}`);
-        lines.push("");
-      });
-    }
-    return lines.join("\n");
-  }, [teamResult, lineupResult, matchResult]);
+  const handleLineupQuartersChange = useCallback((quarters: LineupResult["quarters"]) => {
+    clearLineupShareHash();
+    setCopied(false);
+    setLineupResult((prev) => {
+      if (!prev || prev.quarters === quarters) return prev;
+      return { ...prev, quarters };
+    });
+  }, []);
 
-  async function copyShareText() {
-    await navigator.clipboard.writeText(shareText);
-    setCopied(true);
+  async function copyLineupShareUrl(lineup: LineupResult) {
+    try {
+      const url = await buildLineupShareUrl(lineup);
+      if (!url) return;
+      await navigator.clipboard.writeText(url);
+      window.history.replaceState(null, "", url);
+      setCopied(true);
+    } catch (error) {
+      setErrors([error instanceof Error ? error.message : String(error)]);
+    }
   }
 
   return (
@@ -747,18 +851,15 @@ export default function Home() {
           onReadjust={handleReadjustTeams}
         />
       )}
-      {lineupResult && teamsConfirmed && <LineupResultView result={lineupResult} />}
-      {matchResult && <MatchResultView result={matchResult} />}
-
-      {shareText && (
-        <section className="mb-6 rounded-3xl bg-white p-6 shadow-sm">
-          <div className="flex items-center justify-between gap-3">
-            <h2 className="text-xl font-bold">공유 텍스트</h2>
-            <button className="rounded-xl bg-slate-900 px-4 py-2 font-semibold text-white" onClick={copyShareText}>{copied ? "복사됨" : "복사"}</button>
-          </div>
-          <pre className="mt-4 whitespace-pre-wrap rounded-2xl bg-slate-950 p-4 text-sm text-slate-100">{shareText}</pre>
-        </section>
+      {lineupResult && (
+        <LineupResultView
+          result={lineupResult}
+          copied={copied}
+          onCopyShareUrl={copyLineupShareUrl}
+          onQuartersChange={handleLineupQuartersChange}
+        />
       )}
+      {matchResult && <MatchResultView result={matchResult} />}
 
       <div className="fixed inset-x-0 bottom-0 z-10 border-t border-slate-200 bg-white/95 p-3 backdrop-blur">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-3">
@@ -860,9 +961,9 @@ function MetricCard({ label, a, b, highlight }: { label: string; a: number; b: n
     <div className={containerClass}>
       <p className={labelClass}>{label}</p>
       <div className="mt-2 flex items-end justify-between gap-3">
-        <div><p className={subLabelClass}>A팀</p><p className="text-lg font-black">{a}</p></div>
+        <div><p className={subLabelClass}>{formatTeamName("A")}</p><p className="text-lg font-black">{a}</p></div>
         <div className="text-center"><p className={subLabelClass}>차이</p><p className="text-sm font-bold">{Math.abs(a - b)}</p></div>
-        <div className="text-right"><p className={subLabelClass}>B팀</p><p className="text-lg font-black">{b}</p></div>
+        <div className="text-right"><p className={subLabelClass}>{formatTeamName("B")}</p><p className="text-lg font-black">{b}</p></div>
       </div>
     </div>
   );
@@ -929,7 +1030,7 @@ function TeamResultView({
           <div className="fixed inset-x-3 bottom-24 z-30 mx-auto max-w-3xl rounded-2xl border border-blue-300 bg-blue-50/95 p-3 shadow-xl backdrop-blur sm:bottom-6">
             <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                <p className="text-sm font-bold text-blue-900">선택: {selection.team}팀 · {sel.name}</p>
+                <p className="text-sm font-bold text-blue-900">선택: {formatTeamName(selection.team)} · {sel.name}</p>
                 <p className="text-xs text-blue-800">주포 {sel.primaryPosition} · 부포 {secondary} · 종합 {composite}</p>
               </div>
               <p className="text-xs font-mono text-blue-900">공 {sel.attackScore} · 미 {sel.midScore} · 수 {sel.defenseScore} · 활 {sel.activityScore}</p>
@@ -939,7 +1040,7 @@ function TeamResultView({
       })()}
       <div className="mt-4 grid gap-4 md:grid-cols-2">
         <TeamCard
-          title="A팀"
+          title={formatTeamName("A")}
           players={result.teamA.players}
           team="A"
           selection={selection}
@@ -950,7 +1051,7 @@ function TeamResultView({
           groupScores={{ ATTACK: s.attackScoreA, MID: s.midScoreA, DEFENSE: s.defenseScoreA }}
         />
         <TeamCard
-          title="B팀"
+          title={formatTeamName("B")}
           players={result.teamB.players}
           team="B"
           selection={selection}
@@ -1119,10 +1220,55 @@ type LineupSection = "attack" | "mid" | "defense" | "gk" | "bench";
 
 type PlayerCount = { field: number; gk: number };
 
+const OVERVIEW_GROUPS: Array<{ group: PositionGroup; label: string }> = [
+  { group: "ATTACK", label: "공격" },
+  { group: "MID", label: "미드" },
+  { group: "DEFENSE", label: "수비" },
+];
+
 function formatCount(c: PlayerCount | undefined): string {
   if (!c) return "";
   const gkPart = c.gk > 0 ? `·G${c.gk > 1 ? c.gk : ""}` : "";
   return `(${c.field}${gkPart})`;
+}
+
+function teamPanelClass(team: TeamName): string {
+  return team === "A"
+    ? "border-lime-200 bg-lime-50"
+    : "border-orange-200 bg-orange-50";
+}
+
+function teamPillClass(team: TeamName): string {
+  return team === "A"
+    ? "bg-lime-300 text-lime-950"
+    : "bg-orange-500 text-white";
+}
+
+function overviewGroupPillClass(group: PositionGroup): string {
+  if (group === "ATTACK") return "bg-rose-100 text-rose-700 ring-rose-200";
+  if (group === "MID") return "bg-sky-100 text-sky-700 ring-sky-200";
+  return "bg-emerald-100 text-emerald-700 ring-emerald-200";
+}
+
+function TeamOverviewCard({ team, groups }: { team: TeamName; groups: Record<PositionGroup, string[]> }) {
+  return (
+    <div className={`rounded-xl border p-3 ${teamPanelClass(team)}`}>
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <span className={`rounded-full px-3 py-1 text-sm font-black ${teamPillClass(team)}`}>{formatTeamName(team)}</span>
+        <span className="text-xs font-bold text-slate-500">팀 배정</span>
+      </div>
+      <div className="space-y-2">
+        {OVERVIEW_GROUPS.map(({ group, label }) => (
+          <div key={group} className="flex flex-wrap items-center gap-1.5">
+            <span className={`rounded-full px-2.5 py-1 text-xs font-black ring-1 ${overviewGroupPillClass(group)}`}>{label}</span>
+            {groups[group].map((name) => (
+              <span key={name} className="rounded-full bg-white px-2.5 py-1 text-xs font-bold text-slate-700 shadow-sm ring-1 ring-slate-200">{name}</span>
+            ))}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function PitchChip({ name, accent, selected, onClick, count }: { name: string; accent?: "gk" | "bench"; selected?: boolean; onClick?: () => void; count?: PlayerCount }) {
@@ -1161,13 +1307,13 @@ function Pitch({ title, gk, attack, mid, defense, bench, accent = "emerald", sel
   mid: string[];
   defense: string[];
   bench: string[];
-  accent?: "emerald" | "blue";
+  accent?: "emerald" | "orange";
   selectedKey?: string | null;
   onSelect?: (section: LineupSection, name: string) => void;
   counts?: Map<string, PlayerCount>;
 }) {
-  const headerClass = accent === "blue" ? "from-blue-700 to-blue-900" : "from-emerald-700 to-emerald-900";
-  const fieldClass = accent === "blue" ? "from-blue-500 to-blue-700" : "from-emerald-500 to-emerald-700";
+  const headerClass = accent === "orange" ? "from-orange-500 to-orange-700" : "from-lime-500 to-emerald-600";
+  const fieldClass = accent === "orange" ? "from-orange-400 to-orange-600" : "from-lime-400 to-emerald-600";
   const sel = selectedKey ?? null;
   return (
     <div className="overflow-hidden rounded-2xl shadow-lg">
@@ -1221,7 +1367,17 @@ function swapInsideQuarter(q: LineupResult["quarters"][0], sec1: LineupSection, 
   return updated;
 }
 
-function LineupResultView({ result }: { result: LineupResult }) {
+function LineupResultView({
+  result,
+  copied,
+  onCopyShareUrl,
+  onQuartersChange,
+}: {
+  result: LineupResult;
+  copied: boolean;
+  onCopyShareUrl: (result: LineupResult) => void;
+  onQuartersChange: (quarters: LineupResult["quarters"]) => void;
+}) {
   const [quarters, setQuarters] = useState(result.quarters);
   const [selection, setSelection] = useState<{ key: string; section: LineupSection; name: string } | null>(null);
   const [quarterSwapKey, setQuarterSwapKey] = useState<string | null>(null);
@@ -1249,24 +1405,27 @@ function LineupResultView({ result }: { result: LineupResult }) {
       setQuarterSwapKey(key);
       return;
     }
-    setQuarters((prev) => {
-      const q1 = prev.find((q) => `${q.team}-${q.quarter}` === quarterSwapKey);
-      const q2 = prev.find((q) => `${q.team}-${q.quarter}` === key);
-      if (!q1 || !q2) return prev;
-      // 쿼터 번호(라벨)만 swap. 라인업 내용은 그대로 두고 라벨만 바뀜.
-      // → 1Q 카드 자리에 있던 카드가 이제 "3Q" 타이틀로 보임 (기존 라인업 그대로)
-      return prev.map((q) => {
-        const qKey = `${q.team}-${q.quarter}`;
-        if (qKey === quarterSwapKey) {
-          return { ...q, quarter: q2.quarter };
-        }
-        if (qKey === key) {
-          return { ...q, quarter: q1.quarter };
-        }
-        return q;
-      });
+    const firstIdx = quarters.findIndex((q) => `${q.team}-${q.quarter}` === quarterSwapKey);
+    const secondIdx = quarters.findIndex((q) => `${q.team}-${q.quarter}` === key);
+    if (firstIdx < 0 || secondIdx < 0) {
+      setQuarterSwapKey(null);
+      return;
+    }
+    const reordered = [...quarters];
+    const first = reordered[firstIdx];
+    reordered[firstIdx] = reordered[secondIdx];
+    reordered[secondIdx] = first;
+
+    const nextQuarterByTeam: Record<TeamName, number> = { A: 1, B: 1 };
+    const next = reordered.map((q) => {
+      const quarter = nextQuarterByTeam[q.team] as Quarter;
+      nextQuarterByTeam[q.team] += 1;
+      return { ...q, quarter };
     });
+    setQuarters(next);
+    onQuartersChange(next);
     setQuarterSwapKey(null);
+    setSelection(null);
   }
 
   const countsByTeam = useMemo(() => {
@@ -1318,11 +1477,13 @@ function LineupResultView({ result }: { result: LineupResult }) {
       setSelection({ key, section, name });
       return;
     }
-    setQuarters((prev) => prev.map((q) => {
+    const next = quarters.map((q) => {
       const qKey = `${q.team}-${q.quarter}`;
       if (qKey !== key) return q;
       return swapInsideQuarter(q, selection.section, selection.name, section, name);
-    }));
+    });
+    setQuarters(next);
+    onQuartersChange(next);
     setSelection(null);
   }
 
@@ -1340,25 +1501,27 @@ function LineupResultView({ result }: { result: LineupResult }) {
   }
 
   const teamOverview = useMemo(() => {
-    const grouped: Record<string, Record<PositionGroup, string[]>> = {
+    const grouped: Record<TeamName, Record<PositionGroup, string[]>> = {
       A: { ATTACK: [], MID: [], DEFENSE: [] },
       B: { ATTACK: [], MID: [], DEFENSE: [] },
     };
     for (const s of result.playerSummaries) {
       const teamKey = s.team;
-      if (!grouped[teamKey]) continue;
       grouped[teamKey][s.assignedGroup].push(s.playerName);
     }
     return grouped;
   }, [result.playerSummaries]);
 
   return (
-    <section className="mb-6 rounded-3xl bg-white p-6 shadow-sm">
+    <section id="lineup-result" className="mb-6 rounded-3xl bg-white p-6 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-xl font-bold">라인업 결과</h2>
-        <button className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-bold text-white" onClick={downloadCombined}>라인업 확정 (이미지 저장)</button>
+        <div className="flex flex-wrap gap-2">
+          <button className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700" onClick={() => onCopyShareUrl({ ...result, quarters })}>{copied ? "URL 복사됨" : "압축 조정 URL 복사"}</button>
+          <button className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-bold text-white" onClick={downloadCombined}>라인업 확정 (이미지 저장)</button>
+        </div>
       </div>
-      <p className="mt-2 text-xs text-slate-500">필드/GK 선수와 <span className="font-bold">대기</span> 선수만 자리를 바꿀 수 있어요. 쿼터 순서는 각 피치 아래 <span className="font-bold">쿼터 통째 바꾸기</span> 버튼으로 조정하세요. 끝나면 위의 <span className="font-bold">라인업 확정</span> 버튼으로 이미지 저장 후 공유 텍스트도 같이 사용하세요.</p>
+      <p className="mt-2 text-xs text-slate-500">필드/GK 선수와 <span className="font-bold">대기</span> 선수만 자리를 바꿀 수 있어요. 쿼터 순서는 각 피치 아래 <span className="font-bold">쿼터 순서 바꾸기</span> 버튼으로 조정하면 위에서부터 1~4Q로 다시 정렬됩니다. 코치별 미세조정은 <span className="font-bold">압축 조정 URL 복사</span>로 현재 상태를 공유하세요.</p>
       {result.warnings.length > 0 && <div className="mt-4"><MessageBox title="라인업 경고" items={result.warnings} tone="warning" /></div>}
 
       <div ref={combinedRef} className="mt-4 rounded-2xl border-2 border-slate-300 bg-white p-5">
@@ -1367,16 +1530,7 @@ function LineupResultView({ result }: { result: LineupResult }) {
           <span className="text-sm font-semibold text-slate-500">{today}</span>
         </div>
         <div className="grid gap-4 md:grid-cols-2">
-          {(["A", "B"] as const).map((team) => (
-            <div key={team} className={`rounded-xl p-3 ${team === "A" ? "bg-emerald-50" : "bg-blue-50"}`}>
-              <p className={`text-base font-extrabold ${team === "A" ? "text-emerald-900" : "text-blue-900"}`}>{team}팀</p>
-              <div className="mt-2 space-y-1.5 text-sm text-slate-800">
-                <p><span className="inline-block w-9 font-bold text-rose-700">공격</span> {teamOverview[team].ATTACK.join(", ")}</p>
-                <p><span className="inline-block w-9 font-bold text-blue-700">미드</span> {teamOverview[team].MID.join(", ")}</p>
-                <p><span className="inline-block w-9 font-bold text-emerald-700">수비</span> {teamOverview[team].DEFENSE.join(", ")}</p>
-              </div>
-            </div>
-          ))}
+          {(["A", "B"] as const).map((team) => <TeamOverviewCard key={team} team={team} groups={teamOverview[team]} />)}
         </div>
 
         <div className="mt-4 grid gap-4 md:grid-cols-2">
@@ -1390,13 +1544,13 @@ function LineupResultView({ result }: { result: LineupResult }) {
               <div key={key} className="space-y-2">
                 <div ref={(el) => { refs.current.set(key, el); }} className={isSwapSelected ? "ring-2 ring-amber-400 rounded-2xl" : ""}>
                   <Pitch
-                    title={`${q.team}팀 ${q.quarter}Q`}
+                    title={`${formatTeamName(q.team)} ${q.quarter}Q`}
                     gk={q.gk}
                     attack={q.attack}
                     mid={q.mid}
                     defense={q.defense}
                     bench={q.bench}
-                    accent={q.team === "A" ? "emerald" : "blue"}
+                    accent={q.team === "A" ? "emerald" : "orange"}
                     selectedKey={selectedKey}
                     onSelect={(section, name) => handleSelect(key, section, name)}
                     counts={countsByTeam.get(q.team)}
