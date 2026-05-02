@@ -1281,8 +1281,8 @@ const OVERVIEW_GROUPS: Array<{ group: PositionGroup; label: string }> = [
 
 function formatCount(c: PlayerCount | undefined): string {
   if (!c) return "";
-  const gkPart = c.gk > 0 ? `·G${c.gk > 1 ? c.gk : ""}` : "";
-  return `(${c.field}${gkPart})`;
+  const gkPart = c.gk > 0 ? `·GK${c.gk}` : "";
+  return `${c.field}Q${gkPart}`;
 }
 
 function teamPanelClass(team: TeamName): string {
@@ -1360,7 +1360,7 @@ function TeamOverviewCard({ team, groups }: { team: TeamName; groups: Record<Pos
 }
 
 function PitchChip({ name, accent, selected, onClick, count, staffRole, fill = false }: { name: string; accent?: "gk" | "bench"; selected?: boolean; onClick?: () => void; count?: PlayerCount; staffRole?: StaffRole; fill?: boolean }) {
-  const base = "inline-flex h-7 min-w-0 items-center justify-center gap-0.5 rounded-full px-1 text-[11px] font-extrabold shadow-sm whitespace-nowrap transition sm:h-auto sm:gap-1 sm:px-3 sm:py-1.5 sm:text-sm sm:shadow";
+  const base = "inline-flex h-10 min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl px-1 text-[11px] font-extrabold shadow-sm whitespace-nowrap transition sm:h-auto sm:flex-row sm:gap-1 sm:rounded-full sm:px-3 sm:py-1.5 sm:text-sm sm:shadow";
   const palette = accent === "gk"
     ? "bg-amber-300 text-amber-950"
     : accent === "bench"
@@ -1371,9 +1371,11 @@ function PitchChip({ name, accent, selected, onClick, count, staffRole, fill = f
   const countText = formatCount(count);
   return (
     <Tag type={onClick ? "button" : undefined} className={`${base} ${fill ? "w-full sm:w-auto" : "w-[4.2rem] sm:w-auto sm:min-w-[4.75rem]"} ${palette} ${staffRolePitchClass(staffRole)} ${ring}`} onClick={onClick} title={staffRole ? `${name} · ${staffRole}` : undefined}>
-      <span className="truncate">{name}</span>
-      <StaffRoleBadge role={staffRole} compact hideOnMobile />
-      {countText && <span className="ml-1 hidden text-[11px] font-bold opacity-70 sm:inline">{countText}</span>}
+      <span className="flex min-w-0 items-center justify-center gap-0.5">
+        <span className="truncate">{name}</span>
+        <StaffRoleBadge role={staffRole} compact hideOnMobile />
+      </span>
+      {countText && <span className="text-[9px] font-black leading-none opacity-70 sm:ml-1 sm:text-[11px]">{countText}</span>}
     </Tag>
   );
 }
@@ -1442,6 +1444,16 @@ function Pitch({ title, gk, attack, mid, defense, bench, accent = "emerald", sel
 }
 
 function swapInsideQuarter(q: LineupResult["quarters"][0], sec1: LineupSection, name1: string, sec2: LineupSection, name2: string): LineupResult["quarters"][0] {
+  if (sec1 === sec2) {
+    if (sec1 === "gk" || name1 === name2) return q;
+    const arr = (q[sec1] as string[]).map((name) => {
+      if (name === name1) return name2;
+      if (name === name2) return name1;
+      return name;
+    });
+    return { ...q, [sec1]: arr };
+  }
+
   const setSection = (
     target: LineupResult["quarters"][0],
     section: LineupSection,
@@ -1526,12 +1538,18 @@ function LineupResultView({
         teamMap = new Map<string, PlayerCount>();
         map.set(q.team, teamMap);
       }
+      const ensurePlayer = (name: string) => {
+        if (!name || name === "없음") return;
+        if (!teamMap!.has(name)) teamMap!.set(name, { field: 0, gk: 0 });
+      };
       const bumpField = (name: string) => {
+        ensurePlayer(name);
         const c = teamMap!.get(name) ?? { field: 0, gk: 0 };
         teamMap!.set(name, { field: c.field + 1, gk: c.gk });
       };
       const bumpGk = (name: string) => {
         if (!name || name === "없음") return;
+        ensurePlayer(name);
         const c = teamMap!.get(name) ?? { field: 0, gk: 0 };
         teamMap!.set(name, { field: c.field, gk: c.gk + 1 });
       };
@@ -1539,6 +1557,7 @@ function LineupResultView({
       q.mid.forEach(bumpField);
       q.defense.forEach(bumpField);
       bumpGk(q.gk);
+      q.bench.forEach(ensurePlayer);
     }
     return map;
   }, [quarters]);
@@ -1572,12 +1591,7 @@ function LineupResultView({
       setSelection(null);
       return;
     }
-    // 같은 쿼터 내: 대기 ↔ 필드/GK swap만 허용 (필드 안 다른 포지션끼리 swap 비활성)
-    const oneIsBench = selection.section === "bench" || section === "bench";
-    if (!oneIsBench) {
-      setSelection({ key, section, name });
-      return;
-    }
+    // 같은 쿼터 안에서는 필드, GK, 대기 어디든 서로 자리를 바꿀 수 있다.
     const next = quarters.map((q) => {
       const qKey = `${q.team}-${q.quarter}`;
       if (qKey !== key) return q;
@@ -1625,7 +1639,7 @@ function LineupResultView({
           <button className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-bold text-white" onClick={downloadCombined}>라인업 확정 (이미지 저장)</button>
         </div>
       </div>
-      <p className="mt-2 text-xs text-slate-500">필드/GK 선수와 <span className="font-bold">대기</span> 선수만 자리를 바꿀 수 있어요. 쿼터 순서는 각 피치 아래 <span className="font-bold">쿼터 순서 바꾸기</span> 버튼으로 조정하면 위에서부터 1~4Q로 다시 정렬됩니다. 코치별 미세조정은 <span className="font-bold">압축 조정 URL 복사</span>로 현재 상태를 공유하세요.</p>
+      <p className="mt-2 text-xs text-slate-500">같은 쿼터 안에서는 <span className="font-bold">필드, GK, 대기</span> 어디든 서로 자리를 바꿀 수 있어요. 쿼터 순서는 각 피치 아래 <span className="font-bold">쿼터 순서 바꾸기</span> 버튼으로 조정하면 위에서부터 1~4Q로 다시 정렬됩니다. 코치별 미세조정은 <span className="font-bold">압축 조정 URL 복사</span>로 현재 상태를 공유하세요.</p>
       {result.warnings.length > 0 && <div className="mt-4"><MessageBox title="라인업 경고" items={result.warnings} tone="warning" /></div>}
 
       <div ref={combinedRef} className="mt-4 rounded-2xl border-2 border-slate-300 bg-white p-2 sm:p-5">
