@@ -1,6 +1,7 @@
 import type { AssignedPlayer, DedicatedGoalkeeper, Player, PositionGroup } from "@/types/player";
 import type { LineupResult, LineupRole, PlayerLineupSummary, Quarter, TeamQuarterLineup } from "@/types/lineup";
 import type { Team, TeamName } from "@/types/team";
+import { formatTeamName } from "@/lib/teamLabels";
 
 const QUARTERS: Quarter[] = [1, 2, 3, 4];
 const MAX_DEDICATED_GK_AUTO_ASSIGN = 2;
@@ -285,7 +286,7 @@ export function generateLineups(
     warnings.push(`대기 ${fieldWaiting.length}명 중 1명만 자동 콜업됩니다.`);
   }
   if (waitingPlayer && waitingQuarterA && waitingQuarterB) {
-    warnings.push(`대기 1명이 A팀 ${waitingQuarterA}Q · B팀 ${waitingQuarterB}Q에 콜업되었습니다.`);
+    warnings.push(`대기 1명이 ${formatTeamName("A")} ${waitingQuarterA}Q · ${formatTeamName("B")} ${waitingQuarterB}Q에 콜업되었습니다.`);
   }
 
   return {

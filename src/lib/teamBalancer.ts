@@ -1,5 +1,6 @@
 import type { AssignedPlayer, FieldPosition, Player, PositionGroup } from "@/types/player";
 import type { Team, TeamBalanceResult, TeamBalanceSummary } from "@/types/team";
+import { formatTeamName } from "@/lib/teamLabels";
 import { getPositionGroup, hasGroup, scoreForGroup } from "./positions";
 
 const POSITION_GROUPS: PositionGroup[] = ["ATTACK", "MID", "DEFENSE"];
@@ -396,7 +397,7 @@ export function balanceTeams(players: Player[], variant = 0): TeamBalanceResult 
 
   if (initial.teamA.length < MIN_TEAM_SIZE || initial.teamA.length > MAX_TEAM_SIZE
       || initial.teamB.length < MIN_TEAM_SIZE || initial.teamB.length > MAX_TEAM_SIZE) {
-    throw new Error(`한 팀은 ${MIN_TEAM_SIZE}명~${MAX_TEAM_SIZE}명이어야 합니다. 현재 A팀 ${initial.teamA.length}명, B팀 ${initial.teamB.length}명입니다.`);
+    throw new Error(`한 팀은 ${MIN_TEAM_SIZE}명~${MAX_TEAM_SIZE}명이어야 합니다. 현재 ${formatTeamName("A")} ${initial.teamA.length}명, ${formatTeamName("B")} ${initial.teamB.length}명입니다.`);
   }
 
   const refined = refineByPairFlip(initial.teamA, initial.teamB, initial.partnerById);
