@@ -1132,62 +1132,68 @@ function TeamCard({
     : null;
   const showSwapHints = selection != null && selection.team !== team;
   return (
-    <div className="rounded-2xl border border-slate-200 p-4">
-      <h3 className="font-bold">{title}</h3>
-      {(["ATTACK", "MID", "DEFENSE"] as PositionGroup[]).map((g) => {
-        const score = groupScores[g];
-        return (
-          <div key={g} className="mt-3">
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <GroupBadge group={g} />
-                {showSwapHints && interactive && (
-                  <button
-                    type="button"
-                    className="rounded-full bg-amber-200 px-2 py-0.5 text-[10px] font-bold text-amber-900 hover:bg-amber-300"
-                    onClick={() => onGroupTarget(team, g)}
-                    title="선택한 선수를 이 그룹으로 보내기"
-                  >
-                    여기로
-                  </button>
-                )}
+    <div className={`overflow-hidden rounded-2xl border bg-white shadow-sm ${teamBorderClass(team)}`}>
+      <div className={`h-2 ${teamAccentClass(team)}`} />
+      <div className="flex items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
+        <span className={`rounded-full px-3 py-1 text-sm font-black ${teamPillClass(team)}`}>{title}</span>
+        <span className="text-xs font-bold text-slate-500">팀 분배</span>
+      </div>
+      <div className="p-4 pt-1">
+        {(["ATTACK", "MID", "DEFENSE"] as PositionGroup[]).map((g) => {
+          const score = groupScores[g];
+          return (
+            <div key={g} className="mt-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <GroupBadge group={g} />
+                  {showSwapHints && interactive && (
+                    <button
+                      type="button"
+                      className="rounded-full bg-amber-200 px-2 py-0.5 text-[10px] font-bold text-amber-900 hover:bg-amber-300"
+                      onClick={() => onGroupTarget(team, g)}
+                      title="선택한 선수를 이 그룹으로 보내기"
+                    >
+                      여기로
+                    </button>
+                  )}
+                </div>
+                <span className="text-xs font-bold text-slate-600">합계 {score}</span>
               </div>
-              <span className="text-xs font-bold text-slate-600">합계 {score}</span>
+              <div className="mt-1.5 grid gap-1" style={{ gridTemplateColumns: `repeat(${players.filter((p) => p.assignedGroup === g).length}, minmax(0, 1fr))` }}>
+                {players.filter((p) => p.assignedGroup === g).map((p) => {
+                  const isSelected = selection?.team === team && selection.playerId === p.id;
+                  const composite = p.attackScore + p.midScore + p.defenseScore + p.activityScore;
+                  const isSwapHint = showSwapHints && selectedComposite != null && Math.abs(composite - selectedComposite) <= 3;
+                  const baseClass = "min-w-0 rounded-lg px-1 py-0.5 text-center transition border";
+                  const stateClass = isSelected
+                    ? teamSelectedPlayerClass(team)
+                    : isSwapHint
+                      ? "bg-amber-50 text-slate-700 border-amber-300 hover:bg-amber-100 cursor-pointer"
+                      : interactive
+                        ? `bg-slate-50 text-slate-700 border-transparent ${teamHoverClass(team)} cursor-pointer`
+                        : "bg-slate-50 text-slate-700 border-transparent";
+                  const statClass = isSelected ? teamSelectedStatClass(team) : "text-slate-500";
+                  return (
+                    <button
+                      key={p.id}
+                      type="button"
+                      title={`${p.assignmentReason} · 공${p.attackScore} 미${p.midScore} 수${p.defenseScore} 활${p.activityScore}`}
+                      className={`${baseClass} ${stateClass}`}
+                      disabled={!interactive}
+                      onClick={() => onPlayerClick(team, p.id)}
+                    >
+                      <div className="truncate text-[11px] font-bold leading-tight">{p.name}{overrideMark(p.assignmentReason)}</div>
+                      <div className={`truncate font-mono text-[9px] leading-tight ${statClass}`}>
+                        {p.attackScore}/{p.midScore}/{p.defenseScore}/{p.activityScore}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-            <div className="mt-1.5 grid gap-1" style={{ gridTemplateColumns: `repeat(${players.filter((p) => p.assignedGroup === g).length}, minmax(0, 1fr))` }}>
-              {players.filter((p) => p.assignedGroup === g).map((p) => {
-                const isSelected = selection?.team === team && selection.playerId === p.id;
-                const composite = p.attackScore + p.midScore + p.defenseScore + p.activityScore;
-                const isSwapHint = showSwapHints && selectedComposite != null && Math.abs(composite - selectedComposite) <= 3;
-                const baseClass = "min-w-0 rounded-lg px-1 py-0.5 text-center transition border";
-                const stateClass = isSelected
-                  ? "bg-blue-600 text-white shadow-md border-blue-700"
-                  : isSwapHint
-                    ? "bg-amber-50 text-slate-700 border-amber-300 hover:bg-amber-100 cursor-pointer"
-                    : interactive
-                      ? "bg-slate-50 text-slate-700 border-transparent hover:bg-blue-50 cursor-pointer"
-                      : "bg-slate-50 text-slate-700 border-transparent";
-                const statClass = isSelected ? "text-blue-100" : "text-slate-500";
-                return (
-                  <button
-                    key={p.id}
-                    type="button"
-                    title={`${p.assignmentReason} · 공${p.attackScore} 미${p.midScore} 수${p.defenseScore} 활${p.activityScore}`}
-                    className={`${baseClass} ${stateClass}`}
-                    disabled={!interactive}
-                    onClick={() => onPlayerClick(team, p.id)}
-                  >
-                    <div className="truncate text-[11px] font-bold leading-tight">{p.name}{overrideMark(p.assignmentReason)}</div>
-                    <div className={`truncate font-mono text-[9px] leading-tight ${statClass}`}>
-                      {p.attackScore}/{p.midScore}/{p.defenseScore}/{p.activityScore}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        );
-      })}
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -1234,14 +1240,42 @@ function formatCount(c: PlayerCount | undefined): string {
 
 function teamPanelClass(team: TeamName): string {
   return team === "A"
-    ? "border-lime-200 bg-lime-50"
-    : "border-orange-200 bg-orange-50";
+    ? "border-slate-200 bg-white shadow-sm ring-1 ring-lime-200/70"
+    : "border-slate-200 bg-white shadow-sm ring-1 ring-orange-200/70";
+}
+
+function teamBorderClass(team: TeamName): string {
+  return team === "A"
+    ? "border-lime-300"
+    : "border-orange-300";
+}
+
+function teamAccentClass(team: TeamName): string {
+  return team === "A"
+    ? "bg-lime-400"
+    : "bg-orange-500";
 }
 
 function teamPillClass(team: TeamName): string {
   return team === "A"
     ? "bg-lime-300 text-lime-950"
     : "bg-orange-500 text-white";
+}
+
+function teamHoverClass(team: TeamName): string {
+  return team === "A"
+    ? "hover:bg-lime-50 hover:border-lime-200"
+    : "hover:bg-orange-50 hover:border-orange-200";
+}
+
+function teamSelectedPlayerClass(team: TeamName): string {
+  return team === "A"
+    ? "bg-lime-300 text-lime-950 shadow-md border-lime-500"
+    : "bg-orange-500 text-white shadow-md border-orange-600";
+}
+
+function teamSelectedStatClass(team: TeamName): string {
+  return team === "A" ? "text-lime-800" : "text-orange-100";
 }
 
 function overviewGroupPillClass(group: PositionGroup): string {
@@ -1252,12 +1286,13 @@ function overviewGroupPillClass(group: PositionGroup): string {
 
 function TeamOverviewCard({ team, groups }: { team: TeamName; groups: Record<PositionGroup, string[]> }) {
   return (
-    <div className={`rounded-xl border p-3 ${teamPanelClass(team)}`}>
-      <div className="mb-3 flex items-center justify-between gap-2">
+    <div className={`overflow-hidden rounded-xl border ${teamPanelClass(team)}`}>
+      <div className={`h-1.5 ${teamAccentClass(team)}`} />
+      <div className="flex items-center justify-between gap-2 px-3 py-3">
         <span className={`rounded-full px-3 py-1 text-sm font-black ${teamPillClass(team)}`}>{formatTeamName(team)}</span>
         <span className="text-xs font-bold text-slate-500">팀 배정</span>
       </div>
-      <div className="space-y-2">
+      <div className="space-y-2 px-3 pb-3">
         {OVERVIEW_GROUPS.map(({ group, label }) => (
           <div key={group} className="flex flex-wrap items-center gap-1.5">
             <span className={`rounded-full px-2.5 py-1 text-xs font-black ring-1 ${overviewGroupPillClass(group)}`}>{label}</span>
