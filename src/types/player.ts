@@ -15,6 +15,8 @@ export type PlayerSource = "SHEET" | "TEMP_GUEST" | "LOCAL_GUEST";
 
 export type MemberType = "REGULAR" | "GUEST" | "WAITING";
 
+export type StaffRole = "단장" | "감독" | "코치";
+
 export type Player = {
   id: string;
   source: PlayerSource;

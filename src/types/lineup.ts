@@ -1,4 +1,4 @@
-import type { PositionGroup } from "./player";
+import type { PositionGroup, StaffRole } from "./player";
 import type { TeamName } from "./team";
 
 export type Quarter = 1 | 2 | 3 | 4;
@@ -28,6 +28,7 @@ export type TeamQuarterLineup = {
 export type PlayerLineupSummary = {
   playerId: string;
   playerName: string;
+  staffRole?: StaffRole;
   team: TeamName;
   assignedGroup: PositionGroup;
   q1: LineupRole;
@@ -42,6 +43,7 @@ export type PlayerLineupSummary = {
 export type LineupResult = {
   quarters: TeamQuarterLineup[];
   playerSummaries: PlayerLineupSummary[];
+  staffRoles?: Record<string, StaffRole>;
   dedicatedGkRotation: Record<string, string[]>;
   warnings: string[];
 };
