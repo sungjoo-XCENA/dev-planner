@@ -1602,7 +1602,7 @@ function LineupResultView({
     setSelection(null);
   }
 
-  const combinedRef = useRef<HTMLDivElement | null>(null);
+  const teamCaptureRefs = useRef<Record<TeamName, HTMLDivElement | null>>({ A: null, B: null });
   const today = useMemo(() => {
     const d = new Date();
     const y = d.getFullYear();
@@ -1610,9 +1610,11 @@ function LineupResultView({
     const day = String(d.getDate()).padStart(2, "0");
     return `${y}-${m}-${day}`;
   }, []);
-  async function downloadCombined() {
-    if (!combinedRef.current) return;
-    await downloadElementAsImage(combinedRef.current, `dev_fc_lineup_${today}.png`);
+  async function downloadTeam(team: TeamName) {
+    const elem = teamCaptureRefs.current[team];
+    if (!elem) return;
+    const teamFileName = team === "A" ? "fluorescent" : "orange";
+    await downloadElementAsImage(elem, `dev_fc_${teamFileName}_lineup_${today}.png`);
   }
 
   const teamOverview = useMemo(() => {
@@ -1630,19 +1632,59 @@ function LineupResultView({
     return grouped;
   }, [result.playerSummaries, staffRolesByName]);
 
+  const quartersByTeam = useMemo(() => {
+    const grouped: Record<TeamName, LineupResult["quarters"]> = { A: [], B: [] };
+    for (const quarter of quarters) grouped[quarter.team].push(quarter);
+    grouped.A.sort((a, b) => a.quarter - b.quarter);
+    grouped.B.sort((a, b) => a.quarter - b.quarter);
+    return grouped;
+  }, [quarters]);
+
+  const renderQuarterCard = (q: LineupResult["quarters"][0]) => {
+    const key = `${q.team}-${q.quarter}`;
+    const selectedKey = selection && selection.key === key ? `${selection.section}|${selection.name}` : null;
+    const isSwapSelected = quarterSwapKey === key;
+    const isSwapPending = quarterSwapKey !== null && !isSwapSelected;
+    const isSameTeamPending = isSwapPending && quarterSwapKey?.split("-")[0] === q.team;
+    return (
+      <div key={key} className="space-y-2">
+        <div ref={(el) => { refs.current.set(key, el); }} className={isSwapSelected ? "ring-2 ring-amber-400 rounded-2xl" : ""}>
+          <Pitch
+            title={`${formatTeamName(q.team)} ${q.quarter}Q`}
+            gk={q.gk}
+            attack={q.attack}
+            mid={q.mid}
+            defense={q.defense}
+            bench={q.bench}
+            accent={q.team === "A" ? "emerald" : "orange"}
+            selectedKey={selectedKey}
+            onSelect={(section, name) => handleSelect(key, section, name)}
+            counts={countsByTeam.get(q.team)}
+            staffRoles={staffRolesByName}
+          />
+        </div>
+        <button
+          className={`w-full rounded-xl px-3 py-2 text-xs font-semibold ${isSwapSelected ? "bg-amber-400 text-amber-950" : isSameTeamPending ? "bg-amber-100 text-amber-900 hover:bg-amber-200" : "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"}`}
+          onClick={() => handleQuarterSwap(key)}
+        >
+          {isSwapSelected ? "선택됨 (취소)" : isSameTeamPending ? "여기와 바꾸기" : "쿼터 순서 바꾸기"}
+        </button>
+      </div>
+    );
+  };
+
   return (
     <section id="lineup-result" className="mb-6 rounded-3xl bg-white p-6 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-xl font-bold">라인업 결과</h2>
         <div className="flex flex-wrap gap-2">
-          <button className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700" onClick={() => onCopyShareUrl({ ...result, quarters })}>{copied ? "URL 복사됨" : "압축 조정 URL 복사"}</button>
-          <button className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-bold text-white" onClick={downloadCombined}>라인업 확정 (이미지 저장)</button>
+          <button className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700" onClick={() => onCopyShareUrl({ ...result, quarters })}>{copied ? "공유 링크 복사됨" : "라인업 공유"}</button>
         </div>
       </div>
-      <p className="mt-2 text-xs text-slate-500">같은 쿼터 안에서는 <span className="font-bold">필드, GK, 대기</span> 어디든 서로 자리를 바꿀 수 있어요. 쿼터 순서는 각 피치 아래 <span className="font-bold">쿼터 순서 바꾸기</span> 버튼으로 조정하면 위에서부터 1~4Q로 다시 정렬됩니다. 코치별 미세조정은 <span className="font-bold">압축 조정 URL 복사</span>로 현재 상태를 공유하세요.</p>
+      <p className="mt-2 text-xs text-slate-500">같은 쿼터 안에서는 <span className="font-bold">필드, GK, 대기</span> 어디든 서로 자리를 바꿀 수 있어요. 쿼터 순서는 각 피치 아래 <span className="font-bold">쿼터 순서 바꾸기</span> 버튼으로 조정하면 위에서부터 1~4Q로 다시 정렬됩니다. 코치별 미세조정은 <span className="font-bold">라인업 공유</span>로 현재 상태를 공유하세요.</p>
       {result.warnings.length > 0 && <div className="mt-4"><MessageBox title="라인업 경고" items={result.warnings} tone="warning" /></div>}
 
-      <div ref={combinedRef} className="mt-4 rounded-2xl border-2 border-slate-300 bg-white p-2 sm:p-5">
+      <div className="mt-4 rounded-2xl border-2 border-slate-300 bg-white p-2 sm:p-5">
         <div className="mb-2 flex items-baseline justify-center gap-2 sm:mb-3">
           <h3 className="text-base font-black text-slate-900 sm:text-lg">DEV FC 라인업</h3>
           <span className="text-xs font-semibold text-slate-500 sm:text-sm">{today}</span>
@@ -1651,42 +1693,79 @@ function LineupResultView({
           {(["A", "B"] as const).map((team) => <TeamOverviewCard key={team} team={team} groups={teamOverview[team]} />)}
         </div>
 
-        <div className="mt-2 grid gap-3 md:mt-4 md:grid-cols-2 md:gap-4">
-          {quarters.map((q) => {
-            const key = `${q.team}-${q.quarter}`;
-            const selectedKey = selection && selection.key === key ? `${selection.section}|${selection.name}` : null;
-            const isSwapSelected = quarterSwapKey === key;
-            const isSwapPending = quarterSwapKey !== null && !isSwapSelected;
-            const isSameTeamPending = isSwapPending && quarterSwapKey?.split("-")[0] === q.team;
-            return (
-              <div key={key} className="space-y-2">
-                <div ref={(el) => { refs.current.set(key, el); }} className={isSwapSelected ? "ring-2 ring-amber-400 rounded-2xl" : ""}>
-                  <Pitch
-                    title={`${formatTeamName(q.team)} ${q.quarter}Q`}
-                    gk={q.gk}
-                    attack={q.attack}
-                    mid={q.mid}
-                    defense={q.defense}
-                    bench={q.bench}
-                    accent={q.team === "A" ? "emerald" : "orange"}
-                    selectedKey={selectedKey}
-                    onSelect={(section, name) => handleSelect(key, section, name)}
-                    counts={countsByTeam.get(q.team)}
-                    staffRoles={staffRolesByName}
-                  />
-                </div>
-                <button
-                  className={`w-full rounded-xl px-3 py-2 text-xs font-semibold ${isSwapSelected ? "bg-amber-400 text-amber-950" : isSameTeamPending ? "bg-amber-100 text-amber-900 hover:bg-amber-200" : "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"}`}
-                  onClick={() => handleQuarterSwap(key)}
-                >
-                  {isSwapSelected ? "선택됨 (취소)" : isSameTeamPending ? "여기와 바꾸기" : "쿼터 순서 바꾸기"}
-                </button>
-              </div>
-            );
-          })}
+        <div className="mt-2 grid gap-3 md:hidden">
+          {(["A", "B"] as const).flatMap((team) => quartersByTeam[team].map(renderQuarterCard))}
+        </div>
+
+        <div className="mt-4 hidden gap-4 md:grid md:grid-cols-2">
+          {quarters.map(renderQuarterCard)}
         </div>
       </div>
+
+      <div aria-hidden className="fixed left-[-10000px] top-0 w-[720px] bg-white">
+        {(["A", "B"] as const).map((team) => (
+          <TeamLineupImage
+            key={team}
+            refCallback={(el) => { teamCaptureRefs.current[team] = el; }}
+            team={team}
+            today={today}
+            groups={teamOverview[team]}
+            quarters={quartersByTeam[team]}
+            counts={countsByTeam.get(team)}
+            staffRoles={staffRolesByName}
+          />
+        ))}
+      </div>
+
+      <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:justify-end">
+        <button className="rounded-xl bg-lime-500 px-4 py-3 text-sm font-black text-lime-950 shadow-sm hover:bg-lime-400" onClick={() => downloadTeam("A")}>형광팀 라인업 확정 (이미지 저장)</button>
+        <button className="rounded-xl bg-orange-500 px-4 py-3 text-sm font-black text-white shadow-sm hover:bg-orange-400" onClick={() => downloadTeam("B")}>주황팀 라인업 확정 (이미지 저장)</button>
+      </div>
     </section>
+  );
+}
+
+function TeamLineupImage({
+  refCallback,
+  team,
+  today,
+  groups,
+  quarters,
+  counts,
+  staffRoles,
+}: {
+  refCallback: (el: HTMLDivElement | null) => void;
+  team: TeamName;
+  today: string;
+  groups: Record<PositionGroup, OverviewPlayer[]>;
+  quarters: LineupResult["quarters"];
+  counts?: Map<string, PlayerCount>;
+  staffRoles: Map<string, StaffRole>;
+}) {
+  return (
+    <div ref={refCallback} className="mb-6 rounded-2xl border-2 border-slate-300 bg-white p-5">
+      <div className="mb-3 flex items-baseline justify-center gap-2">
+        <h3 className="text-lg font-black text-slate-900">DEV FC {formatTeamName(team)} 라인업</h3>
+        <span className="text-sm font-semibold text-slate-500">{today}</span>
+      </div>
+      <TeamOverviewCard team={team} groups={groups} />
+      <div className="mt-4 grid gap-4">
+        {quarters.map((q) => (
+          <Pitch
+            key={`${q.team}-${q.quarter}`}
+            title={`${formatTeamName(q.team)} ${q.quarter}Q`}
+            gk={q.gk}
+            attack={q.attack}
+            mid={q.mid}
+            defense={q.defense}
+            bench={q.bench}
+            accent={q.team === "A" ? "emerald" : "orange"}
+            counts={counts}
+            staffRoles={staffRoles}
+          />
+        ))}
+      </div>
+    </div>
   );
 }
 
