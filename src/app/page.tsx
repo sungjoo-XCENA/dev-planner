@@ -978,17 +978,17 @@ function StaffRoleBadge({ role, compact = false, hideOnMobile = false }: { role?
 }
 
 function staffRoleChipClass(role?: StaffRole | null): string {
-  if (role === "단장") return "bg-slate-900 text-white ring-slate-900";
-  if (role === "감독") return "bg-indigo-50 text-indigo-900 ring-indigo-300";
-  if (role === "코치") return "bg-cyan-50 text-cyan-900 ring-cyan-300";
-  return "bg-white text-slate-700 ring-slate-200";
+  if (role === "단장") return "bg-slate-900 text-white ring-slate-900 border-b-2 border-slate-500";
+  if (role === "감독") return "bg-white text-indigo-950 ring-indigo-300 border-b-2 border-indigo-500";
+  if (role === "코치") return "bg-white text-cyan-950 ring-cyan-300 border-b-2 border-cyan-500";
+  return "bg-white text-slate-700 ring-slate-200 border-b-2 border-transparent";
 }
 
 function staffRolePitchClass(role?: StaffRole | null): string {
-  if (role === "단장") return "bg-slate-900 text-white ring-1 ring-slate-900/30";
-  if (role === "감독") return "bg-indigo-50 text-indigo-950 ring-1 ring-indigo-300";
-  if (role === "코치") return "bg-cyan-50 text-cyan-950 ring-1 ring-cyan-300";
-  return "";
+  if (role === "단장") return "bg-slate-900 text-white ring-1 ring-slate-900/30 border-b-2 border-slate-500";
+  if (role === "감독") return "bg-indigo-50 text-indigo-950 ring-1 ring-indigo-300 border-b-2 border-indigo-500";
+  if (role === "코치") return "bg-cyan-50 text-cyan-950 ring-1 ring-cyan-300 border-b-2 border-cyan-500";
+  return "border-b-2 border-transparent";
 }
 
 function MetricCard({ label, a, b, highlight }: { label: string; a: number; b: number; highlight?: boolean }) {
@@ -1332,6 +1332,7 @@ function overviewGroupPillClass(group: PositionGroup): string {
 }
 
 function TeamOverviewCard({ team, groups }: { team: TeamName; groups: Record<PositionGroup, OverviewPlayer[]> }) {
+  const columnCount = Math.max(1, ...OVERVIEW_GROUPS.map(({ group }) => groups[group].length));
   return (
     <div className={`overflow-hidden rounded-xl border ${teamPanelClass(team)}`}>
       <div className={`h-1.5 ${teamAccentClass(team)}`} />
@@ -1343,9 +1344,9 @@ function TeamOverviewCard({ team, groups }: { team: TeamName; groups: Record<Pos
         {OVERVIEW_GROUPS.map(({ group, label }) => (
           <div key={group} className="grid grid-cols-[2.1rem_minmax(0,1fr)] items-center gap-1 sm:grid-cols-[2.8rem_minmax(0,1fr)] sm:gap-1.5">
             <span className={`inline-flex justify-center rounded-full px-1 py-0.5 text-[10px] font-black ring-1 sm:px-2.5 sm:py-1 sm:text-xs ${overviewGroupPillClass(group)}`}>{label}</span>
-            <div className="grid gap-1" style={{ gridTemplateColumns: `repeat(${Math.max(groups[group].length, 1)}, minmax(0, 1fr))` }}>
+            <div className="grid gap-1" style={{ gridTemplateColumns: `repeat(${columnCount}, minmax(0, 1fr))` }}>
               {groups[group].map((player) => (
-                <span key={player.name} className={`inline-flex min-w-0 items-center justify-center gap-1 rounded-full px-1 py-0.5 text-[10px] font-bold shadow-sm ring-1 sm:px-2.5 sm:py-1 sm:text-xs ${staffRoleChipClass(player.staffRole)}`}>
+                <span key={player.name} className={`inline-flex h-5 min-w-0 items-center justify-center gap-1 rounded-full px-1 text-[10px] font-bold shadow-sm ring-1 sm:h-auto sm:px-2.5 sm:py-1 sm:text-xs ${staffRoleChipClass(player.staffRole)}`}>
                   <span className="truncate">{player.name}</span>
                   <StaffRoleBadge role={player.staffRole} compact hideOnMobile />
                 </span>
@@ -1359,7 +1360,7 @@ function TeamOverviewCard({ team, groups }: { team: TeamName; groups: Record<Pos
 }
 
 function PitchChip({ name, accent, selected, onClick, count, staffRole, fill = false }: { name: string; accent?: "gk" | "bench"; selected?: boolean; onClick?: () => void; count?: PlayerCount; staffRole?: StaffRole; fill?: boolean }) {
-  const base = "inline-flex min-w-0 items-center justify-center gap-0.5 rounded-full px-1 py-1 text-[11px] font-extrabold shadow-sm whitespace-nowrap transition sm:gap-1 sm:px-3 sm:py-1.5 sm:text-sm sm:shadow";
+  const base = "inline-flex h-7 min-w-0 items-center justify-center gap-0.5 rounded-full px-1 text-[11px] font-extrabold shadow-sm whitespace-nowrap transition sm:h-auto sm:gap-1 sm:px-3 sm:py-1.5 sm:text-sm sm:shadow";
   const palette = accent === "gk"
     ? "bg-amber-300 text-amber-950"
     : accent === "bench"
@@ -1369,7 +1370,7 @@ function PitchChip({ name, accent, selected, onClick, count, staffRole, fill = f
   const Tag = onClick ? "button" : "span";
   const countText = formatCount(count);
   return (
-    <Tag type={onClick ? "button" : undefined} className={`${base} ${fill ? "w-full sm:w-auto" : ""} ${palette} ${staffRolePitchClass(staffRole)} ${ring}`} onClick={onClick} title={staffRole ? `${name} · ${staffRole}` : undefined}>
+    <Tag type={onClick ? "button" : undefined} className={`${base} ${fill ? "w-full sm:w-auto" : "w-[4.2rem] sm:w-auto sm:min-w-[4.75rem]"} ${palette} ${staffRolePitchClass(staffRole)} ${ring}`} onClick={onClick} title={staffRole ? `${name} · ${staffRole}` : undefined}>
       <span className="truncate">{name}</span>
       <StaffRoleBadge role={staffRole} compact hideOnMobile />
       {countText && <span className="ml-1 hidden text-[11px] font-bold opacity-70 sm:inline">{countText}</span>}
@@ -1380,7 +1381,7 @@ function PitchChip({ name, accent, selected, onClick, count, staffRole, fill = f
 function PitchRow({ players, section, selectedKey, onSelect, counts, staffRoles }: { players: string[]; section: LineupSection; selectedKey: string | null; onSelect?: (section: LineupSection, name: string) => void; counts?: Map<string, PlayerCount>; staffRoles?: Map<string, StaffRole> }) {
   if (!players.length) return <div className="flex h-6" />;
   return (
-    <div className="grid items-center gap-1 px-1 sm:flex sm:flex-wrap sm:justify-around sm:gap-1.5 sm:px-2" style={{ gridTemplateColumns: `repeat(${players.length}, minmax(0, 1fr))` }}>
+    <div className="grid items-center justify-center gap-1 px-1 sm:flex sm:flex-wrap sm:justify-around sm:gap-1.5 sm:px-2" style={{ gridTemplateColumns: `repeat(${players.length}, minmax(0, 4.2rem))` }}>
       {players.map((name) => (
         <PitchChip key={name} name={name} selected={selectedKey === `${section}|${name}`} onClick={onSelect ? () => onSelect(section, name) : undefined} count={counts?.get(name)} staffRole={staffRoles?.get(name)} fill />
       ))}
