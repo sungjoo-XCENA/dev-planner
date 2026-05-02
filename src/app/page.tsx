@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import type { DedicatedGoalkeeper, FieldPosition, Player, PositionGroup } from "@/types/player";
+import type { DedicatedGoalkeeper, FieldPosition, Player, PositionGroup, StaffRole } from "@/types/player";
 import type { LineupResult, LineupRole, Quarter } from "@/types/lineup";
 import type { TeamBalanceResult, TeamName } from "@/types/team";
 import { appConfig } from "@/config/appConfig";
@@ -12,6 +12,7 @@ import { generateLineups } from "@/lib/lineupGenerator";
 import { planMatchLineup, type MatchPlanResult, type MatchSelection, type MatchQuarterLimits } from "@/lib/matchPlanner";
 import { clearStoredAll, loadStored, saveStored } from "@/lib/persistedState";
 import { formatTeamName } from "@/lib/teamLabels";
+import { extractStaffRole } from "@/lib/staffRoles";
 
 const SCORE_OPTIONS = Array.from({ length: 10 }, (_, index) => index + 1);
 const QUARTER_OPTIONS = [1, 2, 3, 4];
@@ -797,10 +798,10 @@ export default function Home() {
         <div className="mt-2 flex flex-wrap gap-2">{fieldPlayers.map((p) => {
           const waitingState = isWaitingPlayer(p);
           const tone = waitingState ? "waiting" : p.memberType === "GUEST" ? "guest" : "regular";
-          return <Chip key={p.id} label={`${p.name}(${p.primaryPosition})`} tone={tone} onRemove={() => removeFieldPlayer(p.id)} />;
+          return <Chip key={p.id} label={`${p.name}(${p.primaryPosition})`} tone={tone} badge={<StaffRoleBadge role={extractStaffRole(p.memo)} compact />} onRemove={() => removeFieldPlayer(p.id)} />;
         })}</div>
         <h3 className="mt-5 font-semibold">전담 GK</h3>
-        <div className="mt-2 flex flex-wrap gap-2">{dedicatedGks.map((gk) => <Chip key={gk.id} label={gk.name} onRemove={() => removeDedicatedGk(gk.id)} />)}</div>
+        <div className="mt-2 flex flex-wrap gap-2">{dedicatedGks.map((gk) => <Chip key={gk.id} label={gk.name} badge={<StaffRoleBadge role={extractStaffRole(gk.memo)} compact />} onRemove={() => removeDedicatedGk(gk.id)} />)}</div>
       </section>
 
       {plannerMode === "MATCH" && fieldPlayers.length > 0 && (
@@ -811,7 +812,10 @@ export default function Home() {
             {fieldPlayers.map((player) => (
               <div key={player.id} className="flex items-center justify-between gap-2 rounded-2xl bg-slate-50 p-3">
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-bold">{player.name}</p>
+                  <div className="flex min-w-0 items-center gap-1.5">
+                    <p className="truncate text-sm font-bold">{player.name}</p>
+                    <StaffRoleBadge role={extractStaffRole(player.memo)} compact />
+                  </div>
                   <p className="text-xs text-slate-500">{player.primaryPosition}</p>
                 </div>
                 <select className="rounded-xl border border-slate-300 px-2 py-1 text-sm" value={matchQuarterLimits[player.id] ?? DEFAULT_MATCH_QUARTERS} onChange={(e) => setQuarterLimit(player.id, Number(e.target.value))}>
@@ -890,7 +894,7 @@ function MessageBox({ title, items, tone }: { title: string; items: string[]; to
   return <div className={`rounded-3xl p-5 ${tone === "error" ? "bg-red-50 text-red-900" : "bg-amber-50 text-amber-900"}`}><h3 className="font-bold">{title}</h3><ul className="mt-2 list-disc pl-5 text-sm">{items.map((item, i) => <li key={i}>{item}</li>)}</ul></div>;
 }
 
-function Chip({ label, onRemove, tone = "regular" }: { label: string; onRemove: () => void; tone?: "regular" | "guest" | "waiting" }) {
+function Chip({ label, onRemove, tone = "regular", badge }: { label: string; onRemove: () => void; tone?: "regular" | "guest" | "waiting"; badge?: ReactNode }) {
   const className = tone === "waiting"
     ? "bg-orange-100 text-orange-800"
     : tone === "guest"
@@ -898,7 +902,8 @@ function Chip({ label, onRemove, tone = "regular" }: { label: string; onRemove: 
       : "bg-slate-100 text-slate-700";
   return (
     <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm ${className}`}>
-      {label}
+      <span>{label}</span>
+      {badge}
       <button className="font-bold opacity-70" onClick={onRemove}>×</button>
     </span>
   );
@@ -908,12 +913,14 @@ function PlayerSearchRow({ player, isField, isWaiting, isGk, onAddField, onRemov
   const secondary = player.secondaryPositions.length > 0 ? player.secondaryPositions.join(",") : "-";
   const isSheetGk = player.primaryPosition === "GK";
   const fieldRegular = isField && !isWaiting;
+  const staffRole = extractStaffRole(player.memo);
   return (
     <div className={`rounded-2xl border p-3 ${isField || isGk ? "border-blue-200 bg-blue-50" : "border-slate-200 bg-white"}`}>
       <div className="flex items-center justify-between gap-2">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <p className="font-bold">{player.name}</p>
+            <StaffRoleBadge role={staffRole} />
             {fieldRegular && <RoleBadge role="FIELD" />}
             {isField && isWaiting && <span className="inline-flex rounded-full bg-orange-100 px-2 py-0.5 text-xs font-bold text-orange-700">대기</span>}
             {(isGk || isSheetGk) && <RoleBadge role="GK" />}
@@ -951,6 +958,22 @@ function RoleBadge({ role }: { role: LineupRole }) {
   const cls = role === "FIELD" ? "bg-blue-600 text-white" : role === "GK" ? "bg-amber-100 text-amber-800" : "bg-slate-100 text-slate-600";
   const label = role === "FIELD" ? "FIELD" : role === "GK" ? "GK" : "BENCH";
   return <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold ${cls}`}>{label}</span>;
+}
+
+function staffRoleBadgeClass(role: StaffRole): string {
+  if (role === "단장") return "bg-slate-900 text-white ring-slate-900/10";
+  if (role === "감독") return "bg-indigo-100 text-indigo-800 ring-indigo-200";
+  return "bg-cyan-100 text-cyan-800 ring-cyan-200";
+}
+
+function StaffRoleBadge({ role, compact = false }: { role?: StaffRole | null; compact?: boolean }) {
+  if (!role) return null;
+  const sizeClass = compact ? "px-1.5 py-0.5 text-[9px]" : "px-2 py-0.5 text-[11px]";
+  return (
+    <span className={`inline-flex shrink-0 items-center rounded-full font-black leading-none ring-1 ${sizeClass} ${staffRoleBadgeClass(role)}`} title={role}>
+      {role}
+    </span>
+  );
 }
 
 function MetricCard({ label, a, b, highlight }: { label: string; a: number; b: number; highlight?: boolean }) {
@@ -1026,11 +1049,15 @@ function TeamResultView({
         if (!sel) return null;
         const composite = sel.attackScore + sel.midScore + sel.defenseScore + sel.activityScore;
         const secondary = sel.secondaryPositions.length > 0 ? sel.secondaryPositions.join(",") : "-";
+        const staffRole = extractStaffRole(sel.memo);
         return (
           <div className="fixed inset-x-3 bottom-24 z-30 mx-auto max-w-3xl rounded-2xl border border-blue-300 bg-blue-50/95 p-3 shadow-xl backdrop-blur sm:bottom-6">
             <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                <p className="text-sm font-bold text-blue-900">선택: {formatTeamName(selection.team)} · {sel.name}</p>
+                <div className="flex items-center gap-1.5">
+                  <p className="text-sm font-bold text-blue-900">선택: {formatTeamName(selection.team)} · {sel.name}</p>
+                  <StaffRoleBadge role={staffRole} />
+                </div>
                 <p className="text-xs text-blue-800">주포 {sel.primaryPosition} · 부포 {secondary} · 종합 {composite}</p>
               </div>
               <p className="text-xs font-mono text-blue-900">공 {sel.attackScore} · 미 {sel.midScore} · 수 {sel.defenseScore} · 활 {sel.activityScore}</p>
@@ -1164,6 +1191,7 @@ function TeamCard({
                   const isSelected = selection?.team === team && selection.playerId === p.id;
                   const composite = p.attackScore + p.midScore + p.defenseScore + p.activityScore;
                   const isSwapHint = showSwapHints && selectedComposite != null && Math.abs(composite - selectedComposite) <= 3;
+                  const staffRole = extractStaffRole(p.memo);
                   const baseClass = "min-w-0 rounded-lg px-1 py-0.5 text-center transition border";
                   const stateClass = isSelected
                     ? teamSelectedPlayerClass(team)
@@ -1177,12 +1205,15 @@ function TeamCard({
                     <button
                       key={p.id}
                       type="button"
-                      title={`${p.assignmentReason} · 공${p.attackScore} 미${p.midScore} 수${p.defenseScore} 활${p.activityScore}`}
+                      title={`${staffRole ? `${staffRole} · ` : ""}${p.assignmentReason} · 공${p.attackScore} 미${p.midScore} 수${p.defenseScore} 활${p.activityScore}`}
                       className={`${baseClass} ${stateClass}`}
                       disabled={!interactive}
                       onClick={() => onPlayerClick(team, p.id)}
                     >
-                      <div className="truncate text-[11px] font-bold leading-tight">{p.name}{overrideMark(p.assignmentReason)}</div>
+                      <div className="flex min-w-0 items-center justify-center gap-0.5">
+                        <span className="truncate text-[11px] font-bold leading-tight">{p.name}{overrideMark(p.assignmentReason)}</span>
+                        <StaffRoleBadge role={staffRole} compact />
+                      </div>
                       <div className={`truncate font-mono text-[9px] leading-tight ${statClass}`}>
                         {p.attackScore}/{p.midScore}/{p.defenseScore}/{p.activityScore}
                       </div>
@@ -1225,6 +1256,7 @@ async function downloadElementAsImage(elem: HTMLElement, filename: string) {
 type LineupSection = "attack" | "mid" | "defense" | "gk" | "bench";
 
 type PlayerCount = { field: number; gk: number };
+type OverviewPlayer = { name: string; staffRole?: StaffRole };
 
 const OVERVIEW_GROUPS: Array<{ group: PositionGroup; label: string }> = [
   { group: "ATTACK", label: "공격" },
@@ -1284,7 +1316,7 @@ function overviewGroupPillClass(group: PositionGroup): string {
   return "bg-emerald-100 text-emerald-700 ring-emerald-200";
 }
 
-function TeamOverviewCard({ team, groups }: { team: TeamName; groups: Record<PositionGroup, string[]> }) {
+function TeamOverviewCard({ team, groups }: { team: TeamName; groups: Record<PositionGroup, OverviewPlayer[]> }) {
   return (
     <div className={`overflow-hidden rounded-xl border ${teamPanelClass(team)}`}>
       <div className={`h-1.5 ${teamAccentClass(team)}`} />
@@ -1296,8 +1328,11 @@ function TeamOverviewCard({ team, groups }: { team: TeamName; groups: Record<Pos
         {OVERVIEW_GROUPS.map(({ group, label }) => (
           <div key={group} className="flex flex-wrap items-center gap-1.5">
             <span className={`rounded-full px-2.5 py-1 text-xs font-black ring-1 ${overviewGroupPillClass(group)}`}>{label}</span>
-            {groups[group].map((name) => (
-              <span key={name} className="rounded-full bg-white px-2.5 py-1 text-xs font-bold text-slate-700 shadow-sm ring-1 ring-slate-200">{name}</span>
+            {groups[group].map((player) => (
+              <span key={player.name} className="inline-flex items-center gap-1 rounded-full bg-white px-2.5 py-1 text-xs font-bold text-slate-700 shadow-sm ring-1 ring-slate-200">
+                <span>{player.name}</span>
+                <StaffRoleBadge role={player.staffRole} compact />
+              </span>
             ))}
           </div>
         ))}
@@ -1306,8 +1341,8 @@ function TeamOverviewCard({ team, groups }: { team: TeamName; groups: Record<Pos
   );
 }
 
-function PitchChip({ name, accent, selected, onClick, count }: { name: string; accent?: "gk" | "bench"; selected?: boolean; onClick?: () => void; count?: PlayerCount }) {
-  const base = "rounded-full px-3 py-1.5 text-sm font-extrabold shadow whitespace-nowrap transition";
+function PitchChip({ name, accent, selected, onClick, count, staffRole }: { name: string; accent?: "gk" | "bench"; selected?: boolean; onClick?: () => void; count?: PlayerCount; staffRole?: StaffRole }) {
+  const base = "inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-sm font-extrabold shadow whitespace-nowrap transition";
   const palette = accent === "gk"
     ? "bg-amber-300 text-amber-950"
     : accent === "bench"
@@ -1317,25 +1352,26 @@ function PitchChip({ name, accent, selected, onClick, count }: { name: string; a
   const Tag = onClick ? "button" : "span";
   const countText = formatCount(count);
   return (
-    <Tag type={onClick ? "button" : undefined} className={`${base} ${palette} ${ring}`} onClick={onClick}>
-      {name}
+    <Tag type={onClick ? "button" : undefined} className={`${base} ${palette} ${ring}`} onClick={onClick} title={staffRole ? `${name} · ${staffRole}` : undefined}>
+      <span>{name}</span>
+      <StaffRoleBadge role={staffRole} compact />
       {countText && <span className="ml-1 text-[11px] font-bold opacity-70">{countText}</span>}
     </Tag>
   );
 }
 
-function PitchRow({ players, section, selectedKey, onSelect, counts }: { players: string[]; section: LineupSection; selectedKey: string | null; onSelect?: (section: LineupSection, name: string) => void; counts?: Map<string, PlayerCount> }) {
+function PitchRow({ players, section, selectedKey, onSelect, counts, staffRoles }: { players: string[]; section: LineupSection; selectedKey: string | null; onSelect?: (section: LineupSection, name: string) => void; counts?: Map<string, PlayerCount>; staffRoles?: Map<string, StaffRole> }) {
   if (!players.length) return <div className="flex h-6" />;
   return (
     <div className="flex flex-wrap items-center justify-around gap-1.5 px-2">
       {players.map((name) => (
-        <PitchChip key={name} name={name} selected={selectedKey === `${section}|${name}`} onClick={onSelect ? () => onSelect(section, name) : undefined} count={counts?.get(name)} />
+        <PitchChip key={name} name={name} selected={selectedKey === `${section}|${name}`} onClick={onSelect ? () => onSelect(section, name) : undefined} count={counts?.get(name)} staffRole={staffRoles?.get(name)} />
       ))}
     </div>
   );
 }
 
-function Pitch({ title, gk, attack, mid, defense, bench, accent = "emerald", selectedKey, onSelect, counts }: {
+function Pitch({ title, gk, attack, mid, defense, bench, accent = "emerald", selectedKey, onSelect, counts, staffRoles }: {
   title: string;
   gk: string;
   attack: string[];
@@ -1346,6 +1382,7 @@ function Pitch({ title, gk, attack, mid, defense, bench, accent = "emerald", sel
   selectedKey?: string | null;
   onSelect?: (section: LineupSection, name: string) => void;
   counts?: Map<string, PlayerCount>;
+  staffRoles?: Map<string, StaffRole>;
 }) {
   const headerClass = accent === "orange" ? "from-orange-500 to-orange-700" : "from-lime-500 to-emerald-600";
   const fieldClass = accent === "orange" ? "from-orange-400 to-orange-600" : "from-lime-400 to-emerald-600";
@@ -1362,11 +1399,11 @@ function Pitch({ title, gk, attack, mid, defense, bench, accent = "emerald", sel
         <div className="absolute left-1/4 right-1/4 top-3 h-9 rounded-b-md border-2 border-t-0 border-white/40" />
         <div className="absolute left-1/4 right-1/4 bottom-3 h-9 rounded-t-md border-2 border-b-0 border-white/40" />
         <div className="relative flex h-full flex-col justify-around py-1">
-          <PitchRow players={attack} section="attack" selectedKey={sel} onSelect={onSelect} counts={counts} />
-          <PitchRow players={mid} section="mid" selectedKey={sel} onSelect={onSelect} counts={counts} />
-          <PitchRow players={defense} section="defense" selectedKey={sel} onSelect={onSelect} counts={counts} />
+          <PitchRow players={attack} section="attack" selectedKey={sel} onSelect={onSelect} counts={counts} staffRoles={staffRoles} />
+          <PitchRow players={mid} section="mid" selectedKey={sel} onSelect={onSelect} counts={counts} staffRoles={staffRoles} />
+          <PitchRow players={defense} section="defense" selectedKey={sel} onSelect={onSelect} counts={counts} staffRoles={staffRoles} />
           <div className="flex justify-center">
-            <PitchChip name={gk} accent="gk" selected={sel === `gk|${gk}`} onClick={onSelect ? () => onSelect("gk", gk) : undefined} count={counts?.get(gk)} />
+            <PitchChip name={gk} accent="gk" selected={sel === `gk|${gk}`} onClick={onSelect ? () => onSelect("gk", gk) : undefined} count={counts?.get(gk)} staffRole={staffRoles?.get(gk)} />
           </div>
         </div>
       </div>
@@ -1377,7 +1414,7 @@ function Pitch({ title, gk, attack, mid, defense, bench, accent = "emerald", sel
             <span className="rounded-full bg-slate-200 px-2 py-1 text-xs font-semibold text-slate-500">없음</span>
           ) : (
             bench.map((name) => (
-              <PitchChip key={name} name={name} accent="bench" selected={sel === `bench|${name}`} onClick={onSelect ? () => onSelect("bench", name) : undefined} count={counts?.get(name)} />
+              <PitchChip key={name} name={name} accent="bench" selected={sel === `bench|${name}`} onClick={onSelect ? () => onSelect("bench", name) : undefined} count={counts?.get(name)} staffRole={staffRoles?.get(name)} />
             ))
           )}
         </div>
@@ -1488,6 +1525,17 @@ function LineupResultView({
     return map;
   }, [quarters]);
 
+  const staffRolesByName = useMemo(() => {
+    const map = new Map<string, StaffRole>();
+    for (const summary of result.playerSummaries) {
+      if (summary.staffRole) map.set(summary.playerName, summary.staffRole);
+    }
+    Object.entries(result.staffRoles ?? {}).forEach(([name, role]) => {
+      map.set(name, role);
+    });
+    return map;
+  }, [result.playerSummaries, result.staffRoles]);
+
   function handleSelect(key: string, section: LineupSection, name: string) {
     if (!selection) {
       setSelection({ key, section, name });
@@ -1536,16 +1584,19 @@ function LineupResultView({
   }
 
   const teamOverview = useMemo(() => {
-    const grouped: Record<TeamName, Record<PositionGroup, string[]>> = {
+    const grouped: Record<TeamName, Record<PositionGroup, OverviewPlayer[]>> = {
       A: { ATTACK: [], MID: [], DEFENSE: [] },
       B: { ATTACK: [], MID: [], DEFENSE: [] },
     };
     for (const s of result.playerSummaries) {
       const teamKey = s.team;
-      grouped[teamKey][s.assignedGroup].push(s.playerName);
+      grouped[teamKey][s.assignedGroup].push({
+        name: s.playerName,
+        staffRole: s.staffRole ?? staffRolesByName.get(s.playerName),
+      });
     }
     return grouped;
-  }, [result.playerSummaries]);
+  }, [result.playerSummaries, staffRolesByName]);
 
   return (
     <section id="lineup-result" className="mb-6 rounded-3xl bg-white p-6 shadow-sm">
@@ -1589,6 +1640,7 @@ function LineupResultView({
                     selectedKey={selectedKey}
                     onSelect={(section, name) => handleSelect(key, section, name)}
                     counts={countsByTeam.get(q.team)}
+                    staffRoles={staffRolesByName}
                   />
                 </div>
                 <button
@@ -1608,6 +1660,20 @@ function LineupResultView({
 
 function MatchResultView({ result }: { result: MatchPlanResult }) {
   const refs = useRef<Map<string, HTMLDivElement | null>>(new Map());
+  const staffRolesByName = useMemo(() => {
+    const map = new Map<string, StaffRole>();
+    const addPlayer = (player?: { name: string; memo?: string } | null) => {
+      if (!player) return;
+      const role = extractStaffRole(player.memo);
+      if (role) map.set(player.name, role);
+    };
+    result.starters.attack.forEach((item) => addPlayer(item.player));
+    result.starters.mid.forEach((item) => addPlayer(item.player));
+    result.starters.defense.forEach((item) => addPlayer(item.player));
+    result.bench.forEach((item) => addPlayer(item.player));
+    addPlayer(result.starters.gk);
+    return map;
+  }, [result]);
 
   async function downloadOne(quarter: number) {
     const key = `match-${quarter}`;
@@ -1637,7 +1703,10 @@ function MatchResultView({ result }: { result: MatchPlanResult }) {
         <div className="mt-3">
           <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-800">GK</span>
           <div className="mt-2 flex flex-wrap gap-2">
-            <span className="rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-700">{result.starters.gk?.name ?? "없음"}</span>
+            <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-700">
+              <span>{result.starters.gk?.name ?? "없음"}</span>
+              <StaffRoleBadge role={extractStaffRole(result.starters.gk?.memo)} compact />
+            </span>
           </div>
         </div>
         <MatchGroup group="ATTACK" items={result.starters.attack} />
@@ -1657,6 +1726,7 @@ function MatchResultView({ result }: { result: MatchPlanResult }) {
                   mid={q.mid}
                   defense={q.defense}
                   bench={q.bench}
+                  staffRoles={staffRolesByName}
                 />
               </div>
               <button className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700" onClick={() => downloadOne(q.quarter)}>이 화면 이미지 저장</button>
@@ -1667,7 +1737,12 @@ function MatchResultView({ result }: { result: MatchPlanResult }) {
       <div className="mt-4 rounded-2xl border border-slate-200 p-4">
         <h3 className="font-bold">후보 / 교체 우선순위</h3>
         <div className="mt-2 flex flex-wrap gap-2">
-          {result.bench.map((item) => <span key={item.player.id} className="rounded-full bg-violet-100 px-3 py-1 text-sm font-semibold text-violet-800">{item.player.name}({groupKorean(item.group)})</span>)}
+          {result.bench.map((item) => (
+            <span key={item.player.id} className="inline-flex items-center gap-1 rounded-full bg-violet-100 px-3 py-1 text-sm font-semibold text-violet-800">
+              <span>{item.player.name}({groupKorean(item.group)})</span>
+              <StaffRoleBadge role={extractStaffRole(item.player.memo)} compact />
+            </span>
+          ))}
           {result.bench.length === 0 && <span className="rounded-full bg-slate-100 px-3 py-1 text-sm text-slate-600">없음</span>}
         </div>
       </div>
@@ -1676,7 +1751,19 @@ function MatchResultView({ result }: { result: MatchPlanResult }) {
 }
 
 function MatchGroup({ group, items }: { group: PositionGroup; items: MatchSelection[] }) {
-  return <div className="mt-3"><GroupBadge group={group} /><div className="mt-2 flex flex-wrap gap-2">{items.map((item) => <span key={item.player.id} className="rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-700" title={item.reason}>{item.player.name}</span>)}</div></div>;
+  return (
+    <div className="mt-3">
+      <GroupBadge group={group} />
+      <div className="mt-2 flex flex-wrap gap-2">
+        {items.map((item) => (
+          <span key={item.player.id} className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-700" title={item.reason}>
+            <span>{item.player.name}</span>
+            <StaffRoleBadge role={extractStaffRole(item.player.memo)} compact />
+          </span>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function groupKorean(group: PositionGroup): string {

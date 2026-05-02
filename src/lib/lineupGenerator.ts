@@ -1,7 +1,8 @@
-import type { AssignedPlayer, DedicatedGoalkeeper, Player, PositionGroup } from "@/types/player";
+import type { AssignedPlayer, DedicatedGoalkeeper, Player, PositionGroup, StaffRole } from "@/types/player";
 import type { LineupResult, LineupRole, PlayerLineupSummary, Quarter, TeamQuarterLineup } from "@/types/lineup";
 import type { Team, TeamName } from "@/types/team";
 import { formatTeamName } from "@/lib/teamLabels";
+import { extractStaffRole } from "@/lib/staffRoles";
 
 const QUARTERS: Quarter[] = [1, 2, 3, 4];
 const MAX_DEDICATED_GK_AUTO_ASSIGN = 2;
@@ -234,9 +235,11 @@ function lineupForTeam(
 
   const summaries: PlayerLineupSummary[] = team.players.map((player) => {
     const roles = QUARTERS.map((quarter) => roleInQuarter(player.name, quarter));
+    const staffRole = extractStaffRole(player.memo);
     return {
       playerId: player.id,
       playerName: player.name,
+      staffRole: staffRole ?? undefined,
       team: team.name,
       assignedGroup: player.assignedGroup,
       q1: roles[0],
@@ -250,6 +253,24 @@ function lineupForTeam(
   });
 
   return { quarters, summaries, warnings, rotation: dedicatedRotation };
+}
+
+function buildStaffRoleMap(
+  players: Player[],
+  dedicatedGks: DedicatedGoalkeeper[],
+  waitingPlayers: Player[],
+): Record<string, StaffRole> {
+  const result: Record<string, StaffRole> = {};
+  const add = (item: { name: string; memo?: string }) => {
+    const role = extractStaffRole(item.memo);
+    if (role) result[item.name] = role;
+  };
+
+  players.forEach(add);
+  dedicatedGks.forEach(add);
+  waitingPlayers.forEach(add);
+
+  return result;
 }
 
 export function generateLineups(
@@ -292,6 +313,7 @@ export function generateLineups(
   return {
     quarters: [...a.quarters, ...b.quarters].sort((x, y) => x.quarter - y.quarter || x.team.localeCompare(y.team)),
     playerSummaries: [...a.summaries, ...b.summaries],
+    staffRoles: buildStaffRoleMap([...teamA.players, ...teamB.players], dedicatedGks, waitingPlayers),
     dedicatedGkRotation: rotation,
     warnings: [...warnings, ...a.warnings, ...b.warnings],
   };
