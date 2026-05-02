@@ -966,14 +966,29 @@ function staffRoleBadgeClass(role: StaffRole): string {
   return "bg-cyan-100 text-cyan-800 ring-cyan-200";
 }
 
-function StaffRoleBadge({ role, compact = false }: { role?: StaffRole | null; compact?: boolean }) {
+function StaffRoleBadge({ role, compact = false, hideOnMobile = false }: { role?: StaffRole | null; compact?: boolean; hideOnMobile?: boolean }) {
   if (!role) return null;
   const sizeClass = compact ? "px-1.5 py-0.5 text-[9px]" : "px-2 py-0.5 text-[11px]";
+  const displayClass = hideOnMobile ? "hidden sm:inline-flex" : "inline-flex";
   return (
-    <span className={`inline-flex shrink-0 items-center rounded-full font-black leading-none ring-1 ${sizeClass} ${staffRoleBadgeClass(role)}`} title={role}>
+    <span className={`${displayClass} shrink-0 items-center rounded-full font-black leading-none ring-1 ${sizeClass} ${staffRoleBadgeClass(role)}`} title={role}>
       {role}
     </span>
   );
+}
+
+function staffRoleChipClass(role?: StaffRole | null): string {
+  if (role === "단장") return "bg-slate-900 text-white ring-slate-900";
+  if (role === "감독") return "bg-indigo-50 text-indigo-900 ring-indigo-300";
+  if (role === "코치") return "bg-cyan-50 text-cyan-900 ring-cyan-300";
+  return "bg-white text-slate-700 ring-slate-200";
+}
+
+function staffRolePitchClass(role?: StaffRole | null): string {
+  if (role === "단장") return "bg-slate-900 text-white ring-1 ring-slate-900/30";
+  if (role === "감독") return "bg-indigo-50 text-indigo-950 ring-1 ring-indigo-300";
+  if (role === "코치") return "bg-cyan-50 text-cyan-950 ring-1 ring-cyan-300";
+  return "";
 }
 
 function MetricCard({ label, a, b, highlight }: { label: string; a: number; b: number; highlight?: boolean }) {
@@ -1212,7 +1227,7 @@ function TeamCard({
                     >
                       <div className="flex min-w-0 items-center justify-center gap-0.5">
                         <span className="truncate text-[11px] font-bold leading-tight">{p.name}{overrideMark(p.assignmentReason)}</span>
-                        <StaffRoleBadge role={staffRole} compact />
+                        <StaffRoleBadge role={staffRole} compact hideOnMobile />
                       </div>
                       <div className={`truncate font-mono text-[9px] leading-tight ${statClass}`}>
                         {p.attackScore}/{p.midScore}/{p.defenseScore}/{p.activityScore}
@@ -1320,20 +1335,22 @@ function TeamOverviewCard({ team, groups }: { team: TeamName; groups: Record<Pos
   return (
     <div className={`overflow-hidden rounded-xl border ${teamPanelClass(team)}`}>
       <div className={`h-1.5 ${teamAccentClass(team)}`} />
-      <div className="flex items-center justify-between gap-2 px-3 py-3">
-        <span className={`rounded-full px-3 py-1 text-sm font-black ${teamPillClass(team)}`}>{formatTeamName(team)}</span>
-        <span className="text-xs font-bold text-slate-500">팀 배정</span>
+      <div className="flex items-center justify-between gap-2 px-2 py-2 sm:px-3 sm:py-3">
+        <span className={`rounded-full px-2.5 py-0.5 text-xs font-black sm:px-3 sm:py-1 sm:text-sm ${teamPillClass(team)}`}>{formatTeamName(team)}</span>
+        <span className="text-[10px] font-bold text-slate-500 sm:text-xs">팀 배정</span>
       </div>
-      <div className="space-y-2 px-3 pb-3">
+      <div className="space-y-1.5 px-2 pb-2 sm:space-y-2 sm:px-3 sm:pb-3">
         {OVERVIEW_GROUPS.map(({ group, label }) => (
-          <div key={group} className="flex flex-wrap items-center gap-1.5">
-            <span className={`rounded-full px-2.5 py-1 text-xs font-black ring-1 ${overviewGroupPillClass(group)}`}>{label}</span>
-            {groups[group].map((player) => (
-              <span key={player.name} className="inline-flex items-center gap-1 rounded-full bg-white px-2.5 py-1 text-xs font-bold text-slate-700 shadow-sm ring-1 ring-slate-200">
-                <span>{player.name}</span>
-                <StaffRoleBadge role={player.staffRole} compact />
-              </span>
-            ))}
+          <div key={group} className="grid grid-cols-[2.1rem_minmax(0,1fr)] items-center gap-1 sm:grid-cols-[2.8rem_minmax(0,1fr)] sm:gap-1.5">
+            <span className={`inline-flex justify-center rounded-full px-1 py-0.5 text-[10px] font-black ring-1 sm:px-2.5 sm:py-1 sm:text-xs ${overviewGroupPillClass(group)}`}>{label}</span>
+            <div className="grid gap-1" style={{ gridTemplateColumns: `repeat(${Math.max(groups[group].length, 1)}, minmax(0, 1fr))` }}>
+              {groups[group].map((player) => (
+                <span key={player.name} className={`inline-flex min-w-0 items-center justify-center gap-1 rounded-full px-1 py-0.5 text-[10px] font-bold shadow-sm ring-1 sm:px-2.5 sm:py-1 sm:text-xs ${staffRoleChipClass(player.staffRole)}`}>
+                  <span className="truncate">{player.name}</span>
+                  <StaffRoleBadge role={player.staffRole} compact hideOnMobile />
+                </span>
+              ))}
+            </div>
           </div>
         ))}
       </div>
@@ -1341,8 +1358,8 @@ function TeamOverviewCard({ team, groups }: { team: TeamName; groups: Record<Pos
   );
 }
 
-function PitchChip({ name, accent, selected, onClick, count, staffRole }: { name: string; accent?: "gk" | "bench"; selected?: boolean; onClick?: () => void; count?: PlayerCount; staffRole?: StaffRole }) {
-  const base = "inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-sm font-extrabold shadow whitespace-nowrap transition";
+function PitchChip({ name, accent, selected, onClick, count, staffRole, fill = false }: { name: string; accent?: "gk" | "bench"; selected?: boolean; onClick?: () => void; count?: PlayerCount; staffRole?: StaffRole; fill?: boolean }) {
+  const base = "inline-flex min-w-0 items-center justify-center gap-0.5 rounded-full px-1 py-1 text-[11px] font-extrabold shadow-sm whitespace-nowrap transition sm:gap-1 sm:px-3 sm:py-1.5 sm:text-sm sm:shadow";
   const palette = accent === "gk"
     ? "bg-amber-300 text-amber-950"
     : accent === "bench"
@@ -1352,10 +1369,10 @@ function PitchChip({ name, accent, selected, onClick, count, staffRole }: { name
   const Tag = onClick ? "button" : "span";
   const countText = formatCount(count);
   return (
-    <Tag type={onClick ? "button" : undefined} className={`${base} ${palette} ${ring}`} onClick={onClick} title={staffRole ? `${name} · ${staffRole}` : undefined}>
-      <span>{name}</span>
-      <StaffRoleBadge role={staffRole} compact />
-      {countText && <span className="ml-1 text-[11px] font-bold opacity-70">{countText}</span>}
+    <Tag type={onClick ? "button" : undefined} className={`${base} ${fill ? "w-full sm:w-auto" : ""} ${palette} ${staffRolePitchClass(staffRole)} ${ring}`} onClick={onClick} title={staffRole ? `${name} · ${staffRole}` : undefined}>
+      <span className="truncate">{name}</span>
+      <StaffRoleBadge role={staffRole} compact hideOnMobile />
+      {countText && <span className="ml-1 hidden text-[11px] font-bold opacity-70 sm:inline">{countText}</span>}
     </Tag>
   );
 }
@@ -1363,9 +1380,9 @@ function PitchChip({ name, accent, selected, onClick, count, staffRole }: { name
 function PitchRow({ players, section, selectedKey, onSelect, counts, staffRoles }: { players: string[]; section: LineupSection; selectedKey: string | null; onSelect?: (section: LineupSection, name: string) => void; counts?: Map<string, PlayerCount>; staffRoles?: Map<string, StaffRole> }) {
   if (!players.length) return <div className="flex h-6" />;
   return (
-    <div className="flex flex-wrap items-center justify-around gap-1.5 px-2">
+    <div className="grid items-center gap-1 px-1 sm:flex sm:flex-wrap sm:justify-around sm:gap-1.5 sm:px-2" style={{ gridTemplateColumns: `repeat(${players.length}, minmax(0, 1fr))` }}>
       {players.map((name) => (
-        <PitchChip key={name} name={name} selected={selectedKey === `${section}|${name}`} onClick={onSelect ? () => onSelect(section, name) : undefined} count={counts?.get(name)} staffRole={staffRoles?.get(name)} />
+        <PitchChip key={name} name={name} selected={selectedKey === `${section}|${name}`} onClick={onSelect ? () => onSelect(section, name) : undefined} count={counts?.get(name)} staffRole={staffRoles?.get(name)} fill />
       ))}
     </div>
   );
@@ -1389,10 +1406,10 @@ function Pitch({ title, gk, attack, mid, defense, bench, accent = "emerald", sel
   const sel = selectedKey ?? null;
   return (
     <div className="overflow-hidden rounded-2xl shadow-lg">
-      <div className={`bg-gradient-to-r ${headerClass} px-5 py-3 text-white`}>
-        <p className="text-lg font-black">{title}</p>
+      <div className={`bg-gradient-to-r ${headerClass} px-3 py-2 text-white sm:px-5 sm:py-3`}>
+        <p className="text-base font-black sm:text-lg">{title}</p>
       </div>
-      <div className={`relative bg-gradient-to-b ${fieldClass} p-3`} style={{ aspectRatio: "5 / 4" }}>
+      <div className={`relative bg-gradient-to-b ${fieldClass} p-2 sm:p-3`} style={{ aspectRatio: "5 / 4" }}>
         <div className="absolute inset-3 rounded-lg border-2 border-white/40" />
         <div className="absolute inset-x-3 top-1/2 h-px -translate-y-1/2 bg-white/40" />
         <div className="absolute left-1/2 top-1/2 h-14 w-14 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white/40" />
@@ -1610,16 +1627,16 @@ function LineupResultView({
       <p className="mt-2 text-xs text-slate-500">필드/GK 선수와 <span className="font-bold">대기</span> 선수만 자리를 바꿀 수 있어요. 쿼터 순서는 각 피치 아래 <span className="font-bold">쿼터 순서 바꾸기</span> 버튼으로 조정하면 위에서부터 1~4Q로 다시 정렬됩니다. 코치별 미세조정은 <span className="font-bold">압축 조정 URL 복사</span>로 현재 상태를 공유하세요.</p>
       {result.warnings.length > 0 && <div className="mt-4"><MessageBox title="라인업 경고" items={result.warnings} tone="warning" /></div>}
 
-      <div ref={combinedRef} className="mt-4 rounded-2xl border-2 border-slate-300 bg-white p-5">
-        <div className="mb-3 flex items-baseline justify-center gap-2">
-          <h3 className="text-lg font-black text-slate-900">DEV FC 라인업</h3>
-          <span className="text-sm font-semibold text-slate-500">{today}</span>
+      <div ref={combinedRef} className="mt-4 rounded-2xl border-2 border-slate-300 bg-white p-2 sm:p-5">
+        <div className="mb-2 flex items-baseline justify-center gap-2 sm:mb-3">
+          <h3 className="text-base font-black text-slate-900 sm:text-lg">DEV FC 라인업</h3>
+          <span className="text-xs font-semibold text-slate-500 sm:text-sm">{today}</span>
         </div>
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid gap-2 md:grid-cols-2 md:gap-4">
           {(["A", "B"] as const).map((team) => <TeamOverviewCard key={team} team={team} groups={teamOverview[team]} />)}
         </div>
 
-        <div className="mt-4 grid gap-4 md:grid-cols-2">
+        <div className="mt-2 grid gap-3 md:mt-4 md:grid-cols-2 md:gap-4">
           {quarters.map((q) => {
             const key = `${q.team}-${q.quarter}`;
             const selectedKey = selection && selection.key === key ? `${selection.section}|${selection.name}` : null;
