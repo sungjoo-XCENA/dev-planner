@@ -1,9 +1,11 @@
 import type { DedicatedGoalkeeper, MemberType, Player } from "@/types/player";
+import type { PlayerRelation, RelationScore } from "@/types/relation";
 import { parseSecondaryPositions, toPosition } from "./positions";
 
 export type LoadPlayersResult = {
   players: Player[];
   dedicatedGks: DedicatedGoalkeeper[];
+  relations: PlayerRelation[];
   errors: string[];
   warnings: string[];
 };
@@ -150,17 +152,15 @@ function isDedicatedGkPosition(value: string): boolean {
   return value.trim().toUpperCase() === "GK";
 }
 
-function proxiedCsvUrl(url: string): string {
-  return `/api/csv?url=${encodeURIComponent(url)}`;
+function proxiedCsvUrl(url: string, sheetName?: string): string {
+  const params = new URLSearchParams({ url });
+  if (sheetName) params.set("sheet", sheetName);
+  return `/api/csv?${params.toString()}`;
 }
 
-export async function loadPlayersFromCsv(url: string): Promise<LoadPlayersResult> {
-  const errors: string[] = [];
-  const warnings: string[] = [];
-
-  let text = "";
+async function fetchCsvText(url: string, sheetName?: string): Promise<{ text: string; error: string | null }> {
   try {
-    const response = await fetch(proxiedCsvUrl(url));
+    const response = await fetch(proxiedCsvUrl(url, sheetName));
     if (!response.ok) {
       let detail = "";
       try {
@@ -175,11 +175,125 @@ export async function loadPlayersFromCsv(url: string): Promise<LoadPlayersResult
       }
       throw new Error(`HTTP ${response.status}${detail}`);
     }
-    text = await response.text();
+    return { text: await response.text(), error: null };
   } catch (error) {
+    return { text: "", error: String(error) };
+  }
+}
+
+function normalizeRelationName(value: string): string {
+  return value.replace(/\s+/g, "").trim();
+}
+
+function parseRelationScore(value: string): RelationScore | null {
+  const raw = value.trim();
+  if (!raw) return null;
+  if (raw === "1" || raw === "2" || raw === "3") return Number(raw) as RelationScore;
+  return null;
+}
+
+function relationPairKey(a: string, b: string): string {
+  return a < b ? `${a}|${b}` : `${b}|${a}`;
+}
+
+async function loadRelationsFromCsv(url: string, players: Player[]): Promise<{ relations: PlayerRelation[]; warnings: string[] }> {
+  const warnings: string[] = [];
+  let { text, error } = await fetchCsvText(url, "Relation");
+  if (error || parseCsv(text).length < 2) {
+    const fallback = await fetchCsvText(url, "relation");
+    if (!fallback.error && parseCsv(fallback.text).length >= 2) {
+      text = fallback.text;
+      error = null;
+    }
+  }
+  if (error) {
+    warnings.push("relation 시트를 불러오지 못했습니다. 궁합도 없이 팀을 분배합니다.");
+    return { relations: [], warnings };
+  }
+
+  const rows = parseCsv(text);
+  if (rows.length < 2) return { relations: [], warnings };
+
+  const playersByName = new Map<string, Player>();
+  const duplicateNames = new Set<string>();
+  players.forEach((player) => {
+    const normalized = normalizeRelationName(player.name);
+    if (!normalized) return;
+    if (playersByName.has(normalized)) duplicateNames.add(normalized);
+    else playersByName.set(normalized, player);
+  });
+  duplicateNames.forEach((name) => playersByName.delete(name));
+  if (duplicateNames.size > 0) {
+    warnings.push(`동명이인 또는 공백 차이로 relation 매칭이 모호한 이름이 있습니다: ${Array.from(duplicateNames).join(", ")}`);
+  }
+
+  const unknownNames = new Set<string>();
+  const invalidValues: string[] = [];
+  const relationByPair = new Map<string, PlayerRelation>();
+  const headers = rows[0].map((header) => header.trim());
+
+  rows.slice(1).forEach((row, rowIdx) => {
+    const rowName = row[0]?.trim() ?? "";
+    const rowKey = normalizeRelationName(rowName);
+    if (!rowKey) return;
+    const rowPlayer = playersByName.get(rowKey);
+    if (!rowPlayer) {
+      unknownNames.add(rowName);
+      return;
+    }
+
+    for (let colIdx = 1; colIdx < headers.length; colIdx += 1) {
+      const rawValue = row[colIdx]?.trim() ?? "";
+      if (!rawValue) continue;
+      const score = parseRelationScore(rawValue);
+      const colName = headers[colIdx]?.trim() ?? "";
+      const colKey = normalizeRelationName(colName);
+      const colPlayer = playersByName.get(colKey);
+
+      if (!score) {
+        invalidValues.push(`${rowIdx + 2}행 ${colName || `${colIdx + 1}열`}=${rawValue}`);
+        continue;
+      }
+      if (score === 3 || !colName || rowKey === colKey) continue;
+      if (!colPlayer) {
+        unknownNames.add(colName);
+        continue;
+      }
+
+      const key = relationPairKey(rowPlayer.id, colPlayer.id);
+      const existing = relationByPair.get(key);
+      if (!existing || score < existing.score) {
+        relationByPair.set(key, {
+          playerAId: rowPlayer.id,
+          playerBId: colPlayer.id,
+          playerAName: rowPlayer.name,
+          playerBName: colPlayer.name,
+          score: score as Exclude<RelationScore, 3>,
+        });
+      }
+    }
+  });
+
+  if (unknownNames.size > 0) {
+    warnings.push(`relation 시트에서 player 시트와 매칭되지 않은 이름이 있습니다: ${Array.from(unknownNames).slice(0, 12).join(", ")}${unknownNames.size > 12 ? " 외" : ""}`);
+  }
+  if (invalidValues.length > 0) {
+    warnings.push(`relation 시트 궁합도는 빈칸, 1, 2, 3만 사용할 수 있습니다: ${invalidValues.slice(0, 8).join(", ")}${invalidValues.length > 8 ? " 외" : ""}`);
+  }
+
+  return { relations: Array.from(relationByPair.values()), warnings };
+}
+
+export async function loadPlayersFromCsv(url: string): Promise<LoadPlayersResult> {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+
+  const { text, error } = await fetchCsvText(url);
+  if (error) {
     return {
       players: [],
       dedicatedGks: [],
+      relations: [],
       errors: [`시트 데이터를 불러오지 못했습니다. 공유 설정 또는 URL을 확인해주세요. (${String(error)})`],
       warnings,
     };
@@ -187,7 +301,7 @@ export async function loadPlayersFromCsv(url: string): Promise<LoadPlayersResult
 
   const rows = parseCsv(text);
   if (rows.length < 2) {
-    return { players: [], dedicatedGks: [], errors: ["시트에 헤더 1행과 선수 데이터가 필요합니다."], warnings };
+    return { players: [], dedicatedGks: [], relations: [], errors: ["시트에 헤더 1행과 선수 데이터가 필요합니다."], warnings };
   }
 
   const headers = rows[0].map((header) => header.trim());
@@ -269,5 +383,13 @@ export async function loadPlayersFromCsv(url: string): Promise<LoadPlayersResult
     });
   });
 
-  return { players, dedicatedGks, errors, warnings };
+  const relationResult = await loadRelationsFromCsv(url, players);
+
+  return {
+    players,
+    dedicatedGks,
+    relations: relationResult.relations,
+    errors,
+    warnings: [...warnings, ...relationResult.warnings],
+  };
 }

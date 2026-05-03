@@ -1,4 +1,5 @@
 import type { AssignedPlayer } from "./player";
+import type { TeamRelationViolation } from "./relation";
 
 export type TeamName = "A" | "B";
 
@@ -22,6 +23,9 @@ export type TeamBalanceSummary = {
   regularB: number;
   guestA: number;
   guestB: number;
+  relationPenalty: number;
+  relationViolationCount: number;
+  relationHardViolationCount: number;
   balanceScore: number;
 };
 
@@ -29,6 +33,7 @@ export type TeamBalanceResult = {
   teamA: Team;
   teamB: Team;
   summary: TeamBalanceSummary;
+  relationViolations: TeamRelationViolation[];
   warnings: string[];
   quality: "좋음" | "주의" | "나쁨";
 };
