@@ -1239,7 +1239,7 @@ function TeamCard({
         <span className={`rounded-full px-3 py-1 text-sm font-black ${teamPillClass(team)}`}>{title}</span>
         <span className="text-xs font-bold text-slate-500">팀 분배</span>
       </div>
-      <div className="p-4 pt-1">
+      <div className="px-2 pb-3 pt-1 sm:p-4 sm:pt-1">
         {(["ATTACK", "MID", "DEFENSE"] as PositionGroup[]).map((g) => {
           const score = groupScores[g];
           const groupPlayers = players.filter((p) => p.assignedGroup === g);
@@ -1261,7 +1261,7 @@ function TeamCard({
                 </div>
                 <span className="text-xs font-bold text-slate-600">합계 {formatScore(score)}</span>
               </div>
-              <div className="mt-1.5 grid gap-1.5" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(4.75rem, 1fr))" }}>
+              <div className="mt-1.5 grid gap-1 sm:gap-1.5" style={{ gridTemplateColumns: `repeat(${Math.max(1, groupPlayers.length)}, minmax(0, 1fr))` }}>
                 {groupPlayers.map((p) => {
                   const isSelected = selection?.team === team && selection.playerId === p.id;
                   const composite = p.attackScore + p.midScore + p.defenseScore + effectiveActivityScore(p);
