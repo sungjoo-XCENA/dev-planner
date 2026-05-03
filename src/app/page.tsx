@@ -968,7 +968,7 @@ function RoleBadge({ role }: { role: LineupRole }) {
 }
 
 function staffRoleBadgeClass(role: StaffRole): string {
-  if (role === "단장") return "bg-slate-900 text-white ring-slate-900/10";
+  if (role === "단장") return "bg-slate-100 text-slate-800 ring-slate-300";
   if (role === "감독") return "bg-indigo-100 text-indigo-800 ring-indigo-200";
   return "bg-cyan-100 text-cyan-800 ring-cyan-200";
 }
@@ -1012,14 +1012,14 @@ function activityDisplay(player: { activityScore: number; injuryLevel?: Player["
 }
 
 function staffRoleChipClass(role?: StaffRole | null): string {
-  if (role === "단장") return "bg-slate-900 text-white ring-slate-900 border-b-2 border-slate-500";
+  if (role === "단장") return "bg-white text-slate-950 ring-slate-300 border-b-2 border-slate-500";
   if (role === "감독") return "bg-white text-indigo-950 ring-indigo-300 border-b-2 border-indigo-500";
   if (role === "코치") return "bg-white text-cyan-950 ring-cyan-300 border-b-2 border-cyan-500";
   return "bg-white text-slate-700 ring-slate-200 border-b-2 border-transparent";
 }
 
 function staffRolePitchClass(role?: StaffRole | null): string {
-  if (role === "단장") return "bg-slate-900 text-white ring-1 ring-slate-900/30 border-b-2 border-slate-500";
+  if (role === "단장") return "bg-white text-slate-950 ring-1 ring-slate-300 border-b-2 border-slate-500";
   if (role === "감독") return "bg-indigo-50 text-indigo-950 ring-1 ring-indigo-300 border-b-2 border-indigo-500";
   if (role === "코치") return "bg-cyan-50 text-cyan-950 ring-1 ring-cyan-300 border-b-2 border-cyan-500";
   return "border-b-2 border-transparent";
