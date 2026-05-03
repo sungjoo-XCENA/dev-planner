@@ -11,7 +11,7 @@ const FORMATION_OUTFIELD: Record<PositionGroup, number> = {
   MID: 3,
   DEFENSE: 4,
 };
-const TOTAL_DEPLOYED = FORMATION_OUTFIELD.ATTACK + FORMATION_OUTFIELD.MID + FORMATION_OUTFIELD.DEFENSE + 1;
+const OUTFIELD_DEPLOYED = FORMATION_OUTFIELD.ATTACK + FORMATION_OUTFIELD.MID + FORMATION_OUTFIELD.DEFENSE;
 
 function dedicatedGkFor(team: TeamName, quarter: Quarter, dedicatedGks: DedicatedGoalkeeper[]): DedicatedGoalkeeper | null {
   if (dedicatedGks.length === 0) return null;
@@ -150,10 +150,12 @@ function lineupForTeam(
   const willHaveWaiting = waitingPlayer !== null && waitingQuarter !== null;
 
   const hasDedicatedGk = QUARTERS.map((q) => dedicatedByQuarter[q] !== null);
-  // Per-Q nonIM bench count: 정상 팀이면 teamSize - 11.
-  // 대기 콜업 쿼터: 대기 들어오면서 ironman 1명 양보 → 추가 bench는 ironman으로 채우므로 nonIM은 baseBench 그대로.
-  const baseBench = Math.max(0, teamSize - TOTAL_DEPLOYED);
-  const benchPerQuarter = QUARTERS.map(() => baseBench);
+  // Per-Q nonIM bench count: field slots are always 10, while GK comes from the team only without a dedicated GK.
+  // 대기 콜업 쿼터: 대기 들어오면서 ironman 1명 양보 → 추가 bench는 ironman으로 채우므로 nonIM은 쿼터 기준 그대로.
+  const benchPerQuarter = QUARTERS.map((quarter) => {
+    const deployedFromTeam = OUTFIELD_DEPLOYED + (dedicatedByQuarter[quarter] ? 0 : 1);
+    return Math.max(0, teamSize - deployedFromTeam);
+  });
   const rotation = planRotation(nonIronmen, hasDedicatedGk, benchPerQuarter);
 
   const warnings: string[] = [];
