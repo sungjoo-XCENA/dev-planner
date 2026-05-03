@@ -1,4 +1,4 @@
-import type { DedicatedGoalkeeper, MemberType, Player } from "@/types/player";
+import type { DedicatedGoalkeeper, InjuryLevel, MemberType, Player } from "@/types/player";
 import type { PlayerRelation, RelationScore } from "@/types/relation";
 import { parseSecondaryPositions, toPosition } from "./positions";
 
@@ -19,6 +19,7 @@ type CanonicalColumn =
   | "mid_score"
   | "defense_score"
   | "activity_score"
+  | "injury_level"
   | "gk"
   | "memo"
   | "member_type";
@@ -43,6 +44,7 @@ const HEADER_ALIASES: Record<CanonicalColumn, string[]> = {
   mid_score: ["미드", "mid_score", "mid", "middle", "midfield", "미드점수", "미드 점수", "중원"],
   defense_score: ["수비", "defense_score", "defense", "defence", "수비점수", "수비 점수"],
   activity_score: ["활동량", "activity_score", "activity", "활동", "체력", "활동점수"],
+  injury_level: ["부상", "injury", "injury_level", "injury level", "부상정도", "부상 정도", "컨디션"],
   gk: ["키퍼", "gk", "GK", "골키퍼", "키퍼가능", "키퍼 가능", "gk가능"],
   memo: ["메모", "memo", "비고", "참고", "특이사항"],
   member_type: ["구분", "member_type", "member type", "회원구분", "멤버구분", "타입"],
@@ -146,6 +148,18 @@ function parseMemberType(value: string): MemberType {
   const normalized = value.trim().toUpperCase();
   if (["GUEST", "용병", "게스트"].includes(normalized)) return "GUEST";
   return "REGULAR";
+}
+
+function parseInjuryLevel(value: string, playerName: string, warnings: string[]): InjuryLevel {
+  const raw = value.trim();
+  if (!raw) return 0;
+
+  const parsed = Number(raw);
+  if (!Number.isInteger(parsed) || parsed < 0 || parsed > 3) {
+    warnings.push(`${playerName}: 부상 정도는 0~3 숫자여야 합니다. 해당 값은 무시했습니다.`);
+    return 0;
+  }
+  return parsed as InjuryLevel;
 }
 
 function isDedicatedGkPosition(value: string): boolean {
@@ -378,6 +392,7 @@ export async function loadPlayersFromCsv(url: string): Promise<LoadPlayersResult
       midScore,
       defenseScore,
       activityScore,
+      injuryLevel: parseInjuryLevel(valueOf(row, "injury_level"), name, warnings),
       canGk: oldGkParsed ?? true,
       memo: valueOf(row, "memo") || undefined,
     });
