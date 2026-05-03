@@ -1242,6 +1242,7 @@ function TeamCard({
       <div className="p-4 pt-1">
         {(["ATTACK", "MID", "DEFENSE"] as PositionGroup[]).map((g) => {
           const score = groupScores[g];
+          const groupPlayers = players.filter((p) => p.assignedGroup === g);
           return (
             <div key={g} className="mt-3">
               <div className="flex items-center justify-between gap-2">
@@ -1260,13 +1261,14 @@ function TeamCard({
                 </div>
                 <span className="text-xs font-bold text-slate-600">합계 {formatScore(score)}</span>
               </div>
-              <div className="mt-1.5 grid gap-1" style={{ gridTemplateColumns: `repeat(${players.filter((p) => p.assignedGroup === g).length}, minmax(0, 1fr))` }}>
-                {players.filter((p) => p.assignedGroup === g).map((p) => {
+              <div className="mt-1.5 grid gap-1.5" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(4.75rem, 1fr))" }}>
+                {groupPlayers.map((p) => {
                   const isSelected = selection?.team === team && selection.playerId === p.id;
                   const composite = p.attackScore + p.midScore + p.defenseScore + effectiveActivityScore(p);
                   const isSwapHint = showSwapHints && selectedComposite != null && Math.abs(composite - selectedComposite) <= 3;
                   const staffRole = extractStaffRole(p.memo);
-                  const baseClass = "min-w-0 rounded-lg px-1 py-0.5 text-center transition border";
+                  const hasBadge = staffRole != null || hasInjury(p);
+                  const baseClass = "min-h-[3.9rem] min-w-0 rounded-lg border px-1 py-1.5 text-center transition";
                   const stateClass = isSelected
                     ? teamSelectedPlayerClass(team)
                     : isSwapHint
@@ -1284,10 +1286,14 @@ function TeamCard({
                       disabled={!interactive}
                       onClick={() => onPlayerClick(team, p.id)}
                     >
-                      <div className="flex min-w-0 items-center justify-center gap-0.5">
-                        <span className="truncate text-[11px] font-bold leading-tight">{p.name}{overrideMark(p.assignmentReason)}</span>
-                        <StaffRoleBadge role={staffRole} compact hideOnMobile />
-                        <InjuryBadge player={p} compact />
+                      <div className="flex min-w-0 flex-col items-center justify-center gap-0.5">
+                        <span className="max-w-full truncate text-[11px] font-bold leading-tight">{p.name}{overrideMark(p.assignmentReason)}</span>
+                        {hasBadge && (
+                          <span className="flex min-h-[0.9rem] max-w-full flex-wrap items-center justify-center gap-0.5">
+                            <StaffRoleBadge role={staffRole} compact />
+                            <InjuryBadge player={p} compact />
+                          </span>
+                        )}
                       </div>
                       <div className={`truncate font-mono text-[9px] leading-tight ${statClass}`}>
                         {p.attackScore}/{p.midScore}/{p.defenseScore}/{activityDisplay(p)}
