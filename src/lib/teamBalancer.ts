@@ -2,6 +2,7 @@ import type { AssignedPlayer, FieldPosition, Player, PositionGroup } from "@/typ
 import type { PlayerRelation, TeamRelationViolation } from "@/types/relation";
 import type { Team, TeamBalanceResult, TeamBalanceSummary } from "@/types/team";
 import { formatTeamName } from "@/lib/teamLabels";
+import { effectiveActivityScore } from "@/lib/injury";
 import { getPositionGroup, hasGroup, scoreForGroup } from "./positions";
 
 const POSITION_GROUPS: PositionGroup[] = ["ATTACK", "MID", "DEFENSE"];
@@ -32,7 +33,7 @@ function targetForTeamSize(size: number): RoleTargets {
 }
 
 function compositeScore(player: FieldPlayer): number {
-  return player.attackScore + player.midScore + player.defenseScore + player.activityScore;
+  return player.attackScore + player.midScore + player.defenseScore + effectiveActivityScore(player);
 }
 
 function primaryRank(player: FieldPlayer, group: PositionGroup): number {
@@ -52,7 +53,7 @@ function assignmentReason(player: FieldPlayer, group: PositionGroup): string {
 function comparePlayersForPair(group: PositionGroup, a: FieldPlayer, b: FieldPlayer): number {
   const posDiff = scoreForGroup(group, b) - scoreForGroup(group, a);
   if (posDiff !== 0) return posDiff;
-  const actDiff = b.activityScore - a.activityScore;
+  const actDiff = effectiveActivityScore(b) - effectiveActivityScore(a);
   if (actDiff !== 0) return actDiff;
   const compositeDiff = compositeScore(b) - compositeScore(a);
   if (compositeDiff !== 0) return compositeDiff;
@@ -61,7 +62,8 @@ function comparePlayersForPair(group: PositionGroup, a: FieldPlayer, b: FieldPla
 
 function compareForMidPool(a: FieldPlayer, b: FieldPlayer): number {
   if (b.midScore !== a.midScore) return b.midScore - a.midScore;
-  if (b.activityScore !== a.activityScore) return b.activityScore - a.activityScore;
+  const activityDiff = effectiveActivityScore(b) - effectiveActivityScore(a);
+  if (activityDiff !== 0) return activityDiff;
   const aMaxOther = Math.max(a.attackScore, a.defenseScore);
   const bMaxOther = Math.max(b.attackScore, b.defenseScore);
   if (aMaxOther !== bMaxOther) return aMaxOther - bMaxOther;
@@ -72,7 +74,7 @@ function compareForMidPool(a: FieldPlayer, b: FieldPlayer): number {
 function compareForStrongPool(group: PositionGroup, a: FieldPlayer, b: FieldPlayer): number {
   const posDiff = scoreForGroup(group, b) - scoreForGroup(group, a);
   if (posDiff !== 0) return posDiff;
-  const actDiff = b.activityScore - a.activityScore;
+  const actDiff = effectiveActivityScore(b) - effectiveActivityScore(a);
   if (actDiff !== 0) return actDiff;
   const aRank = primaryRank(a, group);
   const bRank = primaryRank(b, group);
@@ -92,11 +94,11 @@ function pairCostByGroup(
   const aAtt = sumByGroup(teamA, "ATTACK", (p) => p.attackScore);
   const aMid = sumByGroup(teamA, "MID", (p) => p.midScore);
   const aDef = sumByGroup(teamA, "DEFENSE", (p) => p.defenseScore);
-  const aAct = teamA.reduce((acc, p) => acc + p.activityScore, 0);
+  const aAct = teamA.reduce((acc, p) => acc + effectiveActivityScore(p), 0);
   const bAtt = sumByGroup(teamB, "ATTACK", (p) => p.attackScore);
   const bMid = sumByGroup(teamB, "MID", (p) => p.midScore);
   const bDef = sumByGroup(teamB, "DEFENSE", (p) => p.defenseScore);
-  const bAct = teamB.reduce((acc, p) => acc + p.activityScore, 0);
+  const bAct = teamB.reduce((acc, p) => acc + effectiveActivityScore(p), 0);
   const total = (aAtt + aMid + aDef + aAct) - (bAtt + bMid + bDef + bAct);
   return (Math.abs(aAtt - bAtt) + Math.abs(aMid - bMid) + Math.abs(aDef - bDef)) * 5
        + Math.abs(aAct - bAct) * 2
@@ -229,8 +231,8 @@ function calcSummary(
   const midScoreB = sum(byGroup(teamB, "MID"), (p) => p.midScore);
   const defenseScoreA = sum(byGroup(teamA, "DEFENSE"), (p) => p.defenseScore);
   const defenseScoreB = sum(byGroup(teamB, "DEFENSE"), (p) => p.defenseScore);
-  const activityA = sum(teamA, (p) => p.activityScore);
-  const activityB = sum(teamB, (p) => p.activityScore);
+  const activityA = sum(teamA, (p) => effectiveActivityScore(p));
+  const activityB = sum(teamB, (p) => effectiveActivityScore(p));
   const fieldGkA = teamA.filter((p) => p.canGk).length;
   const fieldGkB = teamB.filter((p) => p.canGk).length;
   const regularA = teamA.filter((p) => p.memberType === "REGULAR").length;

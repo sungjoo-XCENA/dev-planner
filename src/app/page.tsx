@@ -14,6 +14,7 @@ import { planMatchLineup, type MatchPlanResult, type MatchSelection, type MatchQ
 import { clearStoredAll, loadStored, saveStored } from "@/lib/persistedState";
 import { formatTeamName } from "@/lib/teamLabels";
 import { extractStaffRole } from "@/lib/staffRoles";
+import { INJURY_ACTIVITY_RATE, effectiveActivityScore, formatScore, hasInjury } from "@/lib/injury";
 
 const SCORE_OPTIONS = Array.from({ length: 10 }, (_, index) => index + 1);
 const QUARTER_OPTIONS = [1, 2, 3, 4];
@@ -576,10 +577,10 @@ export default function Home() {
     if (!sourcePlayer) return;
     const candidates = targetTeamPlayers.filter((p) => p.assignedGroup === targetGroup);
     if (candidates.length === 0) return;
-    const sourceComposite = sourcePlayer.attackScore + sourcePlayer.midScore + sourcePlayer.defenseScore + sourcePlayer.activityScore;
+    const sourceComposite = sourcePlayer.attackScore + sourcePlayer.midScore + sourcePlayer.defenseScore + effectiveActivityScore(sourcePlayer);
     const closest = candidates.reduce((best, p) => {
-      const cP = p.attackScore + p.midScore + p.defenseScore + p.activityScore;
-      const cBest = best.attackScore + best.midScore + best.defenseScore + best.activityScore;
+      const cP = p.attackScore + p.midScore + p.defenseScore + effectiveActivityScore(p);
+      const cBest = best.attackScore + best.midScore + best.defenseScore + effectiveActivityScore(best);
       return Math.abs(cP - sourceComposite) < Math.abs(cBest - sourceComposite) ? p : best;
     });
     handlePlayerClick(targetTeam, closest.id);
@@ -926,12 +927,13 @@ function PlayerSearchRow({ player, isField, isWaiting, isGk, onAddField, onRemov
           <div className="flex flex-wrap items-center gap-2">
             <p className="font-bold">{player.name}</p>
             <StaffRoleBadge role={staffRole} />
+            <InjuryBadge player={player} />
             {fieldRegular && <RoleBadge role="FIELD" />}
             {isField && isWaiting && <span className="inline-flex rounded-full bg-orange-100 px-2 py-0.5 text-xs font-bold text-orange-700">대기</span>}
             {(isGk || isSheetGk) && <RoleBadge role="GK" />}
           </div>
           <p className="mt-1 text-xs text-slate-500">주 {player.primaryPosition} · 부 {secondary}</p>
-          <p className="mt-0.5 text-xs text-slate-400">공격{player.attackScore} · 미드{player.midScore} · 수비{player.defenseScore} · 활동{player.activityScore}</p>
+          <p className="mt-0.5 text-xs text-slate-400">공격{player.attackScore} · 미드{player.midScore} · 수비{player.defenseScore} · 활동{activityDisplay(player)}</p>
         </div>
         <div className="flex shrink-0 gap-1">
           {fieldRegular
@@ -982,6 +984,33 @@ function StaffRoleBadge({ role, compact = false, hideOnMobile = false }: { role?
   );
 }
 
+function InjuryBadge({ player, compact = false }: { player: Player; compact?: boolean }) {
+  if (!hasInjury(player)) return null;
+  const level = player.injuryLevel as 1 | 2 | 3;
+  const rate = Math.round(INJURY_ACTIVITY_RATE[level] * 100);
+  const sizeClass = compact ? "px-1 py-0 text-[8px]" : "px-1.5 py-0.5 text-[10px]";
+  return (
+    <span
+      className={`inline-flex shrink-0 items-center gap-0.5 rounded-md border font-black leading-none ${sizeClass} ${injuryBadgeClass(level)}`}
+      title={`부상 ${level}: 활동량 ${rate}% 반영 (${player.activityScore} → ${formatScore(effectiveActivityScore(player))})`}
+    >
+      <span className="font-black">+</span>
+      <span>부{level}</span>
+    </span>
+  );
+}
+
+function injuryBadgeClass(level: 1 | 2 | 3): string {
+  if (level === 1) return "border-amber-200 bg-amber-50 text-amber-700";
+  if (level === 2) return "border-orange-200 bg-orange-50 text-orange-700";
+  return "border-rose-200 bg-rose-50 text-rose-700";
+}
+
+function activityDisplay(player: { activityScore: number; injuryLevel?: Player["injuryLevel"] }): string {
+  if (!hasInjury(player)) return String(player.activityScore);
+  return `${player.activityScore}→${formatScore(effectiveActivityScore(player))}`;
+}
+
 function staffRoleChipClass(role?: StaffRole | null): string {
   if (role === "단장") return "bg-slate-900 text-white ring-slate-900 border-b-2 border-slate-500";
   if (role === "감독") return "bg-white text-indigo-950 ring-indigo-300 border-b-2 border-indigo-500";
@@ -1004,9 +1033,9 @@ function MetricCard({ label, a, b, highlight }: { label: string; a: number; b: n
     <div className={containerClass}>
       <p className={labelClass}>{label}</p>
       <div className="mt-2 flex items-end justify-between gap-3">
-        <div><p className={subLabelClass}>{formatTeamName("A")}</p><p className="text-lg font-black">{a}</p></div>
-        <div className="text-center"><p className={subLabelClass}>차이</p><p className="text-sm font-bold">{Math.abs(a - b)}</p></div>
-        <div className="text-right"><p className={subLabelClass}>{formatTeamName("B")}</p><p className="text-lg font-black">{b}</p></div>
+        <div><p className={subLabelClass}>{formatTeamName("A")}</p><p className="text-lg font-black">{formatScore(a)}</p></div>
+        <div className="text-center"><p className={subLabelClass}>차이</p><p className="text-sm font-bold">{formatScore(Math.abs(a - b))}</p></div>
+        <div className="text-right"><p className={subLabelClass}>{formatTeamName("B")}</p><p className="text-lg font-black">{formatScore(b)}</p></div>
       </div>
     </div>
   );
@@ -1087,7 +1116,7 @@ function TeamResultView({
         const sourcePlayers = selection.team === "A" ? result.teamA.players : result.teamB.players;
         const sel = sourcePlayers.find((p) => p.id === selection.playerId);
         if (!sel) return null;
-        const composite = sel.attackScore + sel.midScore + sel.defenseScore + sel.activityScore;
+        const composite = sel.attackScore + sel.midScore + sel.defenseScore + effectiveActivityScore(sel);
         const secondary = sel.secondaryPositions.length > 0 ? sel.secondaryPositions.join(",") : "-";
         const staffRole = extractStaffRole(sel.memo);
         return (
@@ -1097,10 +1126,11 @@ function TeamResultView({
                 <div className="flex items-center gap-1.5">
                   <p className="text-sm font-bold text-blue-900">선택: {formatTeamName(selection.team)} · {sel.name}</p>
                   <StaffRoleBadge role={staffRole} />
+                  <InjuryBadge player={sel} />
                 </div>
-                <p className="text-xs text-blue-800">주포 {sel.primaryPosition} · 부포 {secondary} · 종합 {composite}</p>
+                <p className="text-xs text-blue-800">주포 {sel.primaryPosition} · 부포 {secondary} · 종합 {formatScore(composite)}</p>
               </div>
-              <p className="text-xs font-mono text-blue-900">공 {sel.attackScore} · 미 {sel.midScore} · 수 {sel.defenseScore} · 활 {sel.activityScore}</p>
+              <p className="text-xs font-mono text-blue-900">공 {sel.attackScore} · 미 {sel.midScore} · 수 {sel.defenseScore} · 활 {activityDisplay(sel)}</p>
             </div>
           </div>
         );
@@ -1199,7 +1229,7 @@ function TeamCard({
         : otherTeamPlayers.find((p) => p.id === selection.playerId))
     : undefined;
   const selectedComposite = selectedPlayer
-    ? selectedPlayer.attackScore + selectedPlayer.midScore + selectedPlayer.defenseScore + selectedPlayer.activityScore
+    ? selectedPlayer.attackScore + selectedPlayer.midScore + selectedPlayer.defenseScore + effectiveActivityScore(selectedPlayer)
     : null;
   const showSwapHints = selection != null && selection.team !== team;
   return (
@@ -1228,12 +1258,12 @@ function TeamCard({
                     </button>
                   )}
                 </div>
-                <span className="text-xs font-bold text-slate-600">합계 {score}</span>
+                <span className="text-xs font-bold text-slate-600">합계 {formatScore(score)}</span>
               </div>
               <div className="mt-1.5 grid gap-1" style={{ gridTemplateColumns: `repeat(${players.filter((p) => p.assignedGroup === g).length}, minmax(0, 1fr))` }}>
                 {players.filter((p) => p.assignedGroup === g).map((p) => {
                   const isSelected = selection?.team === team && selection.playerId === p.id;
-                  const composite = p.attackScore + p.midScore + p.defenseScore + p.activityScore;
+                  const composite = p.attackScore + p.midScore + p.defenseScore + effectiveActivityScore(p);
                   const isSwapHint = showSwapHints && selectedComposite != null && Math.abs(composite - selectedComposite) <= 3;
                   const staffRole = extractStaffRole(p.memo);
                   const baseClass = "min-w-0 rounded-lg px-1 py-0.5 text-center transition border";
@@ -1249,7 +1279,7 @@ function TeamCard({
                     <button
                       key={p.id}
                       type="button"
-                      title={`${staffRole ? `${staffRole} · ` : ""}${p.assignmentReason} · 공${p.attackScore} 미${p.midScore} 수${p.defenseScore} 활${p.activityScore}`}
+                      title={`${staffRole ? `${staffRole} · ` : ""}${p.assignmentReason} · 공${p.attackScore} 미${p.midScore} 수${p.defenseScore} 활${activityDisplay(p)}`}
                       className={`${baseClass} ${stateClass}`}
                       disabled={!interactive}
                       onClick={() => onPlayerClick(team, p.id)}
@@ -1257,9 +1287,10 @@ function TeamCard({
                       <div className="flex min-w-0 items-center justify-center gap-0.5">
                         <span className="truncate text-[11px] font-bold leading-tight">{p.name}{overrideMark(p.assignmentReason)}</span>
                         <StaffRoleBadge role={staffRole} compact hideOnMobile />
+                        <InjuryBadge player={p} compact />
                       </div>
                       <div className={`truncate font-mono text-[9px] leading-tight ${statClass}`}>
-                        {p.attackScore}/{p.midScore}/{p.defenseScore}/{p.activityScore}
+                        {p.attackScore}/{p.midScore}/{p.defenseScore}/{activityDisplay(p)}
                       </div>
                     </button>
                   );

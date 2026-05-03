@@ -17,6 +17,8 @@ export type MemberType = "REGULAR" | "GUEST" | "WAITING";
 
 export type StaffRole = "단장" | "감독" | "코치";
 
+export type InjuryLevel = 0 | 1 | 2 | 3;
+
 export type Player = {
   id: string;
   source: PlayerSource;
@@ -29,6 +31,7 @@ export type Player = {
   midScore: number;
   defenseScore: number;
   activityScore: number;
+  injuryLevel?: InjuryLevel;
   canGk: boolean;
   memo?: string;
 };
