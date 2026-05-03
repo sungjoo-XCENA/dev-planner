@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { DedicatedGoalkeeper, FieldPosition, Player, PositionGroup, StaffRole } from "@/types/player";
+import type { PlayerRelation } from "@/types/relation";
 import type { LineupResult, LineupRole, Quarter } from "@/types/lineup";
 import type { TeamBalanceResult, TeamName } from "@/types/team";
 import { appConfig } from "@/config/appConfig";
@@ -144,6 +145,7 @@ type SwapSelection = { team: "A" | "B"; playerId: string } | null;
 export default function Home() {
   const [csvUrl, setCsvUrl] = useState(appConfig.defaultSheetUrl);
   const [players, setPlayers] = useState<Player[]>([]);
+  const [relations, setRelations] = useState<PlayerRelation[]>([]);
   const [tempGuests, setTempGuests] = useState<Player[]>([]);
   const [tempGks, setTempGks] = useState<DedicatedGoalkeeper[]>([]);
   const [fieldIds, setFieldIds] = useState<string[]>([]);
@@ -190,6 +192,7 @@ export default function Home() {
 
       const allPlayers: Player[] = [...result.players, ...storedTempGuests];
       setPlayers(allPlayers);
+      setRelations(result.relations);
       setErrors(result.errors);
       setWarnings(result.warnings);
 
@@ -343,6 +346,7 @@ export default function Home() {
     const validIds = new Set(mergedPlayers.map((p) => p.id));
 
     setPlayers(mergedPlayers);
+    setRelations(result.relations);
     if (filteredTempGuests.length !== tempGuests.length) {
       setTempGuests(filteredTempGuests);
     }
@@ -526,7 +530,7 @@ export default function Home() {
       if (plannerMode === "MATCH") {
         setMatchResult(planMatchLineup(activeFieldPlayers, dedicatedGks, matchQuarterLimits));
       } else {
-        const variants = balanceTeamsVariants(activeFieldPlayers, 10);
+        const variants = balanceTeamsVariants(activeFieldPlayers, 10, relations);
         setTeamVariants(variants);
         setSelectedVariantIdx(0);
         setTeamResult(variants[0]);
@@ -625,8 +629,8 @@ export default function Home() {
       });
       try {
         const next = team === "A"
-          ? summarizeTeams(updated, teamResult.teamB.players)
-          : summarizeTeams(teamResult.teamA.players, updated);
+          ? summarizeTeams(updated, teamResult.teamB.players, relations)
+          : summarizeTeams(teamResult.teamA.players, updated, relations);
         setTeamResult(next);
         setSwapSelection(null);
       } catch (error) {
@@ -666,7 +670,7 @@ export default function Home() {
     const newA = teamAPlayers.map((p) => (p.id === aPlayer.id ? reassign(bPlayer, aPlayer.assignedGroup) : p));
     const newB = teamBPlayers.map((p) => (p.id === bPlayer.id ? reassign(aPlayer, bPlayer.assignedGroup) : p));
     try {
-      const next = summarizeTeams(newA, newB);
+      const next = summarizeTeams(newA, newB, relations);
       setTeamResult(next);
       setSwapSelection(null);
     } catch (error) {
@@ -720,10 +724,11 @@ export default function Home() {
             <button className="rounded-xl bg-slate-900 px-5 py-3 font-semibold text-white" onClick={handleLoad} disabled={!csvUrl.trim()}>다시 불러오기</button>
           </div>
         )}
-        <div className="mt-4 grid gap-3 sm:grid-cols-3">
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Stat label="불러온 선수" value={`${players.length}명`} />
           <Stat label="필드 참석자" value={`${fieldIds.length}명`} />
           <Stat label="전담 GK" value={`${dedicatedGks.length}명`} />
+          <Stat label="궁합도 조건" value={`${relations.length}개`} />
         </div>
       </section>
 
@@ -1053,6 +1058,26 @@ function TeamResultView({
         <MetricCard label="용병" a={s.guestA} b={s.guestB} />
         <MetricCard label="포지션 변경자" a={overridesA} b={overridesB} />
       </div>
+      {result.relationViolations.length > 0 && (
+        <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm font-bold text-amber-900">궁합도 조건</p>
+            <p className="text-xs font-semibold text-amber-800">
+              같은 팀 배정 {s.relationViolationCount}개 · 분리 우선 {s.relationHardViolationCount}개 · 페널티 {s.relationPenalty}
+            </p>
+          </div>
+          <ul className="mt-2 grid gap-1 text-sm text-amber-900 sm:grid-cols-2">
+            {result.relationViolations.slice(0, 6).map((violation) => (
+              <li key={`${violation.team}-${violation.playerAName}-${violation.playerBName}-${violation.score}`}>
+                {formatTeamName(violation.team)} · {violation.playerAName}/{violation.playerBName} · {relationScoreLabel(violation.score)}
+              </li>
+            ))}
+          </ul>
+          {result.relationViolations.length > 6 && (
+            <p className="mt-1 text-xs font-semibold text-amber-800">외 {result.relationViolations.length - 6}개</p>
+          )}
+        </div>
+      )}
       {!confirmed && (
         <p className="mt-4 rounded-2xl bg-blue-50 px-4 py-3 text-sm text-blue-800">
           선수를 한 명 누르면 선택되고, 다른 팀 선수를 누르면 자리를 바꿔요. <span className="rounded-md bg-amber-100 px-1.5 py-0.5 text-amber-900">노란 테두리</span>는 종합 점수(공+미+수+활)가 ±3 이내라 swap해도 균형이 잘 유지되는 후보예요. 조정이 끝나면 <strong>팀 확정</strong> 버튼을 누르세요.
@@ -1129,6 +1154,10 @@ function TeamResultView({
       </div>
     </section>
   );
+}
+
+function relationScoreLabel(score: 1 | 2): string {
+  return score === 1 ? "1점 분리 우선" : "2점 가능하면 분리";
 }
 
 function qualityBadgeClass(quality: TeamBalanceResult["quality"]): string {

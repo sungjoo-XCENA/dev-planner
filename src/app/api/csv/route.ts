@@ -14,10 +14,10 @@ function getSheetInfo(url: string): { spreadsheetId: string; gid: string } | nul
   return { spreadsheetId: match[1], gid };
 }
 
-function csvCandidateUrls(url: string): string[] {
+function csvCandidateUrls(url: string, sheetName?: string): string[] {
   const parsed = new URL(url);
 
-  if (parsed.pathname.includes("/export") && parsed.searchParams.get("format") === "csv") {
+  if (!sheetName && parsed.pathname.includes("/export") && parsed.searchParams.get("format") === "csv") {
     return [parsed.toString()];
   }
 
@@ -25,6 +25,12 @@ function csvCandidateUrls(url: string): string[] {
   if (!info) return [parsed.toString()];
 
   const { spreadsheetId, gid } = info;
+  if (sheetName) {
+    return [
+      `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheetName)}`,
+    ];
+  }
+
   return [
     `https://docs.google.com/spreadsheets/d/${spreadsheetId}/export?format=csv&gid=${encodeURIComponent(gid)}`,
     `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:csv&gid=${encodeURIComponent(gid)}`,
@@ -34,6 +40,7 @@ function csvCandidateUrls(url: string): string[] {
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const url = searchParams.get("url");
+  const sheetName = searchParams.get("sheet")?.trim() || undefined;
 
   if (!url) {
     return NextResponse.json({ error: "url query parameter is required" }, { status: 400 });
@@ -55,7 +62,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Only Google Sheets URLs are allowed" }, { status: 400 });
   }
 
-  const candidates = csvCandidateUrls(url);
+  const candidates = csvCandidateUrls(url, sheetName);
   const failures: string[] = [];
 
   for (const csvUrl of candidates) {
