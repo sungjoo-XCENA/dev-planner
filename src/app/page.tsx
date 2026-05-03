@@ -968,7 +968,7 @@ function RoleBadge({ role }: { role: LineupRole }) {
 }
 
 function staffRoleBadgeClass(role: StaffRole): string {
-  if (role === "단장") return "bg-slate-900 text-white ring-slate-900/10";
+  if (role === "단장") return "bg-slate-100 text-slate-800 ring-slate-300";
   if (role === "감독") return "bg-indigo-100 text-indigo-800 ring-indigo-200";
   return "bg-cyan-100 text-cyan-800 ring-cyan-200";
 }
@@ -1012,14 +1012,14 @@ function activityDisplay(player: { activityScore: number; injuryLevel?: Player["
 }
 
 function staffRoleChipClass(role?: StaffRole | null): string {
-  if (role === "단장") return "bg-slate-900 text-white ring-slate-900 border-b-2 border-slate-500";
+  if (role === "단장") return "bg-white text-slate-950 ring-slate-300 border-b-2 border-slate-500";
   if (role === "감독") return "bg-white text-indigo-950 ring-indigo-300 border-b-2 border-indigo-500";
   if (role === "코치") return "bg-white text-cyan-950 ring-cyan-300 border-b-2 border-cyan-500";
   return "bg-white text-slate-700 ring-slate-200 border-b-2 border-transparent";
 }
 
 function staffRolePitchClass(role?: StaffRole | null): string {
-  if (role === "단장") return "bg-slate-900 text-white ring-1 ring-slate-900/30 border-b-2 border-slate-500";
+  if (role === "단장") return "bg-white text-slate-950 ring-1 ring-slate-300 border-b-2 border-slate-500";
   if (role === "감독") return "bg-indigo-50 text-indigo-950 ring-1 ring-indigo-300 border-b-2 border-indigo-500";
   if (role === "코치") return "bg-cyan-50 text-cyan-950 ring-1 ring-cyan-300 border-b-2 border-cyan-500";
   return "border-b-2 border-transparent";
@@ -1421,16 +1421,17 @@ function TeamOverviewCard({ team, groups }: { team: TeamName; groups: Record<Pos
 
 function PitchChip({ name, accent, selected, onClick, count, staffRole, fill = false }: { name: string; accent?: "gk" | "bench"; selected?: boolean; onClick?: () => void; count?: PlayerCount; staffRole?: StaffRole; fill?: boolean }) {
   const base = "inline-flex h-10 min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl px-1 text-[11px] font-extrabold shadow-sm whitespace-nowrap transition sm:h-auto sm:flex-row sm:gap-1 sm:rounded-full sm:px-3 sm:py-1.5 sm:text-sm sm:shadow";
-  const palette = accent === "gk"
+  const defaultPalette = accent === "gk"
     ? "bg-amber-300 text-amber-950"
     : accent === "bench"
       ? "bg-slate-200 text-slate-700"
       : "bg-white text-slate-900";
+  const palette = staffRole ? staffRolePitchClass(staffRole) : `${defaultPalette} ${staffRolePitchClass(null)}`;
   const ring = selected ? "ring-2 ring-offset-1 ring-yellow-400" : "";
   const Tag = onClick ? "button" : "span";
   const countText = formatCount(count);
   return (
-    <Tag type={onClick ? "button" : undefined} className={`${base} ${fill ? "w-full sm:w-auto" : "w-[4.2rem] sm:w-auto sm:min-w-[4.75rem]"} ${palette} ${staffRolePitchClass(staffRole)} ${ring}`} onClick={onClick} title={staffRole ? `${name} · ${staffRole}` : undefined}>
+    <Tag type={onClick ? "button" : undefined} className={`${base} ${fill ? "w-full sm:w-auto" : "w-[4.2rem] sm:w-auto sm:min-w-[4.75rem]"} ${palette} ${ring}`} onClick={onClick} title={staffRole ? `${name} · ${staffRole}` : undefined}>
       <span className="flex min-w-0 items-center justify-center gap-0.5">
         <span className="truncate">{name}</span>
         <StaffRoleBadge role={staffRole} compact hideOnMobile />
