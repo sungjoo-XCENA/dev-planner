@@ -12,6 +12,7 @@ const FORMATION_OUTFIELD: Record<PositionGroup, number> = {
   DEFENSE: 4,
 };
 const OUTFIELD_DEPLOYED = FORMATION_OUTFIELD.ATTACK + FORMATION_OUTFIELD.MID + FORMATION_OUTFIELD.DEFENSE;
+const POSITION_GROUPS: PositionGroup[] = ["ATTACK", "MID", "DEFENSE"];
 
 function dedicatedGkFor(team: TeamName, quarter: Quarter, dedicatedGks: DedicatedGoalkeeper[]): DedicatedGoalkeeper | null {
   if (dedicatedGks.length === 0) return null;
@@ -49,7 +50,65 @@ type PerQuarterRotation = {
   gk: AssignedPlayer | null;
 };
 
+function emptyGroupCounts(): Record<PositionGroup, number> {
+  return { ATTACK: 0, MID: 0, DEFENSE: 0 };
+}
+
+function countByAssignedGroup(players: AssignedPlayer[]): Record<PositionGroup, number> {
+  return players.reduce((counts, player) => {
+    counts[player.assignedGroup] += 1;
+    return counts;
+  }, emptyGroupCounts());
+}
+
+function absenceTargetsForQuarter(
+  players: AssignedPlayer[],
+  availablePlayers: AssignedPlayer[],
+  absentTotal: number,
+): Record<PositionGroup, number> {
+  const teamCounts = countByAssignedGroup(players);
+  const availableCounts = countByAssignedGroup(availablePlayers);
+  const targets = emptyGroupCounts();
+  const preferred = emptyGroupCounts();
+  let remaining = absentTotal;
+
+  for (const group of POSITION_GROUPS) {
+    preferred[group] = Math.max(0, teamCounts[group] - FORMATION_OUTFIELD[group]);
+  }
+
+  while (remaining > 0) {
+    const group = POSITION_GROUPS
+      .filter((item) => targets[item] < Math.min(preferred[item], availableCounts[item]))
+      .sort((a, b) => {
+        const aNeed = Math.min(preferred[a], availableCounts[a]) - targets[a];
+        const bNeed = Math.min(preferred[b], availableCounts[b]) - targets[b];
+        if (bNeed !== aNeed) return bNeed - aNeed;
+        return POSITION_GROUPS.indexOf(a) - POSITION_GROUPS.indexOf(b);
+      })[0];
+    if (!group) break;
+    targets[group] += 1;
+    remaining -= 1;
+  }
+
+  while (remaining > 0) {
+    const group = POSITION_GROUPS
+      .filter((item) => targets[item] < availableCounts[item])
+      .sort((a, b) => {
+        const aAvailable = availableCounts[a] - targets[a];
+        const bAvailable = availableCounts[b] - targets[b];
+        if (bAvailable !== aAvailable) return bAvailable - aAvailable;
+        return POSITION_GROUPS.indexOf(a) - POSITION_GROUPS.indexOf(b);
+      })[0];
+    if (!group) break;
+    targets[group] += 1;
+    remaining -= 1;
+  }
+
+  return targets;
+}
+
 function planRotation(
+  players: AssignedPlayer[],
   nonIronmen: AssignedPlayer[],
   hasDedicatedGk: boolean[],
   benchPerQuarter: number[],
@@ -71,26 +130,35 @@ function planRotation(
   };
 
   for (let qIdx = 0; qIdx < 4; qIdx += 1) {
-    const benches: AssignedPlayer[] = [];
-    let gk: AssignedPlayer | null = null;
+    const absences: AssignedPlayer[] = [];
     const usedThisQ = new Set<string>();
 
     const benchTarget = Math.min(benchPerQuarter[qIdx] ?? 0, nonIronmen.length);
-    for (let bIdx = 0; bIdx < benchTarget; bIdx += 1) {
-      const b = pickLowest(nonIronmen, usedThisQ);
-      if (!b) break;
-      benches.push(b);
-      usedThisQ.add(b.id);
-      eventCount.set(b.id, (eventCount.get(b.id) ?? 0) + 1);
-    }
+    const gkTarget = hasDedicatedGk[qIdx] ? 0 : 1;
+    const absenceTarget = Math.min(benchTarget + gkTarget, nonIronmen.length);
+    const groupTargets = absenceTargetsForQuarter(players, nonIronmen, absenceTarget);
 
-    if (!hasDedicatedGk[qIdx]) {
-      gk = pickLowest(nonIronmen, usedThisQ);
-      if (gk) {
-        usedThisQ.add(gk.id);
-        eventCount.set(gk.id, (eventCount.get(gk.id) ?? 0) + 1);
+    const addAbsence = (player: AssignedPlayer | null) => {
+      if (!player) return;
+      absences.push(player);
+      usedThisQ.add(player.id);
+      eventCount.set(player.id, (eventCount.get(player.id) ?? 0) + 1);
+    };
+
+    for (const group of POSITION_GROUPS) {
+      for (let index = 0; index < groupTargets[group]; index += 1) {
+        addAbsence(pickLowest(nonIronmen.filter((player) => player.assignedGroup === group), usedThisQ));
       }
     }
+
+    while (absences.length < absenceTarget) {
+      const fallback = pickLowest(nonIronmen, usedThisQ);
+      if (!fallback) break;
+      addAbsence(fallback);
+    }
+
+    const benches = absences.slice(0, benchTarget);
+    const gk = hasDedicatedGk[qIdx] ? null : (absences[benchTarget] ?? null);
 
     slots.push({ benches, gk });
   }
@@ -156,7 +224,7 @@ function lineupForTeam(
     const deployedFromTeam = OUTFIELD_DEPLOYED + (dedicatedByQuarter[quarter] ? 0 : 1);
     return Math.max(0, teamSize - deployedFromTeam);
   });
-  const rotation = planRotation(nonIronmen, hasDedicatedGk, benchPerQuarter);
+  const rotation = planRotation(team.players, nonIronmen, hasDedicatedGk, benchPerQuarter);
 
   const warnings: string[] = [];
   const dedicatedRotation: Record<string, string[]> = {};
