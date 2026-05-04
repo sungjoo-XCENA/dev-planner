@@ -1312,6 +1312,7 @@ function TeamCard({
 
 async function downloadElementAsImage(elem: HTMLElement, filename: string) {
   const html2canvas = (await import("html2canvas")).default;
+  await document.fonts?.ready;
   const canvas = await html2canvas(elem, { backgroundColor: "#ffffff", scale: 2, useCORS: true });
   await new Promise<void>((resolve) => {
     canvas.toBlob((blob) => {
@@ -1439,10 +1440,10 @@ function PitchChip({ name, accent, selected, onClick, count, staffRole, fill = f
   return (
     <Tag type={onClick ? "button" : undefined} className={`${base} ${fill ? "w-full sm:w-auto" : "w-[4.2rem] sm:w-auto sm:min-w-[4.75rem]"} ${palette} ${ring}`} onClick={onClick} title={staffRole ? `${name} · ${staffRole}` : undefined}>
       <span className="flex min-w-0 items-center justify-center gap-0.5">
-        <span className="truncate">{name}</span>
+        <span className="inline-block max-w-full truncate py-0.5 leading-snug">{name}</span>
         <StaffRoleBadge role={staffRole} compact hideOnMobile />
       </span>
-      {countText && <span className="text-[9px] font-black leading-none opacity-70 sm:ml-1 sm:text-[11px]">{countText}</span>}
+      {countText && <span className="text-[9px] font-black leading-tight opacity-70 sm:ml-1 sm:text-[11px]">{countText}</span>}
     </Tag>
   );
 }
