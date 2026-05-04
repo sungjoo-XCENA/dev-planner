@@ -624,8 +624,8 @@ export default function Home() {
         };
       };
       const updated = teamPlayers.map((p) => {
-        if (p.id === playerA.id) return reassign(p, playerB.assignedGroup);
-        if (p.id === playerB.id) return reassign(p, playerA.assignedGroup);
+        if (p.id === playerA.id) return reassign(playerB, playerA.assignedGroup);
+        if (p.id === playerB.id) return reassign(playerA, playerB.assignedGroup);
         return p;
       });
       try {
