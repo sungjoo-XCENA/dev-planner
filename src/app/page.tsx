@@ -1436,7 +1436,7 @@ function TeamOverviewCard({ team, groups, imageMode = false }: { team: TeamName;
 
 function PitchChip({ name, accent, selected, onClick, count, staffRole, fill = false, imageMode = false }: { name: string; accent?: "gk" | "bench"; selected?: boolean; onClick?: () => void; count?: PlayerCount; staffRole?: StaffRole; fill?: boolean; imageMode?: boolean }) {
   const base = imageMode
-    ? "inline-flex h-8 min-w-0 items-center justify-center overflow-visible rounded-full px-3 py-0 text-sm font-bold leading-none shadow whitespace-nowrap transition"
+    ? "inline-flex min-h-8 min-w-0 items-center justify-center overflow-visible rounded-full px-3 py-1 text-sm font-bold leading-[1.45] shadow whitespace-nowrap transition"
     : "inline-flex min-h-10 min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl px-1 py-1 text-[11px] font-extrabold leading-normal shadow-sm whitespace-nowrap transition sm:min-h-0 sm:flex-row sm:gap-1 sm:rounded-full sm:px-3 sm:py-1.5 sm:text-sm sm:shadow";
   const defaultPalette = accent === "gk"
     ? "bg-amber-300 text-amber-950"
@@ -1451,10 +1451,10 @@ function PitchChip({ name, accent, selected, onClick, count, staffRole, fill = f
   if (imageMode) {
     return (
       <Tag type={onClick ? "button" : undefined} className={`${base} ${sizeClass} ${palette} ${ring}`} onClick={onClick} title={staffRole ? `${name} · ${staffRole}` : undefined}>
-        <span className="inline-flex h-full min-w-0 items-center justify-center gap-1.5 overflow-visible whitespace-nowrap leading-none">
-          <span className="inline-block max-w-full overflow-visible whitespace-nowrap leading-none">{name}</span>
+        <span className="inline-flex min-w-0 items-center justify-center gap-1.5 overflow-visible whitespace-nowrap leading-[1.45]">
+          <span className="inline-block max-w-full overflow-visible whitespace-nowrap leading-[1.45]">{name}</span>
           <StaffRoleBadge role={staffRole} compact hideOnMobile={false} />
-          {countText && <span className="inline-block text-[11px] font-bold leading-none opacity-70">{countText}</span>}
+          {countText && <span className="inline-block text-[11px] font-bold leading-[1.45] opacity-70">· {countText}</span>}
         </span>
       </Tag>
     );
