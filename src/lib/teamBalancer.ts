@@ -3,6 +3,7 @@ import type { PlayerRelation, TeamRelationViolation } from "@/types/relation";
 import type { Team, TeamBalanceResult, TeamBalanceSummary } from "@/types/team";
 import { formatTeamName } from "@/lib/teamLabels";
 import { effectiveActivityScore } from "@/lib/injury";
+import { isMultiPositionPlayer } from "@/lib/multiPosition";
 import { getPositionGroup, hasGroup, scoreForGroup } from "./positions";
 
 const POSITION_GROUPS: PositionGroup[] = ["ATTACK", "MID", "DEFENSE"];
@@ -12,6 +13,7 @@ const MAX_TEAM_SIZE = 18;
 const PAIR_FLIP_MAX_ROUNDS = 30;
 const STRONG_RESERVE_PER_TEAM = 2;
 const MISMATCH_PENALTY = 1.5;
+const MULTI_POSITION_BALANCE_PENALTY = 16;
 const RELATION_PENALTY: Record<PlayerRelation["score"], number> = {
   1: 1000,
   2: 80,
@@ -99,9 +101,12 @@ function pairCostByGroup(
   const bMid = sumByGroup(teamB, "MID", (p) => p.midScore);
   const bDef = sumByGroup(teamB, "DEFENSE", (p) => p.defenseScore);
   const bAct = teamB.reduce((acc, p) => acc + effectiveActivityScore(p), 0);
+  const aMulti = teamA.filter(isMultiPositionPlayer).length;
+  const bMulti = teamB.filter(isMultiPositionPlayer).length;
   const total = (aAtt + aMid + aDef + aAct) - (bAtt + bMid + bDef + bAct);
   return (Math.abs(aAtt - bAtt) + Math.abs(aMid - bMid) + Math.abs(aDef - bDef)) * 5
        + Math.abs(aAct - bAct) * 2
+       + Math.abs(aMulti - bMulti) * MULTI_POSITION_BALANCE_PENALTY
        + Math.abs(total)
        + relationPenaltyForSplit(teamA, teamB, relations);
 }
@@ -239,6 +244,8 @@ function calcSummary(
   const regularB = teamB.filter((p) => p.memberType === "REGULAR").length;
   const guestA = teamA.filter((p) => p.memberType === "GUEST").length;
   const guestB = teamB.filter((p) => p.memberType === "GUEST").length;
+  const multiPositionA = teamA.filter(isMultiPositionPlayer).length;
+  const multiPositionB = teamB.filter(isMultiPositionPlayer).length;
   const overrides = [...teamA, ...teamB].filter((p) => p.isPositionOverride).length;
   const relationViolations = relationViolationsForTeams(teamA, teamB, relations);
   const relationPenalty = relationViolations.reduce((acc, violation) => acc + violation.penalty, 0);
@@ -250,6 +257,7 @@ function calcSummary(
     Math.abs(activityA - activityB) * 2 +
     Math.abs(fieldGkA - fieldGkB) * 3 +
     Math.abs(guestA - guestB) +
+    Math.abs(multiPositionA - multiPositionB) * MULTI_POSITION_BALANCE_PENALTY +
     overrides * 1.5 +
     relationPenalty;
 
@@ -268,6 +276,8 @@ function calcSummary(
     regularB,
     guestA,
     guestB,
+    multiPositionA,
+    multiPositionB,
     relationPenalty,
     relationViolationCount: relationViolations.length,
     relationHardViolationCount: relationViolations.filter((violation) => violation.score === 1).length,
@@ -427,6 +437,7 @@ function buildResult(
   if (summary.fieldGkA === 0 || summary.fieldGkB === 0) warnings.push("한 팀에 필드 GK 가능자가 없습니다. 전담 GK가 없거나 부족하면 문제가 될 수 있습니다.");
   if (Math.abs(summary.activityA - summary.activityB) >= 8) warnings.push("팀별 활동량 차이가 큽니다.");
   if (Math.abs(summary.guestA - summary.guestB) >= 5) warnings.push("정규 선수와 용병 비율이 한쪽으로 몰렸습니다.");
+  if (Math.abs(summary.multiPositionA - summary.multiPositionB) >= 2) warnings.push("멀티포지션 선수가 한쪽으로 몰렸습니다.");
   const hardViolations = relationViolations.filter((violation) => violation.score === 1);
   if (hardViolations.length > 0) {
     warnings.push(`궁합도 1점 분리 우선 조합이 같은 팀에 있습니다: ${hardViolations.map((violation) => `${formatTeamName(violation.team)} ${violation.playerAName}/${violation.playerBName}`).join(", ")}`);
