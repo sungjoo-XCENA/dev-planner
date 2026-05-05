@@ -1406,7 +1406,7 @@ function TeamOverviewCard({ team, groups, imageMode = false }: { team: TeamName;
   const rowClass = imageMode ? "grid grid-cols-[2.8rem_minmax(0,1fr)] items-center gap-1.5" : "grid grid-cols-[2.1rem_minmax(0,1fr)] items-center gap-1 sm:grid-cols-[2.8rem_minmax(0,1fr)] sm:gap-1.5";
   const groupLabelClass = imageMode ? "inline-flex justify-center rounded-full px-2.5 py-1 text-xs font-black ring-1" : "inline-flex justify-center rounded-full px-1 py-0.5 text-[10px] font-black ring-1 sm:px-2.5 sm:py-1 sm:text-xs";
   const playerChipClass = imageMode
-    ? "inline-flex min-h-8 min-w-0 items-center justify-center gap-1 overflow-visible rounded-full px-2.5 py-1.5 text-xs font-bold leading-none shadow-sm ring-1"
+    ? "inline-flex h-7 min-w-0 items-center justify-center gap-1 overflow-visible rounded-full px-2.5 py-0 text-xs font-bold leading-none shadow-sm ring-1"
     : "inline-flex min-h-6 min-w-0 items-center justify-center gap-1 rounded-full px-1 py-0.5 text-[10px] font-bold leading-normal shadow-sm ring-1 sm:min-h-0 sm:px-2.5 sm:py-1 sm:text-xs";
   return (
     <div className={`overflow-hidden rounded-xl border ${teamPanelClass(team)}`}>
@@ -1422,7 +1422,7 @@ function TeamOverviewCard({ team, groups, imageMode = false }: { team: TeamName;
             <div className="grid gap-1" style={{ gridTemplateColumns: `repeat(${columnCount}, minmax(0, 1fr))` }}>
               {groups[group].map((player) => (
                 <span key={player.name} className={`${playerChipClass} ${staffRoleChipClass(player.staffRole)}`}>
-                  <span className={imageMode ? "relative -top-px min-w-0 overflow-visible whitespace-nowrap leading-none" : "min-w-0 overflow-visible whitespace-nowrap py-0.5 leading-[1.55]"}>{player.name}</span>
+                  <span className={imageMode ? "inline-block -translate-y-px min-w-0 overflow-visible whitespace-nowrap leading-none" : "min-w-0 overflow-visible whitespace-nowrap py-0.5 leading-[1.55]"}>{player.name}</span>
                   <StaffRoleBadge role={player.staffRole} compact hideOnMobile={!imageMode} />
                 </span>
               ))}
@@ -1436,7 +1436,7 @@ function TeamOverviewCard({ team, groups, imageMode = false }: { team: TeamName;
 
 function PitchChip({ name, accent, selected, onClick, count, staffRole, fill = false, imageMode = false }: { name: string; accent?: "gk" | "bench"; selected?: boolean; onClick?: () => void; count?: PlayerCount; staffRole?: StaffRole; fill?: boolean; imageMode?: boolean }) {
   const base = imageMode
-    ? "inline-flex min-h-9 min-w-0 items-center justify-center gap-1 overflow-visible rounded-full px-3 py-1.5 text-sm font-bold leading-none shadow whitespace-nowrap transition"
+    ? "inline-flex h-8 min-w-0 items-center justify-center overflow-visible rounded-full px-3 py-0 text-sm font-bold leading-none shadow whitespace-nowrap transition"
     : "inline-flex min-h-10 min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl px-1 py-1 text-[11px] font-extrabold leading-normal shadow-sm whitespace-nowrap transition sm:min-h-0 sm:flex-row sm:gap-1 sm:rounded-full sm:px-3 sm:py-1.5 sm:text-sm sm:shadow";
   const defaultPalette = accent === "gk"
     ? "bg-amber-300 text-amber-950"
@@ -1448,9 +1448,9 @@ function PitchChip({ name, accent, selected, onClick, count, staffRole, fill = f
   const Tag = onClick ? "button" : "span";
   const countText = formatCount(count);
   const sizeClass = imageMode ? "w-auto min-w-[4.75rem]" : fill ? "w-full sm:w-auto" : "w-[4.2rem] sm:w-auto sm:min-w-[4.75rem]";
-  const contentClass = imageMode ? "relative -top-px flex min-w-0 items-center justify-center gap-0.5 overflow-visible leading-none" : "flex min-w-0 items-center justify-center gap-0.5 overflow-visible leading-[1.55]";
-  const nameClass = imageMode ? "inline-block max-w-full overflow-visible whitespace-nowrap leading-none" : "inline-block max-w-full overflow-visible whitespace-nowrap py-0.5 leading-[1.55]";
-  const countClass = imageMode ? "relative -top-px text-[11px] font-bold leading-none opacity-70" : "text-[9px] font-black leading-tight opacity-70 sm:ml-1 sm:text-[11px]";
+  const contentClass = imageMode ? "flex h-full min-w-0 items-center justify-center gap-1 overflow-visible leading-none" : "flex min-w-0 items-center justify-center gap-0.5 overflow-visible leading-[1.55]";
+  const nameClass = imageMode ? "inline-block -translate-y-px max-w-full overflow-visible whitespace-nowrap leading-none" : "inline-block max-w-full overflow-visible whitespace-nowrap py-0.5 leading-[1.55]";
+  const countClass = imageMode ? "inline-block -translate-y-px text-[10px] font-bold leading-none opacity-70" : "text-[9px] font-black leading-tight opacity-70 sm:ml-1 sm:text-[11px]";
   return (
     <Tag type={onClick ? "button" : undefined} className={`${base} ${sizeClass} ${palette} ${ring}`} onClick={onClick} title={staffRole ? `${name} · ${staffRole}` : undefined}>
       <span className={contentClass}>
