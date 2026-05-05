@@ -1450,7 +1450,7 @@ function PitchChip({ name, accent, selected, onClick, count, staffRole, fill = f
   const sizeClass = imageMode ? "w-auto min-w-[4.75rem]" : fill ? "w-full sm:w-auto" : "w-[4.2rem] sm:w-auto sm:min-w-[4.75rem]";
   const contentClass = imageMode ? "flex h-full min-w-0 items-center justify-center gap-1 overflow-visible leading-none" : "flex min-w-0 items-center justify-center gap-0.5 overflow-visible leading-[1.55]";
   const nameClass = imageMode ? "inline-block max-w-full overflow-visible whitespace-nowrap leading-none" : "inline-block max-w-full overflow-visible whitespace-nowrap py-0.5 leading-[1.55]";
-  const countClass = imageMode ? "inline-block text-[10px] font-bold leading-none opacity-70" : "text-[9px] font-black leading-tight opacity-70 sm:ml-1 sm:text-[11px]";
+  const countClass = imageMode ? "ml-1 inline-block text-[10px] font-bold leading-none opacity-70" : "text-[9px] font-black leading-tight opacity-70 sm:ml-1 sm:text-[11px]";
   return (
     <Tag type={onClick ? "button" : undefined} className={`${base} ${sizeClass} ${palette} ${ring}`} onClick={onClick} title={staffRole ? `${name} · ${staffRole}` : undefined}>
       <span className={contentClass}>
