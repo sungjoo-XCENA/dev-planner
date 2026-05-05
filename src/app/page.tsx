@@ -15,6 +15,7 @@ import { clearStoredAll, loadStored, saveStored } from "@/lib/persistedState";
 import { formatTeamName } from "@/lib/teamLabels";
 import { extractStaffRole } from "@/lib/staffRoles";
 import { INJURY_ACTIVITY_RATE, effectiveActivityScore, formatScore, hasInjury } from "@/lib/injury";
+import { isMultiPositionPlayer, multiPositionGroups } from "@/lib/multiPosition";
 
 const SCORE_OPTIONS = Array.from({ length: 10 }, (_, index) => index + 1);
 const QUARTER_OPTIONS = [1, 2, 3, 4];
@@ -1016,6 +1017,20 @@ function InjuryBadge({ player, compact = false }: { player: Player; compact?: bo
   );
 }
 
+function MultiPositionBadge({ player, compact = false }: { player: Pick<Player, "attackScore" | "midScore" | "defenseScore">; compact?: boolean }) {
+  if (!isMultiPositionPlayer(player)) return null;
+  const groups = multiPositionGroups(player).map(groupKorean).join("/");
+  const sizeClass = compact ? "px-1 py-0 text-[8px]" : "px-1.5 py-0.5 text-[10px]";
+  return (
+    <span
+      className={`inline-flex shrink-0 items-center rounded-md border border-fuchsia-200 bg-fuchsia-50 font-black leading-none text-fuchsia-700 ${sizeClass}`}
+      title={`멀티포지션: ${groups}`}
+    >
+      멀티
+    </span>
+  );
+}
+
 function injuryBadgeClass(level: 1 | 2 | 3): string {
   if (level === 1) return "border-amber-200 bg-amber-50 text-amber-700";
   if (level === 2) return "border-orange-200 bg-orange-50 text-orange-700";
@@ -1101,6 +1116,7 @@ function TeamResultView({
         <MetricCard label="총합" a={totalA} b={totalB} highlight />
         <MetricCard label="정규" a={s.regularA} b={s.regularB} />
         <MetricCard label="용병" a={s.guestA} b={s.guestB} />
+        <MetricCard label="멀티포지션" a={s.multiPositionA} b={s.multiPositionB} />
         <MetricCard label="포지션 변경자" a={overridesA} b={overridesB} />
       </div>
       {result.relationViolations.length > 0 && (
@@ -1143,6 +1159,7 @@ function TeamResultView({
                   <p className="text-sm font-bold text-blue-900">선택: {formatTeamName(selection.team)} · {sel.name}</p>
                   <StaffRoleBadge role={staffRole} />
                   <InjuryBadge player={sel} />
+                  <MultiPositionBadge player={sel} />
                 </div>
                 <p className="text-xs text-blue-800">주포 {sel.primaryPosition} · 부포 {secondary} · 종합 {formatScore(composite)}</p>
               </div>
@@ -1175,7 +1192,7 @@ function TeamResultView({
           groupScores={{ ATTACK: s.attackScoreB, MID: s.midScoreB, DEFENSE: s.defenseScoreB }}
         />
       </div>
-      <p className="mt-4 text-xs text-slate-500"><span className="font-bold">*</span> 부포지션으로 배정된 선수 · <span className="font-bold">**</span> 인원 균형을 위해 주·부와 무관한 포지션으로 강제 배정된 선수</p>
+      <p className="mt-4 text-xs text-slate-500"><span className="font-bold">*</span> 부포지션으로 배정된 선수 · <span className="font-bold">**</span> 인원 균형을 위해 주·부와 무관한 포지션으로 강제 배정된 선수 · <span className="inline-flex rounded-md border border-fuchsia-200 bg-fuchsia-50 px-1 py-0 text-[10px] font-black leading-none text-fuchsia-700">멀티</span> 공격/미드/수비 중 7점 이상이 2개 이상인 선수</p>
       {variantCount > 1 && !confirmed && (
         <div className="mt-5 flex flex-wrap items-center gap-2 rounded-2xl bg-slate-50 px-3 py-3">
           <span className="text-xs font-semibold text-slate-500">버전</span>
@@ -1283,7 +1300,7 @@ function TeamCard({
                   const composite = p.attackScore + p.midScore + p.defenseScore + effectiveActivityScore(p);
                   const isSwapHint = showSwapHints && selectedComposite != null && Math.abs(composite - selectedComposite) <= 3;
                   const staffRole = extractStaffRole(p.memo);
-                  const hasBadge = staffRole != null || hasInjury(p);
+                  const hasBadge = staffRole != null || hasInjury(p) || isMultiPositionPlayer(p);
                   const baseClass = "min-h-[3.9rem] min-w-0 rounded-lg border px-1 py-1.5 text-center transition";
                   const stateClass = isSelected
                     ? teamSelectedPlayerClass(team)
@@ -1308,6 +1325,7 @@ function TeamCard({
                           <span className="flex min-h-[0.9rem] max-w-full flex-wrap items-center justify-center gap-0.5">
                             <StaffRoleBadge role={staffRole} compact />
                             <InjuryBadge player={p} compact />
+                            <MultiPositionBadge player={p} compact />
                           </span>
                         )}
                       </div>

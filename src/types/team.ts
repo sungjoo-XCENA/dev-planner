@@ -23,6 +23,8 @@ export type TeamBalanceSummary = {
   regularB: number;
   guestA: number;
   guestB: number;
+  multiPositionA: number;
+  multiPositionB: number;
   relationPenalty: number;
   relationViolationCount: number;
   relationHardViolationCount: number;
