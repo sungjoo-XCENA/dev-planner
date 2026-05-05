@@ -713,7 +713,7 @@ export default function Home() {
             <p className="mt-1 break-all text-sm text-slate-600">{csvUrl}</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <a className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold" href={csvUrl} target="_blank" rel="noreferrer">시트 수정하기</a>
+            <a className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold" href={csvUrl} target="_blank" rel="noreferrer">시트 수정</a>
             <button className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold" onClick={() => setShowSheetUrl((v) => !v)}>{showSheetUrl ? "URL 숨기기" : "URL 변경"}</button>
             <button className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white" onClick={handleLoad}>불러오기</button>
             <button className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-700" onClick={handleResetAll}>초기화</button>
@@ -770,11 +770,11 @@ export default function Home() {
           <PositionPicker title="주포지션" includeGk selectedRole={guestRole} primary={guest.primaryPosition} onGk={() => setGuestRole("GK")} onField={(position) => { setGuestRole("FIELD"); setGuest({ ...guest, primaryPosition: position }); }} />
           <div>
             <p className="mb-2 text-sm font-semibold text-slate-600">부포지션</p>
-            <div className="flex flex-wrap gap-2">
-              <button type="button" className={`rounded-full px-3 py-2 text-sm font-bold ${guest.secondaryPositions.length === 0 ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600"}`} onClick={() => setGuest({ ...guest, secondaryPositions: [] })}>없음</button>
+            <div className="grid grid-cols-8 gap-1 sm:flex sm:flex-wrap sm:gap-2">
+              <button type="button" className={`min-w-0 whitespace-nowrap rounded-full px-1 py-1.5 text-[11px] font-bold leading-none sm:px-3 sm:py-2 sm:text-sm ${guest.secondaryPositions.length === 0 ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600"}`} onClick={() => setGuest({ ...guest, secondaryPositions: [] })}>없음</button>
               {POSITIONS.map((position) => {
                 const selected = guest.secondaryPositions[0] === position;
-                return <button key={position} type="button" className={`rounded-full px-3 py-2 text-sm font-bold ${selected ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600"}`} onClick={() => setGuest({ ...guest, secondaryPositions: [position] })}>{position}</button>;
+                return <button key={position} type="button" className={`min-w-0 whitespace-nowrap rounded-full px-1 py-1.5 text-[11px] font-bold leading-none sm:px-3 sm:py-2 sm:text-sm ${selected ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600"}`} onClick={() => setGuest({ ...guest, secondaryPositions: [position] })}>{position}</button>;
               })}
             </div>
           </div>
@@ -889,7 +889,17 @@ function ModeButton({ active, onClick, children }: { active: boolean; onClick: (
 }
 
 function PositionPicker({ title, includeGk, selectedRole, primary, onGk, onField }: { title: string; includeGk?: boolean; selectedRole: "FIELD" | "GK"; primary: FieldPosition; onGk: () => void; onField: (position: FieldPosition) => void }) {
-  return <div><p className="mb-2 text-sm font-semibold text-slate-600">{title}</p><div className="flex flex-wrap gap-2">{includeGk && <button type="button" className={`rounded-full px-3 py-2 text-sm font-bold ${selectedRole === "GK" ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600"}`} onClick={onGk}>GK</button>}{POSITIONS.map((position) => <button key={position} type="button" className={`rounded-full px-3 py-2 text-sm font-bold ${selectedRole === "FIELD" && primary === position ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600"}`} onClick={() => onField(position)}>{position}</button>)}</div></div>;
+  const columnCount = includeGk ? POSITIONS.length + 1 : POSITIONS.length;
+  const buttonClass = (selected: boolean) => `min-w-0 whitespace-nowrap rounded-full px-1 py-1.5 text-[11px] font-bold leading-none sm:px-3 sm:py-2 sm:text-sm ${selected ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600"}`;
+  return (
+    <div>
+      <p className="mb-2 text-sm font-semibold text-slate-600">{title}</p>
+      <div className="grid gap-1 sm:flex sm:flex-wrap sm:gap-2" style={{ gridTemplateColumns: `repeat(${columnCount}, minmax(0, 1fr))` }}>
+        {includeGk && <button type="button" className={buttonClass(selectedRole === "GK")} onClick={onGk}>GK</button>}
+        {POSITIONS.map((position) => <button key={position} type="button" className={buttonClass(selectedRole === "FIELD" && primary === position)} onClick={() => onField(position)}>{position}</button>)}
+      </div>
+    </div>
+  );
 }
 
 function Stat({ label, value }: { label: string; value: string }) {
