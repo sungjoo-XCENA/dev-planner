@@ -973,13 +973,19 @@ function staffRoleBadgeClass(role: StaffRole): string {
   return "bg-cyan-100 text-cyan-800 ring-cyan-200";
 }
 
-function StaffRoleBadge({ role, compact = false, hideOnMobile = false }: { role?: StaffRole | null; compact?: boolean; hideOnMobile?: boolean }) {
+function StaffRoleBadge({ role, compact = false, hideOnMobile = false, imageMode = false }: { role?: StaffRole | null; compact?: boolean; hideOnMobile?: boolean; imageMode?: boolean }) {
   if (!role) return null;
-  const sizeClass = compact ? "px-1.5 py-0.5 text-[9px]" : "px-2 py-0.5 text-[11px]";
+  const sizeClass = imageMode
+    ? compact
+      ? "min-h-4 px-1.5 py-0 text-[9px]"
+      : "min-h-5 px-2 py-0 text-[11px]"
+    : compact
+      ? "px-1.5 py-0.5 text-[9px]"
+      : "px-2 py-0.5 text-[11px]";
   const displayClass = hideOnMobile ? "hidden sm:inline-flex" : "inline-flex";
   return (
     <span className={`${displayClass} shrink-0 items-center rounded-full font-black leading-none ring-1 ${sizeClass} ${staffRoleBadgeClass(role)}`} title={role}>
-      {role}
+      {imageMode ? <span className="inline-block -translate-y-[2px] leading-none">{role}</span> : role}
     </span>
   );
 }
@@ -1401,29 +1407,29 @@ function overviewGroupPillClass(group: PositionGroup): string {
 function TeamOverviewCard({ team, groups, imageMode = false }: { team: TeamName; groups: Record<PositionGroup, OverviewPlayer[]>; imageMode?: boolean }) {
   const columnCount = Math.max(1, ...OVERVIEW_GROUPS.map(({ group }) => groups[group].length));
   const headerClass = imageMode ? "flex items-center justify-between gap-2 px-3 py-3" : "flex items-center justify-between gap-2 px-2 py-2 sm:px-3 sm:py-3";
-  const teamLabelClass = imageMode ? "rounded-full px-3 py-1 text-sm font-black" : "rounded-full px-2.5 py-0.5 text-xs font-black sm:px-3 sm:py-1 sm:text-sm";
+  const teamLabelClass = imageMode ? "inline-flex min-h-8 items-center rounded-full px-3 py-0 text-sm font-black leading-none" : "rounded-full px-2.5 py-0.5 text-xs font-black sm:px-3 sm:py-1 sm:text-sm";
   const bodyClass = imageMode ? "space-y-2 px-3 pb-3" : "space-y-1.5 px-2 pb-2 sm:space-y-2 sm:px-3 sm:pb-3";
   const rowClass = imageMode ? "grid grid-cols-[2.8rem_minmax(0,1fr)] items-center gap-1.5" : "grid grid-cols-[2.1rem_minmax(0,1fr)] items-center gap-1 sm:grid-cols-[2.8rem_minmax(0,1fr)] sm:gap-1.5";
-  const groupLabelClass = imageMode ? "inline-flex justify-center rounded-full px-2.5 py-1 text-xs font-black ring-1" : "inline-flex justify-center rounded-full px-1 py-0.5 text-[10px] font-black ring-1 sm:px-2.5 sm:py-1 sm:text-xs";
+  const groupLabelClass = imageMode ? "inline-flex min-h-7 items-center justify-center rounded-full px-2.5 py-0 text-xs font-black leading-none ring-1" : "inline-flex justify-center rounded-full px-1 py-0.5 text-[10px] font-black ring-1 sm:px-2.5 sm:py-1 sm:text-xs";
   const playerChipClass = imageMode
-    ? "inline-flex h-7 min-w-0 items-center justify-center gap-1 overflow-visible rounded-full px-2.5 py-0 text-xs font-bold leading-none shadow-sm ring-1"
+    ? "inline-flex min-h-8 min-w-0 items-center justify-center gap-1 overflow-visible rounded-full px-2.5 py-0 text-xs font-bold leading-none shadow-sm ring-1"
     : "inline-flex min-h-6 min-w-0 items-center justify-center gap-1 rounded-full px-1 py-0.5 text-[10px] font-bold leading-normal shadow-sm ring-1 sm:min-h-0 sm:px-2.5 sm:py-1 sm:text-xs";
   return (
     <div className={`overflow-hidden rounded-xl border ${teamPanelClass(team)}`}>
       <div className={`h-1.5 ${teamAccentClass(team)}`} />
       <div className={headerClass}>
-        <span className={`${teamLabelClass} ${teamPillClass(team)}`}>{formatTeamName(team)}</span>
+        <span className={`${teamLabelClass} ${teamPillClass(team)}`}>{imageMode ? <span className="inline-block -translate-y-[4px] leading-none">{formatTeamName(team)}</span> : formatTeamName(team)}</span>
         <span className={imageMode ? "text-xs font-bold text-slate-500" : "text-[10px] font-bold text-slate-500 sm:text-xs"}>팀 배정</span>
       </div>
       <div className={bodyClass}>
         {OVERVIEW_GROUPS.map(({ group, label }) => (
           <div key={group} className={rowClass}>
-            <span className={`${groupLabelClass} ${overviewGroupPillClass(group)}`}>{label}</span>
+            <span className={`${groupLabelClass} ${overviewGroupPillClass(group)}`}>{imageMode ? <span className="inline-block -translate-y-[3px] leading-none">{label}</span> : label}</span>
             <div className="grid gap-1" style={{ gridTemplateColumns: `repeat(${columnCount}, minmax(0, 1fr))` }}>
               {groups[group].map((player) => (
                 <span key={player.name} className={`${playerChipClass} ${staffRoleChipClass(player.staffRole)}`}>
-                  <span className={imageMode ? "inline-block min-w-0 overflow-visible whitespace-nowrap leading-none" : "min-w-0 overflow-visible whitespace-nowrap py-0.5 leading-[1.55]"}>{player.name}</span>
-                  <StaffRoleBadge role={player.staffRole} compact hideOnMobile={!imageMode} />
+                  <span className={imageMode ? "inline-block min-w-0 -translate-y-[4px] overflow-visible whitespace-nowrap leading-[1.15]" : "min-w-0 overflow-visible whitespace-nowrap py-0.5 leading-[1.55]"}>{player.name}</span>
+                  <StaffRoleBadge role={player.staffRole} compact hideOnMobile={!imageMode} imageMode={imageMode} />
                 </span>
               ))}
             </div>
@@ -1436,7 +1442,7 @@ function TeamOverviewCard({ team, groups, imageMode = false }: { team: TeamName;
 
 function PitchChip({ name, accent, selected, onClick, count, staffRole, fill = false, imageMode = false }: { name: string; accent?: "gk" | "bench"; selected?: boolean; onClick?: () => void; count?: PlayerCount; staffRole?: StaffRole; fill?: boolean; imageMode?: boolean }) {
   const base = imageMode
-    ? "inline-flex min-h-11 min-w-0 flex-col items-center justify-center overflow-visible rounded-2xl px-3 py-1.5 text-sm font-bold leading-normal shadow whitespace-nowrap transition"
+    ? "inline-flex min-w-0 flex-col items-center justify-center overflow-visible border-0 bg-transparent p-0 text-sm font-bold leading-normal whitespace-nowrap transition"
     : "inline-flex min-h-10 min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl px-1 py-1 text-[11px] font-extrabold leading-normal shadow-sm whitespace-nowrap transition sm:min-h-0 sm:flex-row sm:gap-1 sm:rounded-full sm:px-3 sm:py-1.5 sm:text-sm sm:shadow";
   const defaultPalette = accent === "gk"
     ? "bg-amber-300 text-amber-950"
@@ -1450,12 +1456,14 @@ function PitchChip({ name, accent, selected, onClick, count, staffRole, fill = f
   const sizeClass = imageMode ? "w-auto min-w-[5.25rem]" : fill ? "w-full sm:w-auto" : "w-[4.2rem] sm:w-auto sm:min-w-[4.75rem]";
   if (imageMode) {
     return (
-      <Tag type={onClick ? "button" : undefined} className={`${base} ${sizeClass} ${palette} ${ring}`} onClick={onClick} title={staffRole ? `${name} · ${staffRole}` : undefined}>
-        <span className="inline-flex min-w-0 items-center justify-center gap-1 overflow-visible whitespace-nowrap leading-tight">
-          <span className="inline-block max-w-full overflow-visible whitespace-nowrap leading-tight">{name}</span>
-          <StaffRoleBadge role={staffRole} compact hideOnMobile={false} />
+      <Tag type={onClick ? "button" : undefined} className={`${base} ${sizeClass}`} onClick={onClick} title={staffRole ? `${name} · ${staffRole}` : undefined}>
+        <span className={`inline-flex h-9 min-w-[5.25rem] items-center justify-center overflow-visible rounded-full px-3 py-0 text-sm font-bold leading-none shadow ${palette} ${ring}`}>
+          <span className="inline-flex -translate-y-[6px] items-center justify-center gap-1 overflow-visible leading-none">
+            <span className="inline-block max-w-full overflow-visible whitespace-nowrap leading-[1.15]">{name}</span>
+            <StaffRoleBadge role={staffRole} compact hideOnMobile={false} imageMode />
+          </span>
         </span>
-        {countText && <span className="mt-0.5 block text-center text-[11px] font-black leading-none opacity-70">{countText}</span>}
+        {countText && <span className="mt-0.5 block text-center text-[11px] font-black leading-4 text-slate-600">{countText}</span>}
       </Tag>
     );
   }
