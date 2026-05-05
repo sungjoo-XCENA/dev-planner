@@ -1422,7 +1422,7 @@ function TeamOverviewCard({ team, groups, imageMode = false }: { team: TeamName;
             <div className="grid gap-1" style={{ gridTemplateColumns: `repeat(${columnCount}, minmax(0, 1fr))` }}>
               {groups[group].map((player) => (
                 <span key={player.name} className={`${playerChipClass} ${staffRoleChipClass(player.staffRole)}`}>
-                  <span className={imageMode ? "inline-block -translate-y-px min-w-0 overflow-visible whitespace-nowrap leading-none" : "min-w-0 overflow-visible whitespace-nowrap py-0.5 leading-[1.55]"}>{player.name}</span>
+                  <span className={imageMode ? "inline-block min-w-0 overflow-visible whitespace-nowrap leading-none" : "min-w-0 overflow-visible whitespace-nowrap py-0.5 leading-[1.55]"}>{player.name}</span>
                   <StaffRoleBadge role={player.staffRole} compact hideOnMobile={!imageMode} />
                 </span>
               ))}
@@ -1449,8 +1449,8 @@ function PitchChip({ name, accent, selected, onClick, count, staffRole, fill = f
   const countText = formatCount(count);
   const sizeClass = imageMode ? "w-auto min-w-[4.75rem]" : fill ? "w-full sm:w-auto" : "w-[4.2rem] sm:w-auto sm:min-w-[4.75rem]";
   const contentClass = imageMode ? "flex h-full min-w-0 items-center justify-center gap-1 overflow-visible leading-none" : "flex min-w-0 items-center justify-center gap-0.5 overflow-visible leading-[1.55]";
-  const nameClass = imageMode ? "inline-block -translate-y-px max-w-full overflow-visible whitespace-nowrap leading-none" : "inline-block max-w-full overflow-visible whitespace-nowrap py-0.5 leading-[1.55]";
-  const countClass = imageMode ? "inline-block -translate-y-px text-[10px] font-bold leading-none opacity-70" : "text-[9px] font-black leading-tight opacity-70 sm:ml-1 sm:text-[11px]";
+  const nameClass = imageMode ? "inline-block max-w-full overflow-visible whitespace-nowrap leading-none" : "inline-block max-w-full overflow-visible whitespace-nowrap py-0.5 leading-[1.55]";
+  const countClass = imageMode ? "inline-block text-[10px] font-bold leading-none opacity-70" : "text-[9px] font-black leading-tight opacity-70 sm:ml-1 sm:text-[11px]";
   return (
     <Tag type={onClick ? "button" : undefined} className={`${base} ${sizeClass} ${palette} ${ring}`} onClick={onClick} title={staffRole ? `${name} · ${staffRole}` : undefined}>
       <span className={contentClass}>
