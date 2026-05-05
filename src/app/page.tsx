@@ -1398,24 +1398,32 @@ function overviewGroupPillClass(group: PositionGroup): string {
   return "bg-emerald-100 text-emerald-700 ring-emerald-200";
 }
 
-function TeamOverviewCard({ team, groups }: { team: TeamName; groups: Record<PositionGroup, OverviewPlayer[]> }) {
+function TeamOverviewCard({ team, groups, imageMode = false }: { team: TeamName; groups: Record<PositionGroup, OverviewPlayer[]>; imageMode?: boolean }) {
   const columnCount = Math.max(1, ...OVERVIEW_GROUPS.map(({ group }) => groups[group].length));
+  const headerClass = imageMode ? "flex items-center justify-between gap-2 px-3 py-3" : "flex items-center justify-between gap-2 px-2 py-2 sm:px-3 sm:py-3";
+  const teamLabelClass = imageMode ? "rounded-full px-3 py-1 text-sm font-black" : "rounded-full px-2.5 py-0.5 text-xs font-black sm:px-3 sm:py-1 sm:text-sm";
+  const bodyClass = imageMode ? "space-y-2 px-3 pb-3" : "space-y-1.5 px-2 pb-2 sm:space-y-2 sm:px-3 sm:pb-3";
+  const rowClass = imageMode ? "grid grid-cols-[2.8rem_minmax(0,1fr)] items-center gap-1.5" : "grid grid-cols-[2.1rem_minmax(0,1fr)] items-center gap-1 sm:grid-cols-[2.8rem_minmax(0,1fr)] sm:gap-1.5";
+  const groupLabelClass = imageMode ? "inline-flex justify-center rounded-full px-2.5 py-1 text-xs font-black ring-1" : "inline-flex justify-center rounded-full px-1 py-0.5 text-[10px] font-black ring-1 sm:px-2.5 sm:py-1 sm:text-xs";
+  const playerChipClass = imageMode
+    ? "inline-flex min-h-8 min-w-0 items-center justify-center gap-1 overflow-visible rounded-full px-2.5 py-1.5 text-xs font-bold leading-[1.55] shadow-sm ring-1"
+    : "inline-flex min-h-6 min-w-0 items-center justify-center gap-1 rounded-full px-1 py-0.5 text-[10px] font-bold leading-normal shadow-sm ring-1 sm:min-h-0 sm:px-2.5 sm:py-1 sm:text-xs";
   return (
     <div className={`overflow-hidden rounded-xl border ${teamPanelClass(team)}`}>
       <div className={`h-1.5 ${teamAccentClass(team)}`} />
-      <div className="flex items-center justify-between gap-2 px-2 py-2 sm:px-3 sm:py-3">
-        <span className={`rounded-full px-2.5 py-0.5 text-xs font-black sm:px-3 sm:py-1 sm:text-sm ${teamPillClass(team)}`}>{formatTeamName(team)}</span>
-        <span className="text-[10px] font-bold text-slate-500 sm:text-xs">팀 배정</span>
+      <div className={headerClass}>
+        <span className={`${teamLabelClass} ${teamPillClass(team)}`}>{formatTeamName(team)}</span>
+        <span className={imageMode ? "text-xs font-bold text-slate-500" : "text-[10px] font-bold text-slate-500 sm:text-xs"}>팀 배정</span>
       </div>
-      <div className="space-y-1.5 px-2 pb-2 sm:space-y-2 sm:px-3 sm:pb-3">
+      <div className={bodyClass}>
         {OVERVIEW_GROUPS.map(({ group, label }) => (
-          <div key={group} className="grid grid-cols-[2.1rem_minmax(0,1fr)] items-center gap-1 sm:grid-cols-[2.8rem_minmax(0,1fr)] sm:gap-1.5">
-            <span className={`inline-flex justify-center rounded-full px-1 py-0.5 text-[10px] font-black ring-1 sm:px-2.5 sm:py-1 sm:text-xs ${overviewGroupPillClass(group)}`}>{label}</span>
+          <div key={group} className={rowClass}>
+            <span className={`${groupLabelClass} ${overviewGroupPillClass(group)}`}>{label}</span>
             <div className="grid gap-1" style={{ gridTemplateColumns: `repeat(${columnCount}, minmax(0, 1fr))` }}>
               {groups[group].map((player) => (
-                <span key={player.name} className={`inline-flex h-5 min-w-0 items-center justify-center gap-1 rounded-full px-1 text-[10px] font-bold shadow-sm ring-1 sm:h-auto sm:px-2.5 sm:py-1 sm:text-xs ${staffRoleChipClass(player.staffRole)}`}>
-                  <span className="truncate">{player.name}</span>
-                  <StaffRoleBadge role={player.staffRole} compact hideOnMobile />
+                <span key={player.name} className={`${playerChipClass} ${staffRoleChipClass(player.staffRole)}`}>
+                  <span className="min-w-0 overflow-visible whitespace-nowrap py-0.5 leading-[1.55]">{player.name}</span>
+                  <StaffRoleBadge role={player.staffRole} compact hideOnMobile={!imageMode} />
                 </span>
               ))}
             </div>
@@ -1426,8 +1434,10 @@ function TeamOverviewCard({ team, groups }: { team: TeamName; groups: Record<Pos
   );
 }
 
-function PitchChip({ name, accent, selected, onClick, count, staffRole, fill = false }: { name: string; accent?: "gk" | "bench"; selected?: boolean; onClick?: () => void; count?: PlayerCount; staffRole?: StaffRole; fill?: boolean }) {
-  const base = "inline-flex h-10 min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl px-1 text-[11px] font-extrabold shadow-sm whitespace-nowrap transition sm:h-auto sm:flex-row sm:gap-1 sm:rounded-full sm:px-3 sm:py-1.5 sm:text-sm sm:shadow";
+function PitchChip({ name, accent, selected, onClick, count, staffRole, fill = false, imageMode = false }: { name: string; accent?: "gk" | "bench"; selected?: boolean; onClick?: () => void; count?: PlayerCount; staffRole?: StaffRole; fill?: boolean; imageMode?: boolean }) {
+  const base = imageMode
+    ? "inline-flex min-h-9 min-w-0 items-center justify-center gap-1 overflow-visible rounded-full px-3 py-2 text-sm font-bold leading-[1.55] shadow whitespace-nowrap transition"
+    : "inline-flex min-h-10 min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl px-1 py-1 text-[11px] font-extrabold leading-normal shadow-sm whitespace-nowrap transition sm:min-h-0 sm:flex-row sm:gap-1 sm:rounded-full sm:px-3 sm:py-1.5 sm:text-sm sm:shadow";
   const defaultPalette = accent === "gk"
     ? "bg-amber-300 text-amber-950"
     : accent === "bench"
@@ -1437,29 +1447,31 @@ function PitchChip({ name, accent, selected, onClick, count, staffRole, fill = f
   const ring = selected ? "ring-2 ring-offset-1 ring-yellow-400" : "";
   const Tag = onClick ? "button" : "span";
   const countText = formatCount(count);
+  const sizeClass = imageMode ? "w-auto min-w-[4.75rem]" : fill ? "w-full sm:w-auto" : "w-[4.2rem] sm:w-auto sm:min-w-[4.75rem]";
   return (
-    <Tag type={onClick ? "button" : undefined} className={`${base} ${fill ? "w-full sm:w-auto" : "w-[4.2rem] sm:w-auto sm:min-w-[4.75rem]"} ${palette} ${ring}`} onClick={onClick} title={staffRole ? `${name} · ${staffRole}` : undefined}>
-      <span className="flex min-w-0 items-center justify-center gap-0.5">
-        <span className="inline-block max-w-full truncate py-0.5 leading-snug">{name}</span>
-        <StaffRoleBadge role={staffRole} compact hideOnMobile />
+    <Tag type={onClick ? "button" : undefined} className={`${base} ${sizeClass} ${palette} ${ring}`} onClick={onClick} title={staffRole ? `${name} · ${staffRole}` : undefined}>
+      <span className="flex min-w-0 items-center justify-center gap-0.5 overflow-visible leading-[1.55]">
+        <span className="inline-block max-w-full overflow-visible whitespace-nowrap py-0.5 leading-[1.55]">{name}</span>
+        <StaffRoleBadge role={staffRole} compact hideOnMobile={!imageMode} />
       </span>
-      {countText && <span className="text-[9px] font-black leading-tight opacity-70 sm:ml-1 sm:text-[11px]">{countText}</span>}
+      {countText && <span className={imageMode ? "py-0.5 text-[11px] font-bold leading-[1.55] opacity-70" : "text-[9px] font-black leading-tight opacity-70 sm:ml-1 sm:text-[11px]"}>{countText}</span>}
     </Tag>
   );
 }
 
-function PitchRow({ players, section, selectedKey, onSelect, counts, staffRoles }: { players: string[]; section: LineupSection; selectedKey: string | null; onSelect?: (section: LineupSection, name: string) => void; counts?: Map<string, PlayerCount>; staffRoles?: Map<string, StaffRole> }) {
+function PitchRow({ players, section, selectedKey, onSelect, counts, staffRoles, imageMode = false }: { players: string[]; section: LineupSection; selectedKey: string | null; onSelect?: (section: LineupSection, name: string) => void; counts?: Map<string, PlayerCount>; staffRoles?: Map<string, StaffRole>; imageMode?: boolean }) {
   if (!players.length) return <div className="flex h-6" />;
+  const rowClass = imageMode ? "flex items-center justify-around gap-1.5 px-2" : "grid items-center justify-center gap-1 px-1 sm:flex sm:flex-wrap sm:justify-around sm:gap-1.5 sm:px-2";
   return (
-    <div className="grid items-center justify-center gap-1 px-1 sm:flex sm:flex-wrap sm:justify-around sm:gap-1.5 sm:px-2" style={{ gridTemplateColumns: `repeat(${players.length}, minmax(0, 4.2rem))` }}>
+    <div className={rowClass} style={imageMode ? undefined : { gridTemplateColumns: `repeat(${players.length}, minmax(0, 4.2rem))` }}>
       {players.map((name) => (
-        <PitchChip key={name} name={name} selected={selectedKey === `${section}|${name}`} onClick={onSelect ? () => onSelect(section, name) : undefined} count={counts?.get(name)} staffRole={staffRoles?.get(name)} fill />
+        <PitchChip key={name} name={name} selected={selectedKey === `${section}|${name}`} onClick={onSelect ? () => onSelect(section, name) : undefined} count={counts?.get(name)} staffRole={staffRoles?.get(name)} fill imageMode={imageMode} />
       ))}
     </div>
   );
 }
 
-function Pitch({ title, gk, attack, mid, defense, bench, accent = "emerald", selectedKey, onSelect, counts, staffRoles }: {
+function Pitch({ title, gk, attack, mid, defense, bench, accent = "emerald", selectedKey, onSelect, counts, staffRoles, imageMode = false }: {
   title: string;
   gk: string;
   attack: string[];
@@ -1471,38 +1483,45 @@ function Pitch({ title, gk, attack, mid, defense, bench, accent = "emerald", sel
   onSelect?: (section: LineupSection, name: string) => void;
   counts?: Map<string, PlayerCount>;
   staffRoles?: Map<string, StaffRole>;
+  imageMode?: boolean;
 }) {
   const headerClass = accent === "orange" ? "from-orange-500 to-orange-700" : "from-lime-500 to-emerald-600";
   const fieldClass = accent === "orange" ? "from-orange-400 to-orange-600" : "from-lime-400 to-emerald-600";
   const sel = selectedKey ?? null;
+  const shellClass = imageMode ? "rounded-2xl shadow-lg" : "overflow-hidden rounded-2xl shadow-lg";
+  const headerPaddingClass = imageMode ? "px-5 py-3" : "px-3 py-2 sm:px-5 sm:py-3";
+  const titleClass = imageMode ? "text-lg font-black leading-normal" : "text-base font-black sm:text-lg";
+  const fieldPaddingClass = imageMode ? "p-3" : "p-2 sm:p-3";
+  const rowsClass = imageMode ? "relative flex h-full flex-col justify-around py-2" : "relative flex h-full flex-col justify-around py-1";
+  const benchClass = imageMode ? "rounded-b-2xl bg-slate-50 px-4 py-3" : "bg-slate-50 px-4 py-3";
   return (
-    <div className="overflow-hidden rounded-2xl shadow-lg">
-      <div className={`bg-gradient-to-r ${headerClass} px-3 py-2 text-white sm:px-5 sm:py-3`}>
-        <p className="text-base font-black sm:text-lg">{title}</p>
+    <div className={shellClass}>
+      <div className={`rounded-t-2xl bg-gradient-to-r ${headerClass} ${headerPaddingClass} text-white`}>
+        <p className={titleClass}>{title}</p>
       </div>
-      <div className={`relative bg-gradient-to-b ${fieldClass} p-2 sm:p-3`} style={{ aspectRatio: "5 / 4" }}>
+      <div className={`relative bg-gradient-to-b ${fieldClass} ${fieldPaddingClass}`} style={{ aspectRatio: "5 / 4" }}>
         <div className="absolute inset-3 rounded-lg border-2 border-white/40" />
         <div className="absolute inset-x-3 top-1/2 h-px -translate-y-1/2 bg-white/40" />
         <div className="absolute left-1/2 top-1/2 h-14 w-14 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white/40" />
         <div className="absolute left-1/4 right-1/4 top-3 h-9 rounded-b-md border-2 border-t-0 border-white/40" />
         <div className="absolute left-1/4 right-1/4 bottom-3 h-9 rounded-t-md border-2 border-b-0 border-white/40" />
-        <div className="relative flex h-full flex-col justify-around py-1">
-          <PitchRow players={attack} section="attack" selectedKey={sel} onSelect={onSelect} counts={counts} staffRoles={staffRoles} />
-          <PitchRow players={mid} section="mid" selectedKey={sel} onSelect={onSelect} counts={counts} staffRoles={staffRoles} />
-          <PitchRow players={defense} section="defense" selectedKey={sel} onSelect={onSelect} counts={counts} staffRoles={staffRoles} />
+        <div className={rowsClass}>
+          <PitchRow players={attack} section="attack" selectedKey={sel} onSelect={onSelect} counts={counts} staffRoles={staffRoles} imageMode={imageMode} />
+          <PitchRow players={mid} section="mid" selectedKey={sel} onSelect={onSelect} counts={counts} staffRoles={staffRoles} imageMode={imageMode} />
+          <PitchRow players={defense} section="defense" selectedKey={sel} onSelect={onSelect} counts={counts} staffRoles={staffRoles} imageMode={imageMode} />
           <div className="flex justify-center">
-            <PitchChip name={gk} accent="gk" selected={sel === `gk|${gk}`} onClick={onSelect ? () => onSelect("gk", gk) : undefined} count={counts?.get(gk)} staffRole={staffRoles?.get(gk)} />
+            <PitchChip name={gk} accent="gk" selected={sel === `gk|${gk}`} onClick={onSelect ? () => onSelect("gk", gk) : undefined} count={counts?.get(gk)} staffRole={staffRoles?.get(gk)} imageMode={imageMode} />
           </div>
         </div>
       </div>
-      <div className="bg-slate-50 px-4 py-3">
+      <div className={benchClass}>
         <p className="text-xs font-bold text-slate-500">대기</p>
         <div className="mt-1 flex flex-wrap gap-1">
           {bench.length === 0 ? (
             <span className="rounded-full bg-slate-200 px-2 py-1 text-xs font-semibold text-slate-500">없음</span>
           ) : (
             bench.map((name) => (
-              <PitchChip key={name} name={name} accent="bench" selected={sel === `bench|${name}`} onClick={onSelect ? () => onSelect("bench", name) : undefined} count={counts?.get(name)} staffRole={staffRoles?.get(name)} />
+              <PitchChip key={name} name={name} accent="bench" selected={sel === `bench|${name}`} onClick={onSelect ? () => onSelect("bench", name) : undefined} count={counts?.get(name)} staffRole={staffRoles?.get(name)} imageMode={imageMode} />
             ))
           )}
         </div>
@@ -1811,12 +1830,12 @@ function TeamLineupImage({
   staffRoles: Map<string, StaffRole>;
 }) {
   return (
-    <div ref={refCallback} className="mb-6 rounded-2xl border-2 border-slate-300 bg-white p-5">
+    <div ref={refCallback} className="mb-6 rounded-2xl border-2 border-slate-300 bg-white p-5" style={{ fontFamily: `"Malgun Gothic", "Apple SD Gothic Neo", Arial, sans-serif` }}>
       <div className="mb-3 flex items-baseline justify-center gap-2">
         <h3 className="text-lg font-black text-slate-900">DEV FC {formatTeamName(team)} 라인업</h3>
         <span className="text-sm font-semibold text-slate-500">{today}</span>
       </div>
-      <TeamOverviewCard team={team} groups={groups} />
+      <TeamOverviewCard team={team} groups={groups} imageMode />
       <div className="mt-4 grid gap-4">
         {quarters.map((q) => (
           <Pitch
@@ -1830,6 +1849,7 @@ function TeamLineupImage({
             accent={q.team === "A" ? "emerald" : "orange"}
             counts={counts}
             staffRoles={staffRoles}
+            imageMode
           />
         ))}
       </div>
