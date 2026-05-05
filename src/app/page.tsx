@@ -1453,17 +1453,17 @@ function PitchChip({ name, accent, selected, onClick, count, staffRole, fill = f
   const ring = selected ? "ring-2 ring-offset-1 ring-yellow-400" : "";
   const Tag = onClick ? "button" : "span";
   const countText = formatCount(count);
-  const sizeClass = imageMode ? "w-auto min-w-[5.25rem]" : fill ? "w-full sm:w-auto" : "w-[4.2rem] sm:w-auto sm:min-w-[4.75rem]";
+  const sizeClass = imageMode ? "w-auto min-w-[5.6rem]" : fill ? "w-full sm:w-auto" : "w-[4.2rem] sm:w-auto sm:min-w-[4.75rem]";
   if (imageMode) {
     return (
       <Tag type={onClick ? "button" : undefined} className={`${base} ${sizeClass}`} onClick={onClick} title={staffRole ? `${name} · ${staffRole}` : undefined}>
-        <span className={`inline-flex h-9 min-w-[5.25rem] items-center justify-center overflow-visible rounded-full px-3 py-0 text-sm font-bold leading-none shadow ${palette} ${ring}`}>
-          <span className="inline-flex -translate-y-[6px] items-center justify-center gap-1 overflow-visible leading-none">
+        <span className={`inline-flex min-h-[3.05rem] min-w-[5.6rem] flex-col items-center justify-center overflow-visible rounded-2xl px-3 py-1 text-sm font-bold leading-none shadow ${palette} ${ring}`}>
+          <span className="inline-flex -translate-y-[2px] items-center justify-center gap-1 overflow-visible leading-none">
             <span className="inline-block max-w-full overflow-visible whitespace-nowrap leading-[1.15]">{name}</span>
             <StaffRoleBadge role={staffRole} compact hideOnMobile={false} imageMode />
           </span>
+          {countText && <span className="mt-0.5 inline-block -translate-y-[1px] text-center text-[10px] font-black leading-none text-slate-600">{countText}</span>}
         </span>
-        {countText && <span className="mt-0.5 block text-center text-[11px] font-black leading-4 text-slate-600">{countText}</span>}
       </Tag>
     );
   }
