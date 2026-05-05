@@ -1436,7 +1436,7 @@ function TeamOverviewCard({ team, groups, imageMode = false }: { team: TeamName;
 
 function PitchChip({ name, accent, selected, onClick, count, staffRole, fill = false, imageMode = false }: { name: string; accent?: "gk" | "bench"; selected?: boolean; onClick?: () => void; count?: PlayerCount; staffRole?: StaffRole; fill?: boolean; imageMode?: boolean }) {
   const base = imageMode
-    ? "inline-flex min-h-8 min-w-0 items-center justify-center overflow-visible rounded-full px-3 py-1 text-sm font-bold leading-[1.45] shadow whitespace-nowrap transition"
+    ? "inline-flex min-h-11 min-w-0 flex-col items-center justify-center overflow-visible rounded-2xl px-3 py-1.5 text-sm font-bold leading-normal shadow whitespace-nowrap transition"
     : "inline-flex min-h-10 min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl px-1 py-1 text-[11px] font-extrabold leading-normal shadow-sm whitespace-nowrap transition sm:min-h-0 sm:flex-row sm:gap-1 sm:rounded-full sm:px-3 sm:py-1.5 sm:text-sm sm:shadow";
   const defaultPalette = accent === "gk"
     ? "bg-amber-300 text-amber-950"
@@ -1447,15 +1447,15 @@ function PitchChip({ name, accent, selected, onClick, count, staffRole, fill = f
   const ring = selected ? "ring-2 ring-offset-1 ring-yellow-400" : "";
   const Tag = onClick ? "button" : "span";
   const countText = formatCount(count);
-  const sizeClass = imageMode ? "w-auto min-w-[4.75rem]" : fill ? "w-full sm:w-auto" : "w-[4.2rem] sm:w-auto sm:min-w-[4.75rem]";
+  const sizeClass = imageMode ? "w-auto min-w-[5.25rem]" : fill ? "w-full sm:w-auto" : "w-[4.2rem] sm:w-auto sm:min-w-[4.75rem]";
   if (imageMode) {
     return (
       <Tag type={onClick ? "button" : undefined} className={`${base} ${sizeClass} ${palette} ${ring}`} onClick={onClick} title={staffRole ? `${name} · ${staffRole}` : undefined}>
-        <span className="inline-flex min-w-0 items-center justify-center gap-1.5 overflow-visible whitespace-nowrap leading-[1.45]">
-          <span className="inline-block max-w-full overflow-visible whitespace-nowrap leading-[1.45]">{name}</span>
+        <span className="inline-flex min-w-0 items-center justify-center gap-1 overflow-visible whitespace-nowrap leading-tight">
+          <span className="inline-block max-w-full overflow-visible whitespace-nowrap leading-tight">{name}</span>
           <StaffRoleBadge role={staffRole} compact hideOnMobile={false} />
-          {countText && <span className="inline-block text-[11px] font-bold leading-[1.45] opacity-70">· {countText}</span>}
         </span>
+        {countText && <span className="mt-0.5 block text-center text-[11px] font-black leading-none opacity-70">{countText}</span>}
       </Tag>
     );
   }
