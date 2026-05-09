@@ -5,8 +5,10 @@ import type {
   MatchRecordConflictResponse,
   MatchRecordEvent,
   MatchRecordLoadResponse,
+  MatchRecordPlayerStat,
   MatchRecordSaveRequest,
   MatchRecordSaveResponse,
+  MatchRecordTeamScore,
 } from "@/types/matchRecord";
 import type { Quarter } from "@/types/lineup";
 import type { TeamName } from "@/types/team";
@@ -80,10 +82,10 @@ export async function POST(request: Request) {
       awayGoal: payload.AwayGoal,
       plannerEventCount: payload.PlannerQuarterInfo.events.length,
       message: body.dryRun
-        ? "저장 미리보기 완료"
+        ? "저장 내용 확인 완료"
         : existing
-          ? "기존 MatchInfo에 dev-planner 기록을 PATCH 저장했습니다."
-          : "새 MatchInfo 기록을 저장했습니다.",
+          ? "기존 경기 기록에 수정 내용을 저장했습니다."
+          : "새 경기 기록을 저장했습니다.",
       ...(body.dryRun ? { payload } : {}),
     };
 
@@ -113,13 +115,19 @@ function loadResponse(matchId: string, existing: unknown): MatchRecordLoadRespon
     path: `MatchInfo/${matchId}`,
     matchDate: stringValue(record.MatchDate),
     matchTime: stringValue(record.MatchTime),
+    matchKind: plannerMatchKind(planner.matchKind) ?? legacyMatchKind(record.MatchType),
+    venueName: stringValue(planner.venueName) || stringValue(record.Comment),
     homeTeamName: stringValue(record.HomeTeamName),
     awayTeamName: stringValue(record.AwayTeamName),
     homeGoal: numberValue(record.HomeGoal),
     awayGoal: numberValue(record.AwayGoal),
-    comment: stringValue(record.Comment),
+    comment: stringValue(planner.note),
     hasPlannerQuarterInfo: Boolean(record.PlannerQuarterInfo),
     events: plannerEvents(planner.Events ?? planner.events),
+    summaryStats: plannerSummaryStats(planner.summaryStats),
+    teamScores: plannerTeamScores(planner.teamScores, record.HomeGoal, record.AwayGoal),
+    scoreOverride: plannerScoreOverride(planner.scoreOverride, record.HomeGoal, record.AwayGoal),
+    recordMode: plannerRecordMode(planner.recordMode),
   };
 }
 
@@ -129,7 +137,7 @@ function conflictResponse(matchId: string, path: string, existing: unknown): Mat
     error: "MATCH_EXISTS",
     matchId,
     path,
-    detail: "이미 같은 MatchInfo 키가 있습니다. 기존 기록에 반영하려면 overwriteExisting=true로 다시 저장하세요.",
+    detail: "이미 같은 기록 키가 있습니다. 기존 기록에 반영하려면 기존 기록에 저장을 눌러주세요.",
     existingSummary: {
       matchDate: stringValue(record.MatchDate),
       homeTeamName: stringValue(record.HomeTeamName),
@@ -147,6 +155,20 @@ function stringValue(value: unknown): string | undefined {
 
 function numberValue(value: unknown): number | undefined {
   return typeof value === "number" ? value : undefined;
+}
+
+function plannerMatchKind(value: unknown): "SELF" | "MATCH" | undefined {
+  return value === "SELF" || value === "MATCH" ? value : undefined;
+}
+
+function plannerRecordMode(value: unknown): "SUMMARY" | "QUARTER" | undefined {
+  return value === "SUMMARY" || value === "QUARTER" ? value : undefined;
+}
+
+function legacyMatchKind(value: unknown): "SELF" | "MATCH" | undefined {
+  if (value === 1) return "SELF";
+  if (value === 0) return "MATCH";
+  return undefined;
 }
 
 function plannerEvents(value: unknown): MatchRecordEvent[] {
@@ -170,6 +192,68 @@ function plannerEvents(value: unknown): MatchRecordEvent[] {
       };
     })
     .filter((event): event is MatchRecordEvent => Boolean(event));
+}
+
+function plannerSummaryStats(value: unknown): MatchRecordPlayerStat[] {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .map((item) => {
+      const record = item && typeof item === "object" ? (item as Record<string, unknown>) : {};
+      const team = teamValue(record.team);
+      const player = stringValue(record.player)?.trim() ?? "";
+      const goals = countValue(record.goals);
+      const assists = countValue(record.assists);
+      const quarter = quarterValue(record.quarter);
+
+      if (!team || !player || (goals === 0 && assists === 0)) return null;
+      return {
+        team,
+        player,
+        goals,
+        assists,
+        ...(quarter ? { quarter } : {}),
+      };
+    })
+    .filter((stat): stat is MatchRecordPlayerStat => Boolean(stat));
+}
+
+function plannerTeamScores(value: unknown, homeGoal: unknown, awayGoal: unknown): MatchRecordTeamScore[] {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => {
+        const record = item && typeof item === "object" ? (item as Record<string, unknown>) : {};
+        const team = teamValue(record.team);
+        const goals = countValue(record.goals);
+        const quarter = quarterValue(record.quarter);
+        if (!team || goals === 0) return null;
+        return {
+          team,
+          goals,
+          ...(quarter ? { quarter } : {}),
+        };
+      })
+      .filter((score): score is MatchRecordTeamScore => Boolean(score));
+  }
+
+  return [
+    { team: "A" as const, goals: countValue(awayGoal) },
+    { team: "B" as const, goals: countValue(homeGoal) },
+  ].filter((score) => score.goals > 0);
+}
+
+function plannerScoreOverride(value: unknown, homeGoal: unknown, awayGoal: unknown): Partial<Record<TeamName, number>> {
+  const record = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+  return {
+    A: countValue(record.A ?? awayGoal),
+    B: countValue(record.B ?? homeGoal),
+  };
+}
+
+function countValue(value: unknown): number {
+  const count = Math.floor(Number(value));
+  if (!Number.isFinite(count) || count < 0) return 0;
+  return Math.min(count, 20);
 }
 
 function quarterValue(value: unknown): Quarter | null {
