@@ -20,6 +20,7 @@
     summaryStats: Object.create(null),
     events: [],
     roles: Object.create(null),
+    standaloneKey: "",
     editModalOpen: false,
     editDate: todayInputValue(),
     options: { loaded: false, stadiums: [], teams: [], error: "" },
@@ -338,12 +339,52 @@
     records.sort(function (a, b) {
       return a.quarter === b.quarter ? a.team.localeCompare(b.team) : a.quarter - b.quarter;
     });
-    return records;
+    return records.length > 0 ? records : parseStandaloneRecords(section);
   }
 
   function hasStandaloneRecordAnchor() {
     var section = document.getElementById("lineup-result");
     return Boolean(section && section.getAttribute("data-mrw-standalone") === "true");
+  }
+
+  function standaloneData() {
+    var section = document.getElementById("lineup-result");
+    var node = section && section.querySelector("[data-mrw-records]");
+    if (!node) return {};
+    try {
+      return JSON.parse(node.textContent || "{}") || {};
+    } catch {
+      return {};
+    }
+  }
+
+  function parseStandaloneRecords(section) {
+    var data = standaloneData();
+    if (data.key && state.standaloneKey !== data.key) {
+      resetRecordEntryState();
+      state.standaloneKey = data.key;
+    }
+    applyStaffRoles(data.staffRoles);
+    if (!Array.isArray(data.records)) return [];
+    return data.records.map(function (record) {
+      var team = record && record.team === "B" ? "B" : "A";
+      return {
+        quarter: selectedQuarterValue(record && record.quarter) || 1,
+        team: team,
+        attack: normalizeStandaloneNames(record && record.attack),
+        mid: normalizeStandaloneNames(record && record.mid),
+        defense: normalizeStandaloneNames(record && record.defense),
+        gk: playerName(record && record.gk) || "없음",
+        bench: normalizeStandaloneNames(record && record.bench),
+        warnings: [],
+      };
+    }).filter(function (record) {
+      return record.attack.length || record.mid.length || record.defense.length || record.bench.length || record.gk !== "없음";
+    });
+  }
+
+  function normalizeStandaloneNames(value) {
+    return uniqueNames(Array.isArray(value) ? value : []);
   }
 
   function emptyRecord(team) {
@@ -539,7 +580,7 @@
     state.teamScores = Object.create(null);
     state.conflict = null;
     state.loadedRecord = null;
-    state.loadedPlayers = emptyLoadedPlayers();
+    state.loadedPlayers = null;
     state.loadedForm = null;
     state.selectedScope = "";
   }
@@ -614,9 +655,11 @@
 
   function formState(existing) {
     var loaded = state.loadedForm || {};
+    var standalone = standaloneData();
     var dateValue = valueOf(existing, "date", todayInputValue());
     var duration = normalizeDuration(valueOf(existing, "duration", loaded.duration || "2"));
-    var kind = valueOf(existing, "matchKind", loaded.matchKind || state.matchKind) === "MATCH" ? "MATCH" : "SELF";
+    var defaultKind = standalone.matchKind === "MATCH" ? "MATCH" : state.matchKind;
+    var kind = valueOf(existing, "matchKind", loaded.matchKind || defaultKind) === "MATCH" ? "MATCH" : "SELF";
     state.matchKind = kind;
     return {
       date: valueOf(existing, "date", loaded.date || dateValue),
@@ -624,8 +667,8 @@
       startTime: valueOf(existing, "startTime", loaded.startTime || "20:00"),
       duration: duration,
       matchKind: valueOf(existing, "matchKind", loaded.matchKind || kind) === "MATCH" ? "MATCH" : "SELF",
-      venueName: valueOf(existing, "venueName", loaded.venueName || preferredVenue()),
-      awayTeamName: valueOf(existing, "awayTeam", loaded.awayTeamName || ""),
+      venueName: valueOf(existing, "venueName", loaded.venueName || standalone.venueName || preferredVenue()),
+      awayTeamName: valueOf(existing, "awayTeam", loaded.awayTeamName || standalone.awayTeamName || ""),
       memo: valueOf(existing, "memo", loaded.memo || ""),
     };
   }
