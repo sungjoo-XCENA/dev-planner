@@ -239,7 +239,7 @@ function pickFormation(
   }
 
   let best: FormationPlan | undefined;
-  for (const plan of states.values()) {
+  for (const plan of Array.from(states.values())) {
     if (isCompletePlan(plan) && isBetterPlan(plan, best)) best = plan;
   }
   if (!best) throw new Error("매치 라인업을 만들 수 없습니다. 포지션과 인원을 확인해주세요.");
