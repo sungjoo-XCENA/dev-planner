@@ -11,6 +11,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="ko">
       <body>
         {children}
+        <script src="/player-add-guest-fix.js" defer />
         <script src="/match-record-widget.js" defer />
       </body>
     </html>
