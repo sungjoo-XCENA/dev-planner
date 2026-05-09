@@ -2,7 +2,7 @@
   "use strict";
 
   var STYLE_ID = "match-record-widget-polish-style";
-  var ROLE_PATTERN = /(코치|감독|단장)$/;
+  var ROLE_PATTERN = /\s*(코치|감독|단장)$/;
 
   function installStyle() {
     if (document.getElementById(STYLE_ID)) return;
@@ -32,7 +32,19 @@
       if (!match) return;
       node.textContent = text.replace(ROLE_PATTERN, "").trim();
       var nameWrap = node.parentElement;
-      if (!nameWrap || nameWrap.querySelector(".mrw-role")) return;
+      if (!nameWrap) return;
+      var existing = nameWrap.querySelectorAll(".mrw-role");
+      if (existing.length > 0) {
+        Array.prototype.forEach.call(existing, function (badge, index) {
+          if (index === 0) {
+            badge.textContent = match[1];
+            badge.className = "mrw-role " + roleClass(match[1]);
+          } else {
+            badge.remove();
+          }
+        });
+        return;
+      }
       var badge = document.createElement("span");
       badge.className = "mrw-role " + roleClass(match[1]);
       badge.textContent = match[1];
@@ -48,6 +60,14 @@
       });
   }
 
+  function hideMemoField() {
+    document.querySelectorAll("#match-record-widget-panel [data-mrw=\"memo\"]").forEach(function (memo) {
+      memo.value = "";
+      var field = memo.closest(".mrw-field");
+      if (field) field.style.display = "none";
+    });
+  }
+
   function roleClass(role) {
     if (role === "감독") return "mrw-role-manager";
     if (role === "단장") return "mrw-role-director";
@@ -58,6 +78,7 @@
     installStyle();
     stripAttachedRoles();
     removeInactiveEditButtons();
+    hideMemoField();
   }
 
   if (document.readyState === "loading") {

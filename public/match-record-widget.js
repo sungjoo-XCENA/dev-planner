@@ -9,9 +9,12 @@
     status: "",
     conflict: null,
     loadedRecord: null,
+    loadedPlayers: null,
+    loadedForm: null,
     editingMatchId: "",
     selectedScope: "",
     matchKind: "SELF",
+    teamLabels: { A: TEAM_LABELS.A, B: TEAM_LABELS.B },
     teamScores: Object.create(null),
     summaryStats: Object.create(null),
     events: [],
@@ -59,36 +62,33 @@
       ".mrw-layout{display:grid;grid-template-columns:minmax(0,1.18fr) minmax(280px,.82fr);gap:14px;margin-top:14px;align-items:start}",
       ".mrw-main{min-width:0}",
       ".mrw-scoreboard{border-radius:18px;background:#0f172a;padding:14px;color:#fff}",
-      ".mrw-score-row{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:12px}",
+      ".mrw-score-row{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:28px}",
       ".mrw-side-wrap{position:relative;min-width:0}",
-      ".mrw-side{width:100%;border:1px solid rgba(255,255,255,.2);border-radius:16px;padding:12px;color:#fff;font-family:inherit;text-align:left;cursor:pointer;appearance:none;-webkit-appearance:none;box-shadow:0 8px 18px rgba(15,23,42,.12);transition:transform .12s ease,box-shadow .12s ease}",
+      ".mrw-side{width:100%;min-height:86px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;border:1px solid rgba(255,255,255,.2);border-radius:16px;padding:14px 42px;color:#fff;font-family:inherit;text-align:center;cursor:pointer;appearance:none;-webkit-appearance:none;box-shadow:0 8px 18px rgba(15,23,42,.12);transition:transform .12s ease,box-shadow .12s ease}",
       ".mrw-side:hover{transform:translateY(-1px);box-shadow:0 12px 24px rgba(15,23,42,.18)}",
       ".mrw-side:focus-visible{outline:3px solid rgba(255,255,255,.8);outline-offset:2px}",
       ".mrw-side-a{background:linear-gradient(135deg,#84cc16,#10b981)}",
       ".mrw-side-b{background:linear-gradient(135deg,#fb923c,#ea580c)}",
-      ".mrw-team-name{font-size:13px;font-weight:950}",
-      ".mrw-score-num{font-size:42px;font-weight:950;line-height:1}",
-      ".mrw-score-hint{margin-top:4px;color:rgba(255,255,255,.86);font-size:11px;font-weight:900}",
+      ".mrw-team-name{max-width:100%;font-size:13px;font-weight:950;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
+      ".mrw-score-num{font-size:48px;font-weight:950;line-height:.95;text-align:center}",
       ".mrw-score-sep{font-size:24px;font-weight:950;color:#cbd5e1}",
-      ".mrw-score-minus{position:absolute;right:10px;top:10px;border:0;border-radius:999px;background:rgba(255,255,255,.22);color:#fff;width:28px;height:28px;font-size:16px;font-weight:950;cursor:pointer}",
-      ".mrw-qscore{margin-top:10px;display:flex;justify-content:center;gap:8px;flex-wrap:wrap;color:#e2e8f0;font-size:12px;font-weight:900}",
-      ".mrw-qscore span{border-radius:999px;background:rgba(255,255,255,.12);padding:6px 9px}",
+      ".mrw-score-minus{position:absolute;right:8px;top:8px;z-index:2;display:flex;align-items:center;justify-content:center;border:0;border-radius:999px;background:rgba(15,23,42,.36);color:#fff;width:30px;height:30px;font-size:18px;font-weight:950;line-height:1;cursor:pointer;box-shadow:0 4px 12px rgba(15,23,42,.18)}",
       ".mrw-stats{margin-top:12px;display:grid;grid-template-columns:1fr 1fr;gap:10px}",
       ".mrw-stat-team{border:1px solid #e2e8f0;border-radius:18px;background:#fff;overflow:hidden}",
       ".mrw-stat-team-title{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:12px;background:#f8fafc;border-bottom:1px solid #eef2f7;font-size:13px;font-weight:950;color:#0f172a}",
       ".mrw-stat-total{color:#64748b;font-size:12px;font-weight:900}",
       ".mrw-stat-list{display:grid;gap:7px;padding:10px}",
-      ".mrw-stat-row{display:grid;grid-template-columns:minmax(90px,1fr) auto auto;align-items:center;gap:8px;border:1px solid #e2e8f0;border-radius:14px;background:#fff;padding:8px}",
+      ".mrw-stat-row{display:grid;grid-template-columns:minmax(78px,1fr) auto auto;align-items:center;gap:6px;border:1px solid #e2e8f0;border-radius:14px;background:#fff;padding:7px}",
       ".mrw-stat-name{min-width:0;display:flex;align-items:center;gap:6px;flex-wrap:wrap;color:#0f172a;font-size:13px;font-weight:950}",
       ".mrw-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
       ".mrw-role{display:inline-flex;align-items:center;border-radius:999px;padding:2px 6px;font-size:10px;font-weight:950;line-height:1.1}",
       ".mrw-role-coach{background:#dff9fb;color:#0e7490}",
       ".mrw-role-manager{background:#ede9fe;color:#6d28d9}",
       ".mrw-role-director{background:#fef3c7;color:#92400e}",
-      ".mrw-counter{display:grid;grid-template-columns:auto 28px 22px 28px;align-items:center;gap:3px;border-radius:999px;background:#f1f5f9;padding:4px}",
-      ".mrw-counter-label{color:#64748b;font-size:10px;font-weight:950;text-align:center}",
-      ".mrw-counter button{border:0;border-radius:999px;background:#fff;color:#0f172a;width:26px;height:26px;font-size:14px;font-weight:950;cursor:pointer;box-shadow:0 1px 3px rgba(15,23,42,.08)}",
-      ".mrw-counter-value{text-align:center;color:#0f172a;font-size:13px;font-weight:950}",
+      ".mrw-counter{display:grid;grid-template-columns:24px 24px 16px 24px;align-items:center;gap:2px;border-radius:999px;background:#f1f5f9;padding:4px;min-width:98px;box-sizing:border-box}",
+      ".mrw-counter-label{color:#64748b;font-size:10px;font-weight:950;text-align:center;white-space:nowrap;line-height:1}",
+      ".mrw-counter button{border:0;border-radius:999px;background:#fff;color:#0f172a;width:24px;height:24px;font-size:13px;font-weight:950;line-height:1;cursor:pointer;box-shadow:0 1px 3px rgba(15,23,42,.08)}",
+      ".mrw-counter-value{text-align:center;color:#0f172a;font-size:13px;font-weight:950;line-height:1}",
       ".mrw-log{border:1px solid #e2e8f0;border-radius:18px;background:#fff;overflow:hidden}",
       ".mrw-log-head{display:flex;align-items:center;justify-content:space-between;gap:8px;background:#f8fafc;padding:12px;border-bottom:1px solid #e2e8f0}",
       ".mrw-log-title{font-size:14px;font-weight:950}",
@@ -115,7 +115,7 @@
       ".mrw-modal-foot{display:flex;gap:8px;justify-content:flex-end;background:#fff;border-top:1px solid #e2e8f0;padding:12px 14px}",
       ".mrw-icon-close{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;border:0;border-radius:999px;background:#e2e8f0;color:#334155;font-size:20px;font-weight:950;line-height:1;cursor:pointer}",
       ".mrw-empty{color:#94a3b8;font-size:12px;font-weight:800}",
-      "@media(max-width:760px){.mrw-card{padding:14px;border-radius:18px}.mrw-title{font-size:18px}.mrw-meta{grid-template-columns:repeat(2,minmax(0,1fr))}.mrw-wide{grid-column:1/-1}.mrw-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.mrw-summary-item:last-child{grid-column:1/-1}.mrw-mode-head{align-items:stretch}.mrw-scope{width:100%}.mrw-scope select{flex:1}.mrw-layout{grid-template-columns:1fr}.mrw-score-num{font-size:36px}.mrw-score-row{gap:8px}.mrw-stats{grid-template-columns:1fr}.mrw-stat-list{gap:5px}.mrw-stat-row{grid-template-columns:minmax(78px,1fr) auto auto;gap:5px;padding:6px}.mrw-stat-name{font-size:12px;line-height:1.2}.mrw-name{white-space:normal}.mrw-role{padding:1px 5px;font-size:9px}.mrw-counter{grid-template-columns:auto 23px 16px 23px;gap:2px;padding:3px 4px}.mrw-counter-label{font-size:9px;line-height:1;text-align:left}.mrw-counter button{width:23px;height:23px;font-size:13px}.mrw-counter-value{font-size:12px}.mrw-events{max-height:none}.mrw-actions .mrw-button{flex:1 1 100%}.mrw-modal-backdrop{align-items:flex-end;padding:0}.mrw-modal{width:100%;border-radius:22px 22px 0 0;max-height:84vh}}",
+      "@media(max-width:760px){.mrw-card{padding:14px;border-radius:18px}.mrw-title{font-size:18px}.mrw-meta{grid-template-columns:repeat(2,minmax(0,1fr))}.mrw-wide{grid-column:1/-1}.mrw-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.mrw-summary-item:last-child{grid-column:1/-1}.mrw-mode-head{align-items:stretch}.mrw-scope{width:100%}.mrw-scope select{flex:1}.mrw-layout{grid-template-columns:1fr}.mrw-score-num{font-size:40px}.mrw-score-row{gap:12px}.mrw-side{min-height:76px;padding:12px 36px}.mrw-team-name{font-size:12px}.mrw-score-minus{right:6px;top:6px;width:28px;height:28px;font-size:17px}.mrw-stats{grid-template-columns:1fr}.mrw-stat-list{gap:5px}.mrw-stat-row{grid-template-columns:minmax(78px,1fr) auto auto;gap:5px;padding:6px}.mrw-stat-name{font-size:12px;line-height:1.2}.mrw-name{white-space:normal}.mrw-role{padding:1px 5px;font-size:9px}.mrw-counter{grid-template-columns:22px 23px 16px 23px;gap:2px;padding:3px 4px;min-width:92px}.mrw-counter-label{font-size:9px;line-height:1}.mrw-counter button{width:23px;height:23px;font-size:13px}.mrw-counter-value{font-size:12px}.mrw-events{max-height:none}.mrw-actions .mrw-button{flex:1 1 100%}.mrw-modal-backdrop{align-items:flex-end;padding:0}.mrw-modal{width:100%;border-radius:22px 22px 0 0;max-height:84vh}}",
     ].join("\n");
     document.head.appendChild(style);
   }
@@ -190,7 +190,7 @@
     return String(value || "")
       .replace(/\b\dQ(?:-GK\d)?\b/g, " ")
       .replace(/\bGK\d\b/g, " ")
-      .replace(/\b(코치|감독|단장)\b/g, " ")
+      .replace(/(코치|감독|단장)/g, " ")
       .replace(/[·+]/g, " ")
       .replace(/\s+/g, " ")
       .trim();
@@ -202,6 +202,12 @@
     if (text.indexOf("감독") >= 0) return "감독";
     if (text.indexOf("코치") >= 0) return "코치";
     return "";
+  }
+
+  function playerName(value) {
+    var name = cleanName(value);
+    rememberRole(name, roleFromText(value));
+    return name;
   }
 
   function rememberRole(name, role) {
@@ -222,7 +228,7 @@
     var seen = Object.create(null);
     var out = [];
     values.forEach(function (value) {
-      var name = cleanName(value);
+      var name = playerName(value);
       if (!name || name === "없음" || seen[name]) return;
       seen[name] = true;
       out.push(name);
@@ -310,10 +316,64 @@
 
   function teamPlayers(records, team, quarter) {
     return uniqueNames(records
-      .filter(function (record) { return record.team === team && (!quarter || record.quarter === quarter); })
+      .filter(function (record) { return record.team === team && (!quarter || !record.quarter || record.quarter === quarter); })
       .reduce(function (acc, record) {
         return acc.concat(record.attack, record.mid, record.defense, record.gk, record.bench);
       }, []));
+  }
+
+  function normalizeLoadedPlayers(players) {
+    var source = players && typeof players === "object" ? players : {};
+    var loaded = {
+      A: normalizeLoadedTeam(source.A),
+      B: normalizeLoadedTeam(source.B),
+    };
+    return loaded.A.length || loaded.B.length ? loaded : null;
+  }
+
+  function normalizeLoadedTeam(players) {
+    return uniqueNames((Array.isArray(players) ? players : []).map(function (value) {
+      return loadedPlayerName(value);
+    }));
+  }
+
+  function loadedPlayerName(value) {
+    if (typeof value === "string") return value;
+    if (value && typeof value === "object") {
+      return value.Name || value.name || value.PlayerName || value.playerName || "";
+    }
+    return "";
+  }
+
+  function displayRecords(fallbackRecords) {
+    if (!state.loadedPlayers) return fallbackRecords;
+    return ["A", "B"].map(function (team) {
+      return {
+        team: team,
+        attack: state.loadedPlayers[team] || [],
+        mid: [],
+        defense: [],
+        gk: "",
+        bench: [],
+        warnings: [],
+      };
+    });
+  }
+
+  function payloadRecords(fallbackRecords) {
+    if (!state.loadedPlayers) return fallbackRecords;
+    return ["A", "B"].map(function (team) {
+      return {
+        quarter: 1,
+        team: team,
+        attack: state.loadedPlayers[team] || [],
+        mid: [],
+        defense: [],
+        gk: "?놁쓬",
+        bench: [],
+        warnings: [],
+      };
+    });
   }
 
   function scoreKey(team, quarter) {
@@ -351,6 +411,7 @@
   }
 
   function setSummaryStat(team, player, field, delta, quarter) {
+    player = playerName(player);
     if (!player) return;
     var key = statKey(team, player, quarter);
     var current = state.summaryStats[key] || { team: team, player: player, goals: 0, assists: 0, quarter: quarter };
@@ -363,6 +424,7 @@
   }
 
   function removeSummaryStat(team, player, quarter) {
+    player = playerName(player);
     delete state.summaryStats[statKey(team, player, quarter)];
     state.status = "";
     renderPanel();
@@ -397,13 +459,14 @@
     state.summaryStats = Object.create(null);
     (Array.isArray(stats) ? stats : []).forEach(function (stat) {
       if (!stat || !stat.player || (stat.team !== "A" && stat.team !== "B")) return;
+      var player = playerName(stat.player);
       var quarter = selectedQuarterValue(stat.quarter);
       var goals = clampCount(stat.goals);
       var assists = clampCount(stat.assists);
-      if (goals <= 0 && assists <= 0) return;
-      state.summaryStats[statKey(stat.team, stat.player, quarter)] = {
+      if (!player || (goals <= 0 && assists <= 0)) return;
+      state.summaryStats[statKey(stat.team, player, quarter)] = {
         team: stat.team,
-        player: stat.player,
+        player: player,
         goals: goals,
         assists: assists,
         quarter: quarter,
@@ -426,6 +489,21 @@
         if (goals > 0) state.teamScores[scoreKey(team)] = { team: team, goals: goals };
       });
     }
+  }
+
+  function emptyLoadedPlayers() {
+    return { A: [], B: [] };
+  }
+
+  function resetRecordEntryState() {
+    state.events = [];
+    state.summaryStats = Object.create(null);
+    state.teamScores = Object.create(null);
+    state.conflict = null;
+    state.loadedRecord = null;
+    state.loadedPlayers = emptyLoadedPlayers();
+    state.loadedForm = null;
+    state.selectedScope = "";
   }
 
   function selectedQuarterValue(value) {
@@ -497,36 +575,53 @@
   }
 
   function formState(existing) {
+    var loaded = state.loadedForm || {};
     var dateValue = valueOf(existing, "date", todayInputValue());
-    var duration = normalizeDuration(valueOf(existing, "duration", "2"));
-    var kind = valueOf(existing, "matchKind", state.matchKind) === "MATCH" ? "MATCH" : "SELF";
+    var duration = normalizeDuration(valueOf(existing, "duration", loaded.duration || "2"));
+    var kind = valueOf(existing, "matchKind", loaded.matchKind || state.matchKind) === "MATCH" ? "MATCH" : "SELF";
     state.matchKind = kind;
     return {
-      date: dateValue,
-      matchId: valueOf(existing, "matchId", compactDate(dateValue)),
-      startTime: valueOf(existing, "startTime", "20:00"),
+      date: valueOf(existing, "date", loaded.date || dateValue),
+      matchId: valueOf(existing, "matchId", loaded.matchId || compactDate(dateValue)),
+      startTime: valueOf(existing, "startTime", loaded.startTime || "20:00"),
       duration: duration,
-      matchKind: kind,
-      venueName: valueOf(existing, "venueName", preferredVenue()),
-      awayTeamName: valueOf(existing, "awayTeam", ""),
-      memo: valueOf(existing, "memo", ""),
+      matchKind: valueOf(existing, "matchKind", loaded.matchKind || kind) === "MATCH" ? "MATCH" : "SELF",
+      venueName: valueOf(existing, "venueName", loaded.venueName || preferredVenue()),
+      awayTeamName: valueOf(existing, "awayTeam", loaded.awayTeamName || ""),
+      memo: valueOf(existing, "memo", loaded.memo || ""),
     };
   }
 
   function valueOf(panel, key, fallback) {
+    if (panel && typeof panel.querySelector !== "function" && typeof panel === "object") {
+      var rawValue = panel[key];
+      return typeof rawValue === "string" ? rawValue : fallback;
+    }
     var element = panel && panel.querySelector("[data-mrw=" + key + "]");
     if (!element) return fallback;
     return typeof element.value === "string" ? element.value : (element.textContent || fallback);
   }
 
+  function setTeamLabels(form) {
+    state.teamLabels = form.matchKind === "MATCH"
+      ? { A: form.awayTeamName || firstAwayTeam(), B: "DevUtd" }
+      : { A: TEAM_LABELS.A, B: TEAM_LABELS.B };
+  }
+
+  function teamLabel(team) {
+    return (state.teamLabels && state.teamLabels[team]) || TEAM_LABELS[team];
+  }
+
   function renderPanel() {
-    var records = parseQuarterCards();
+    var lineupRecords = parseQuarterCards();
+    var records = displayRecords(lineupRecords);
     if (records.length === 0) return;
 
     installStyle();
     hideNativeRecordPanel();
     var existing = document.getElementById(PANEL_ID);
     var form = formState(existing);
+    setTeamLabels(form);
     var quarter = selectedQuarter();
     var score = teamScoreSummary();
 
@@ -629,17 +724,12 @@
       scoreButton("A", score.A, quarter),
       "<div class=\"mrw-score-sep\">:</div>",
       scoreButton("B", score.B, quarter),
-      "</div><div class=\"mrw-qscore\"><span>" + scopeLabel(quarter) + " 점수판 클릭 시 +1</span><span>개인 도움 " + totalAssists() + "</span></div></div>",
+      "</div></div>",
     ].join("");
   }
 
   function scoreButton(team, goals, quarter) {
-    return "<div class=\"mrw-side-wrap\"><button type=\"button\" class=\"mrw-side mrw-side-" + team.toLowerCase() + "\" data-mrw-score-team=\"" + team + "\" data-mrw-score-adjust=\"1\"><span class=\"mrw-team-name\">" + TEAM_LABELS[team] + "</span><span class=\"mrw-score-num\">" + goals + "</span><span class=\"mrw-score-hint\">클릭 +1</span></button><button type=\"button\" class=\"mrw-score-minus\" data-mrw-score-team=\"" + team + "\" data-mrw-score-adjust=\"-1\" aria-label=\"" + TEAM_LABELS[team] + " 1점 빼기\">-</button></div>";
-  }
-
-  function totalAssists() {
-    return summaryStatsArray().reduce(function (sum, stat) { return sum + (Number(stat.assists) || 0); }, 0)
-      + state.events.filter(function (event) { return event.assist; }).length;
+    return "<div class=\"mrw-side-wrap\"><button type=\"button\" class=\"mrw-side mrw-side-" + team.toLowerCase() + "\" data-mrw-score-team=\"" + team + "\" data-mrw-score-adjust=\"1\"><span class=\"mrw-team-name\">" + teamLabel(team) + "</span><span class=\"mrw-score-num\">" + goals + "</span></button><button type=\"button\" class=\"mrw-score-minus\" data-mrw-score-team=\"" + team + "\" data-mrw-score-adjust=\"-1\" aria-label=\"" + teamLabel(team) + " 1점 빼기\">-</button></div>";
   }
 
   function renderStatTeams(records, quarter) {
@@ -650,7 +740,7 @@
     var players = teamPlayers(records, team, quarter);
     var totals = statTotals(team, quarter);
     return [
-      "<div class=\"mrw-stat-team\"><div class=\"mrw-stat-team-title\"><span>" + TEAM_LABELS[team] + "</span><span class=\"mrw-stat-total\">골 " + totals.goals + " · 도움 " + totals.assists + "</span></div>",
+      "<div class=\"mrw-stat-team\"><div class=\"mrw-stat-team-title\"><span>" + teamLabel(team) + "</span><span class=\"mrw-stat-total\">골 " + totals.goals + " · 도움 " + totals.assists + "</span></div>",
       "<div class=\"mrw-stat-list\">",
       players.length ? players.map(function (player) { return renderPlayerStat(team, player, quarter); }).join("") : "<div class=\"mrw-empty\">선수 정보 없음</div>",
       "</div></div>",
@@ -658,6 +748,7 @@
   }
 
   function renderPlayerStat(team, player, quarter) {
+    player = playerName(player);
     var stat = state.summaryStats[statKey(team, player, quarter)] || { goals: 0, assists: 0 };
     return [
       "<div class=\"mrw-stat-row\"><div class=\"mrw-stat-name\"><span class=\"mrw-name\">" + escapeHtml(player) + "</span>" + renderRole(player) + "</div>",
@@ -681,20 +772,21 @@
   function renderRecentLog(score) {
     var items = [];
     teamScoresArray().forEach(function (entry) {
-      items.push({ type: "score", team: entry.team, quarter: entry.quarter, title: TEAM_LABELS[entry.team] + " 팀 스코어", sub: scopeLabel(entry.quarter) + " · 골 " + entry.goals });
+      items.push({ type: "score", team: entry.team, quarter: entry.quarter, title: teamLabel(entry.team) + " 팀 스코어", sub: scopeLabel(entry.quarter) + " · 골 " + entry.goals });
     });
     summaryStatsArray().forEach(function (entry) {
       var parts = [];
       if (entry.goals > 0) parts.push("골 " + entry.goals);
       if (entry.assists > 0) parts.push("도움 " + entry.assists);
-      items.push({ type: "stat", team: entry.team, player: entry.player, quarter: entry.quarter, title: TEAM_LABELS[entry.team] + " · " + entry.player, sub: scopeLabel(entry.quarter) + " · " + parts.join(" · ") });
+      var player = playerName(entry.player);
+      items.push({ type: "stat", team: entry.team, player: player, quarter: entry.quarter, title: teamLabel(entry.team) + " · " + player, sub: scopeLabel(entry.quarter) + " · " + parts.join(" · ") });
     });
     state.events.forEach(function (event, index) {
-      items.push({ type: "event", index: index, title: TEAM_LABELS[event.team] + " · " + event.scorer, sub: scopeLabel(event.quarter) + " · 골 1" + (event.assist ? " · 도움 " + event.assist : "") });
+      items.push({ type: "event", index: index, title: teamLabel(event.team) + " · " + event.scorer, sub: scopeLabel(event.quarter) + " · 골 1" + (event.assist ? " · 도움 " + event.assist : "") });
     });
 
     return [
-      "<div class=\"mrw-log\"><div class=\"mrw-log-head\"><div class=\"mrw-log-title\">최근 기록</div><div class=\"mrw-log-score\">" + TEAM_LABELS.A + " " + score.A + " : " + score.B + " " + TEAM_LABELS.B + "</div></div>",
+      "<div class=\"mrw-log\"><div class=\"mrw-log-head\"><div class=\"mrw-log-title\">최근 기록</div><div class=\"mrw-log-score\">" + teamLabel("A") + " " + score.A + " : " + score.B + " " + teamLabel("B") + "</div></div>",
       "<div class=\"mrw-events\">",
       items.length ? items.map(renderLogItem).join("") : "<div class=\"mrw-empty\">아직 입력한 기록이 없습니다.</div>",
       "</div></div>",
@@ -705,10 +797,8 @@
     var edit = "";
     var remove = "";
     if (item.type === "score") {
-      edit = "<button type=\"button\" class=\"mrw-small-btn\" data-mrw-edit-score-team=\"" + item.team + "\" data-mrw-edit-score-quarter=\"" + (item.quarter || "") + "\">수정</button>";
       remove = "<button type=\"button\" class=\"mrw-small-btn mrw-small-danger\" data-mrw-remove-score-team=\"" + item.team + "\" data-mrw-remove-score-quarter=\"" + (item.quarter || "") + "\">삭제</button>";
     } else if (item.type === "stat") {
-      edit = "<button type=\"button\" class=\"mrw-small-btn\" data-mrw-edit-stat-quarter=\"" + (item.quarter || "") + "\">수정</button>";
       remove = "<button type=\"button\" class=\"mrw-small-btn mrw-small-danger\" data-mrw-remove-stat-team=\"" + item.team + "\" data-mrw-remove-stat-player=\"" + escapeHtml(item.player) + "\" data-mrw-remove-stat-quarter=\"" + (item.quarter || "") + "\">삭제</button>";
     } else {
       remove = "<button type=\"button\" class=\"mrw-small-btn mrw-small-danger\" data-mrw-remove-event=\"" + item.index + "\">삭제</button>";
@@ -732,6 +822,9 @@
     dateInput.addEventListener("change", function () {
       idInput.value = compactDate(dateInput.value);
       state.loadedRecord = null;
+      state.loadedPlayers = null;
+      state.loadedForm = null;
+      state.editingMatchId = "";
       state.conflict = null;
       renderPanel();
     });
@@ -748,6 +841,10 @@
     Array.prototype.forEach.call(panel.querySelectorAll("[data-mrw-kind]"), function (button) {
       button.addEventListener("click", function () {
         state.matchKind = button.getAttribute("data-mrw-kind") === "MATCH" ? "MATCH" : "SELF";
+        state.loadedRecord = null;
+        state.loadedPlayers = null;
+        state.loadedForm = null;
+        state.editingMatchId = "";
         panel.querySelector("[data-mrw=matchKind]").value = state.matchKind;
         renderPanel();
       });
@@ -784,23 +881,9 @@
         addAwayTeamFromPanel();
       }
     });
-    Array.prototype.forEach.call(panel.querySelectorAll("[data-mrw-edit-score-team]"), function (button) {
-      button.addEventListener("click", function () {
-        state.selectedScope = button.getAttribute("data-mrw-edit-score-quarter") || "";
-        state.status = "점수판에서 점수를 조정하세요.";
-        renderPanel();
-      });
-    });
     Array.prototype.forEach.call(panel.querySelectorAll("[data-mrw-remove-score-team]"), function (button) {
       button.addEventListener("click", function () {
         removeTeamScore(button.getAttribute("data-mrw-remove-score-team") === "B" ? "B" : "A", selectedQuarterValue(button.getAttribute("data-mrw-remove-score-quarter")));
-      });
-    });
-    Array.prototype.forEach.call(panel.querySelectorAll("[data-mrw-edit-stat-quarter]"), function (button) {
-      button.addEventListener("click", function () {
-        state.selectedScope = button.getAttribute("data-mrw-edit-stat-quarter") || "";
-        state.status = "선수별 골/도움 카운터에서 수정하세요.";
-        renderPanel();
       });
     });
     Array.prototype.forEach.call(panel.querySelectorAll("[data-mrw-remove-stat-player]"), function (button) {
@@ -882,7 +965,7 @@
       homeTeamName: home,
       awayTeamName: away,
       memo: valueOf(panel, "memo", ""),
-      quarters: parseQuarterCards(),
+      quarters: payloadRecords(parseQuarterCards()),
       events: state.events,
       summaryStats: summaryStatsArray(),
       teamScores: teamScoresArray(),
@@ -893,18 +976,19 @@
   }
 
   function teamLabelForPayload(team, payload) {
-    return team === "B" ? (payload.homeTeamName || TEAM_LABELS.B) : (payload.awayTeamName || TEAM_LABELS.A);
+    return team === "B" ? (payload.homeTeamName || teamLabel("B")) : (payload.awayTeamName || teamLabel("A"));
   }
 
   function saveSummaryText(payload) {
     var lines = [];
     (payload.summaryStats || []).forEach(function (stat) {
-      if (!stat.player) return;
+      var player = playerName(stat.player);
+      if (!player) return;
       var parts = [];
       if (stat.goals > 0) parts.push("골 " + stat.goals);
       if (stat.assists > 0) parts.push("도움 " + stat.assists);
       if (parts.length === 0) return;
-      lines.push("- " + scopeLabel(stat.quarter) + " · " + teamLabelForPayload(stat.team, payload) + " · " + stat.player + ": " + parts.join(" · "));
+      lines.push("- " + scopeLabel(stat.quarter) + " · " + teamLabelForPayload(stat.team, payload) + " · " + player + ": " + parts.join(" · "));
     });
     (payload.events || []).forEach(function (event) {
       if (!event || !event.scorer) return;
@@ -924,6 +1008,7 @@
         renderPanel();
         return;
       }
+      resetRecordEntryState();
       state.status = "기존 기록을 불러오는 중...";
       renderPanel();
 
@@ -934,33 +1019,34 @@
       state.events = Array.isArray(data.events) ? data.events : [];
       setSummaryStatsFromArray(data.summaryStats);
       setTeamScoresFromArray(data.teamScores, data.scoreOverride);
+      state.loadedPlayers = normalizeLoadedPlayers(data.players) || emptyLoadedPlayers();
       state.conflict = null;
       state.loadedRecord = data;
       state.editingMatchId = data.matchId || matchId;
       state.matchKind = data.matchKind === "MATCH" ? "MATCH" : "SELF";
       state.editModalOpen = false;
-      state.selectedScope = data.recordMode === "QUARTER" ? state.selectedScope : "";
+      state.selectedScope = "";
 
-      renderPanel();
-      panel = document.getElementById(PANEL_ID);
       var matchDate = dateInputFromFirebase(data.matchDate);
-      if (matchDate) panel.querySelector("[data-mrw=date]").value = matchDate;
-      panel.querySelector("[data-mrw=matchId]").value = data.matchId || matchId;
-      if (data.matchTime) {
-        panel.querySelector("[data-mrw=startTime]").value = startTimeFromMatchTime(data.matchTime);
-        panel.querySelector("[data-mrw=duration]").value = normalizeDuration(durationFromMatchTime(data.matchTime));
-      }
-      panel.querySelector("[data-mrw=matchKind]").value = state.matchKind;
-      if (data.venueName && panel.querySelector("[data-mrw=venueName]")) panel.querySelector("[data-mrw=venueName]").value = data.venueName;
-      if (data.awayTeamName && panel.querySelector("[data-mrw=awayTeam]")) panel.querySelector("[data-mrw=awayTeam]").value = data.awayTeamName;
-      if (typeof data.comment === "string") panel.querySelector("[data-mrw=memo]").value = data.comment;
+      state.loadedForm = {
+        date: matchDate || todayInputValue(),
+        matchId: data.matchId || matchId,
+        startTime: data.matchTime ? startTimeFromMatchTime(data.matchTime) : "20:00",
+        duration: data.matchTime ? normalizeDuration(durationFromMatchTime(data.matchTime)) : "2",
+        matchKind: state.matchKind,
+        venueName: data.venueName || preferredVenue(),
+        awayTeamName: data.awayTeamName || "",
+        memo: typeof data.comment === "string" ? data.comment : "",
+      };
 
       state.status = [
         "기존 기록을 불러왔습니다.",
         "기록 키: " + (data.matchId || matchId),
-        "스코어: " + (data.awayTeamName || TEAM_LABELS.A) + " " + (data.awayGoal || 0) + " : " + (data.homeGoal || 0) + " " + (data.homeTeamName || TEAM_LABELS.B),
+        "스코어: " + (data.awayTeamName || teamLabel("A")) + " " + (data.awayGoal || 0) + " : " + (data.homeGoal || 0) + " " + (data.homeTeamName || teamLabel("B")),
         "수정 후 기록 저장을 누르면 기존 기록에 반영됩니다.",
       ].join("\n");
+      panel = document.getElementById(PANEL_ID);
+      if (panel) panel.remove();
       renderPanel();
     } catch (error) {
       state.status = error && error.message ? error.message : String(error);
