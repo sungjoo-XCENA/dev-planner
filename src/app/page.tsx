@@ -293,6 +293,7 @@ export default function Home() {
   const activeFieldPlayers = useMemo(() => fieldPlayers.filter((p) => !isWaitingPlayer(p)), [fieldPlayers, isWaitingPlayer]);
   const waitingPlayers = useMemo(() => fieldPlayers.filter((p) => isWaitingPlayer(p)), [fieldPlayers, isWaitingPlayer]);
   const matchFieldPlayers = useMemo(() => fieldPlayers.filter((p) => p.primaryPosition !== "GK"), [fieldPlayers]);
+  const matchRosterSize = activeFieldPlayers.length;
   const regularCount = fieldPlayers.filter((p) => p.memberType === "REGULAR").length;
   const guestCount = fieldPlayers.filter((p) => p.memberType === "GUEST").length;
   const waitingCount = waitingPlayers.length;
@@ -311,7 +312,7 @@ export default function Home() {
 
   const canGenerate = plannerMode === "BALANCE"
     ? activeFieldPlayers.length >= 22 && activeFieldPlayers.length <= 36
-    : matchFieldPlayers.length >= 10 && matchFieldPlayers.length <= 18;
+    : matchRosterSize >= 10 && matchRosterSize <= 18 && matchFieldPlayers.length >= matchRosterSize;
 
   function resetResults() {
     clearLineupShareHash();
@@ -531,7 +532,7 @@ export default function Home() {
     resetResults();
     try {
       if (plannerMode === "MATCH") {
-        setMatchResult(planMatchLineup(matchFieldPlayers, dedicatedGks, matchQuarterLimits));
+        setMatchResult(planMatchLineup(matchFieldPlayers, dedicatedGks, matchQuarterLimits, matchRosterSize));
       } else {
         const variants = balanceTeamsVariants(activeFieldPlayers, 10, relations);
         setTeamVariants(variants);
@@ -799,7 +800,7 @@ export default function Home() {
           <Stat label="정규" value={`${regularCount}명`} />
           <Stat label="용병" value={`${guestCount}명`} />
           <Stat label="대기" value={`${waitingCount}명`} />
-          <Stat label={plannerMode === "MATCH" ? "매치" : "필드"} value={`${plannerMode === "MATCH" ? matchFieldPlayers.length : activeFieldPlayers.length}명`} />
+          <Stat label={plannerMode === "MATCH" ? "매치" : "필드"} value={`${plannerMode === "MATCH" ? matchRosterSize : activeFieldPlayers.length}명`} />
           <Stat label="GK" value={`${dedicatedGks.length}`} />
         </div>
         <h3 className="mt-5 font-semibold">필드 참석자</h3>
@@ -878,7 +879,7 @@ export default function Home() {
           <div className="text-sm font-semibold">
             {plannerMode === "BALANCE"
               ? `내부전 · 필드 ${activeFieldPlayers.length}명${waitingCount > 0 ? ` (대기 ${waitingCount})` : ""} · 전담 GK ${dedicatedGks.length}`
-              : `매치 · 참석 ${matchFieldPlayers.length}명${waitingCount > 0 ? ` (대기 ${waitingCount})` : ""} · 전담 GK ${dedicatedGks.length}`}
+              : `매치 · 참석 ${matchRosterSize}명${waitingCount > 0 ? ` (콜업 후보 ${waitingCount})` : ""} · 전담 GK ${dedicatedGks.length}`}
             {!canGenerate && <p className="text-xs font-normal text-slate-500">{plannerMode === "BALANCE" ? "내부전은 24명 이상 권장, 22명부터 가능" : "매치는 필드 10명~18명 필요"}</p>}
           </div>
           <button className="rounded-xl bg-slate-900 px-5 py-3 text-sm font-bold text-white disabled:bg-slate-300" onClick={runPlanner} disabled={!canGenerate}>자동 생성</button>

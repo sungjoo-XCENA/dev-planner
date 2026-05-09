@@ -253,12 +253,16 @@ export function planMatchLineup(
   players: Player[],
   dedicatedGks: DedicatedGoalkeeper[],
   quarterLimits: MatchQuarterLimits = {},
+  rosterSize = players.filter((player) => player.primaryPosition !== "GK").length,
 ): MatchPlanResult {
   const warnings: string[] = [];
   const fieldPlayers = players.filter((player) => player.primaryPosition !== "GK");
 
-  if (fieldPlayers.length < MIN_MATCH_FIELD_PLAYERS || fieldPlayers.length > MAX_MATCH_FIELD_PLAYERS) {
-    throw new Error(`매치 모드는 필드 참석자 ${MIN_MATCH_FIELD_PLAYERS}명~${MAX_MATCH_FIELD_PLAYERS}명일 때 생성할 수 있습니다. 현재 ${fieldPlayers.length}명입니다.`);
+  if (rosterSize < MIN_MATCH_FIELD_PLAYERS || rosterSize > MAX_MATCH_FIELD_PLAYERS) {
+    throw new Error(`매치 모드는 필드 참석자 ${MIN_MATCH_FIELD_PLAYERS}명~${MAX_MATCH_FIELD_PLAYERS}명일 때 생성할 수 있습니다. 현재 ${rosterSize}명입니다.`);
+  }
+  if (fieldPlayers.length < rosterSize) {
+    throw new Error(`매치 후보가 부족합니다. 참석 ${rosterSize}명에 후보 ${fieldPlayers.length}명입니다.`);
   }
   if (dedicatedGks.length === 0) {
     warnings.push("전담 GK가 없습니다. GK를 먼저 추가해주세요.");
@@ -280,12 +284,21 @@ export function planMatchLineup(
   const bench = fieldPlayers
     .filter((player) => !starterIds.has(player.id))
     .map((player) => selectionFor(player, bestGroupFor(player)))
-    .sort(selectionSort);
+    .sort(selectionSort)
+    .slice(0, Math.max(0, rosterSize - MATCH_FIELD_SLOTS_PER_QUARTER));
   const allSelections = [...starterSelections, ...bench].sort(selectionSort);
+  const rosterIds = new Set(allSelections.map((item) => item.player.id));
+  const excludedPlayers = fieldPlayers
+    .filter((player) => !rosterIds.has(player.id))
+    .sort((a, b) => playerComposite(b) - playerComposite(a) || a.name.localeCompare(b.name, "ko"));
+  if (excludedPlayers.length > 0) {
+    warnings.push(`매치 후보 ${fieldPlayers.length}명 중 ${rosterSize}명을 사용합니다. 제외: ${excludedPlayers.map((player) => player.name).join(", ")}`);
+  }
+  const rosterPlayers = allSelections.map((item) => item.player);
   const playCounts = new Map<string, number>();
   const quarters: MatchQuarterLineup[] = [];
 
-  const q1Formation = pickFormation(fieldPlayers, (player, group) => {
+  const q1Formation = pickFormation(rosterPlayers, (player, group) => {
     const isBenchPriority = !starterIds.has(player.id);
     return (isBenchPriority ? 1_000_000 : 0) + roleScore(player, group);
   });
@@ -293,7 +306,7 @@ export function planMatchLineup(
 
   quarters.push(lineupFromFormation(2, bestFormation, allSelections, starters.gk, playCounts, quarterLimits));
 
-  const q3Formation = pickFormation(fieldPlayers, (player, group) => {
+  const q3Formation = pickFormation(rosterPlayers, (player, group) => {
     const current = playCounts.get(player.id) ?? 0;
     const isStarter = starterIds.has(player.id);
     const target = targetFor(player.id, quarterLimits);
