@@ -1982,7 +1982,6 @@ function MatchResultView({ result }: { result: MatchPlanResult }) {
       </div>
       {result.warnings.length > 0 && <div className="mt-4"><MessageBox title="매치 경고" items={result.warnings} tone="warning" /></div>}
       {result.notes.length > 0 && <div className="mt-4"><MessageBox title="운영 메모" items={result.notes} tone="info" /></div>}
-      <MatchOperationBoard operation={result.operation} counts={rotateCountsByName} staffRoles={staffRolesByName} />
       <div className="mt-4 rounded-2xl border border-slate-200 p-4">
         <h3 className="font-bold">베스트 라인업</h3>
         <div className="mt-3">
@@ -2020,6 +2019,7 @@ function MatchResultView({ result }: { result: MatchPlanResult }) {
           );
         })}
       </div>
+      <MatchOperationBoard operation={result.operation} counts={rotateCountsByName} staffRoles={staffRolesByName} />
       <div className="mt-4 rounded-2xl border border-slate-200 p-4">
         <h3 className="font-bold">후보 / 교체 우선순위</h3>
         <div className="mt-2 flex flex-wrap gap-2">
