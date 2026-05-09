@@ -292,8 +292,10 @@ export default function Home() {
   }, [waitingIds]);
   const activeFieldPlayers = useMemo(() => fieldPlayers.filter((p) => !isWaitingPlayer(p)), [fieldPlayers, isWaitingPlayer]);
   const waitingPlayers = useMemo(() => fieldPlayers.filter((p) => isWaitingPlayer(p)), [fieldPlayers, isWaitingPlayer]);
-  const matchFieldPlayers = useMemo(() => fieldPlayers.filter((p) => p.primaryPosition !== "GK"), [fieldPlayers]);
-  const matchRosterSize = activeFieldPlayers.length;
+  const matchActiveFieldPlayers = useMemo(() => activeFieldPlayers.filter((p) => p.primaryPosition !== "GK"), [activeFieldPlayers]);
+  const matchCallupPlayers = useMemo(() => waitingPlayers.filter((p) => p.primaryPosition !== "GK"), [waitingPlayers]);
+  const matchFieldPlayers = useMemo(() => [...matchActiveFieldPlayers, ...matchCallupPlayers], [matchActiveFieldPlayers, matchCallupPlayers]);
+  const matchRosterSize = matchActiveFieldPlayers.length;
   const regularCount = fieldPlayers.filter((p) => p.memberType === "REGULAR").length;
   const guestCount = fieldPlayers.filter((p) => p.memberType === "GUEST").length;
   const waitingCount = waitingPlayers.length;
@@ -532,7 +534,7 @@ export default function Home() {
     resetResults();
     try {
       if (plannerMode === "MATCH") {
-        setMatchResult(planMatchLineup(matchFieldPlayers, dedicatedGks, matchQuarterLimits, matchRosterSize));
+        setMatchResult(planMatchLineup(matchActiveFieldPlayers, dedicatedGks, matchQuarterLimits, matchCallupPlayers));
       } else {
         const variants = balanceTeamsVariants(activeFieldPlayers, 10, relations);
         setTeamVariants(variants);
@@ -911,8 +913,13 @@ function Stat({ label, value }: { label: string; value: string }) {
   return <div className="rounded-2xl bg-slate-100 p-4"><p className="text-xs font-semibold text-slate-500">{label}</p><p className="mt-1 text-xl font-bold">{value}</p></div>;
 }
 
-function MessageBox({ title, items, tone }: { title: string; items: string[]; tone: "error" | "warning" }) {
-  return <div className={`rounded-3xl p-5 ${tone === "error" ? "bg-red-50 text-red-900" : "bg-amber-50 text-amber-900"}`}><h3 className="font-bold">{title}</h3><ul className="mt-2 list-disc pl-5 text-sm">{items.map((item, i) => <li key={i}>{item}</li>)}</ul></div>;
+function MessageBox({ title, items, tone }: { title: string; items: string[]; tone: "error" | "warning" | "info" }) {
+  const toneClass = tone === "error"
+    ? "bg-red-50 text-red-900"
+    : tone === "warning"
+      ? "bg-amber-50 text-amber-900"
+      : "bg-sky-50 text-sky-900";
+  return <div className={`rounded-3xl p-5 ${toneClass}`}><h3 className="font-bold">{title}</h3><ul className="mt-2 list-disc pl-5 text-sm">{items.map((item, i) => <li key={i}>{item}</li>)}</ul></div>;
 }
 
 function Chip({ label, onRemove, tone = "regular", badge }: { label: string; onRemove: () => void; tone?: "regular" | "guest" | "waiting"; badge?: ReactNode }) {
@@ -1960,6 +1967,7 @@ function MatchResultView({ result }: { result: MatchPlanResult }) {
         <button className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-bold text-white" onClick={downloadAll}>전체 이미지 저장</button>
       </div>
       {result.warnings.length > 0 && <div className="mt-4"><MessageBox title="매치 경고" items={result.warnings} tone="warning" /></div>}
+      {result.notes.length > 0 && <div className="mt-4"><MessageBox title="운영 메모" items={result.notes} tone="info" /></div>}
       <div className="mt-4 rounded-2xl border border-slate-200 p-4">
         <h3 className="font-bold">베스트 라인업</h3>
         <div className="mt-3">
@@ -2016,7 +2024,7 @@ function MatchResultView({ result }: { result: MatchPlanResult }) {
         <h3 className="font-bold">출전 쿼터</h3>
         <div className="mt-2 flex flex-wrap gap-2">
           {result.playerSummaries.map((summary) => (
-            <span key={summary.playerId} className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-sm font-semibold ${summary.isStarter ? "bg-slate-100 text-slate-700" : "bg-violet-100 text-violet-800"}`}>
+            <span key={summary.playerId} className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-sm font-semibold ${summary.isCallup ? "bg-orange-100 text-orange-800" : summary.isStarter ? "bg-slate-100 text-slate-700" : "bg-violet-100 text-violet-800"}`}>
               <span>{summary.playerName} {summary.fieldCount}/{summary.targetQuarterCount}Q</span>
               <span className="text-xs opacity-70">{summary.quarters.length > 0 ? summary.quarters.map((q) => `${q}Q`).join(",") : "-"}</span>
             </span>

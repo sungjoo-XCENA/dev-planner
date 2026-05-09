@@ -26,6 +26,8 @@ export type MatchPlayerSummary = {
   fieldCount: number;
   quarters: Array<1 | 2 | 3 | 4>;
   isStarter: boolean;
+  isCallup: boolean;
+  isRequired: boolean;
 };
 
 export type MatchPlanResult = {
@@ -39,6 +41,7 @@ export type MatchPlanResult = {
   bench: MatchSelection[];
   playerSummaries: MatchPlayerSummary[];
   warnings: string[];
+  notes: string[];
 };
 
 export type MatchQuarterLimits = Record<string, number>;
@@ -58,13 +61,30 @@ const MATCH_FIELD_SLOTS_TOTAL = MATCH_FIELD_SLOTS_PER_QUARTER * QUARTERS.length;
 
 type FormationPlan = {
   score: number;
+  optionalCount: number;
   attack: MatchSelection[];
   mid: MatchSelection[];
   defense: MatchSelection[];
 };
 
+type PickFormationOptions = {
+  optionalIds?: Set<string>;
+  maxOptional?: number;
+};
+
 function isFieldPosition(position: Player["primaryPosition"]): position is FieldPosition {
   return position !== "GK";
+}
+
+function uniqueFieldPlayers(players: Player[]): Player[] {
+  const seen = new Set<string>();
+  const unique: Player[] = [];
+  for (const player of players) {
+    if (player.primaryPosition === "GK" || seen.has(player.id)) continue;
+    seen.add(player.id);
+    unique.push(player);
+  }
+  return unique;
 }
 
 function roleScore(player: Player, group: PositionGroup): number {
@@ -82,9 +102,9 @@ function roleScore(player: Player, group: PositionGroup): number {
 function selectionFor(player: Player, group: PositionGroup): MatchSelection {
   const primaryGroup = isFieldPosition(player.primaryPosition) ? getPositionGroup(player.primaryPosition) : null;
   const reason = primaryGroup === group
-    ? "주포지션 적합"
+    ? "주 포지션 적합"
     : hasGroup(player.secondaryPositions, group)
-      ? "부포지션 적합"
+      ? "부 포지션 적합"
       : "전력 우선 포지션 변경";
 
   return {
@@ -110,7 +130,13 @@ function selectionsFor(plan: FormationPlan): MatchSelection[] {
 }
 
 function stateKey(plan: FormationPlan): string {
-  return `${plan.attack.length}|${plan.mid.length}|${plan.defense.length}`;
+  return `${plan.attack.length}|${plan.mid.length}|${plan.defense.length}|${plan.optionalCount}`;
+}
+
+function isCompletePlan(plan: FormationPlan): boolean {
+  return plan.attack.length === TARGETS.ATTACK
+    && plan.mid.length === TARGETS.MID
+    && plan.defense.length === TARGETS.DEFENSE;
 }
 
 function groupItems(plan: FormationPlan, group: PositionGroup): MatchSelection[] {
@@ -119,9 +145,13 @@ function groupItems(plan: FormationPlan, group: PositionGroup): MatchSelection[]
   return plan.defense;
 }
 
-function withSelection(plan: FormationPlan, selection: MatchSelection): FormationPlan {
+function withSelection(plan: FormationPlan, selection: MatchSelection, options?: PickFormationOptions): FormationPlan | null {
+  const optionalCount = plan.optionalCount + (options?.optionalIds?.has(selection.player.id) ? 1 : 0);
+  if (options?.maxOptional !== undefined && optionalCount > options.maxOptional) return null;
+
   return {
     score: plan.score + selection.score,
+    optionalCount,
     attack: selection.group === "ATTACK" ? [...plan.attack, selection] : plan.attack,
     mid: selection.group === "MID" ? [...plan.mid, selection] : plan.mid,
     defense: selection.group === "DEFENSE" ? [...plan.defense, selection] : plan.defense,
@@ -137,6 +167,7 @@ function selectionSort(a: MatchSelection, b: MatchSelection): number {
 function normalizedPlan(plan: FormationPlan): FormationPlan {
   return {
     score: plan.score,
+    optionalCount: plan.optionalCount,
     attack: [...plan.attack].sort(selectionSort),
     mid: [...plan.mid].sort(selectionSort),
     defense: [...plan.defense].sort(selectionSort),
@@ -167,8 +198,9 @@ function isBetterPlan(candidate: FormationPlan, current?: FormationPlan): boolea
 function pickFormation(
   players: Player[],
   assignmentScore: (player: Player, group: PositionGroup) => number,
+  options?: PickFormationOptions,
 ): FormationPlan {
-  const empty: FormationPlan = { score: 0, attack: [], mid: [], defense: [] };
+  const empty: FormationPlan = { score: 0, optionalCount: 0, attack: [], mid: [], defense: [] };
   const states = new Map<string, FormationPlan>([[stateKey(empty), empty]]);
 
   for (const player of players) {
@@ -180,15 +212,19 @@ function pickFormation(
         const candidate = withSelection(plan, {
           ...selection,
           score: assignmentScore(player, group),
-        });
+        }, options);
+        if (!candidate) continue;
         const key = stateKey(candidate);
         if (isBetterPlan(candidate, states.get(key))) states.set(key, candidate);
       }
     }
   }
 
-  const best = states.get(`${TARGETS.ATTACK}|${TARGETS.MID}|${TARGETS.DEFENSE}`);
-  if (!best) throw new Error("매치 라인업을 만들 수 없습니다. 포지션 인원을 확인해주세요.");
+  let best: FormationPlan | undefined;
+  for (const plan of states.values()) {
+    if (isCompletePlan(plan) && isBetterPlan(plan, best)) best = plan;
+  }
+  if (!best) throw new Error("매치 라인업을 만들 수 없습니다. 포지션과 인원을 확인해주세요.");
   return normalizedPlan(best);
 }
 
@@ -229,6 +265,8 @@ function formatQuotaItems(items: { name: string; actual: number; target: number 
 function buildPlayerSummaries(
   allSelections: MatchSelection[],
   starterIds: Set<string>,
+  callupIds: Set<string>,
+  requiredIds: Set<string>,
   quarters: MatchQuarterLineup[],
   limits: MatchQuarterLimits,
 ): MatchPlayerSummary[] {
@@ -245,6 +283,8 @@ function buildPlayerSummaries(
       fieldCount: playedQuarters.length,
       quarters: playedQuarters,
       isStarter: starterIds.has(item.player.id),
+      isCallup: callupIds.has(item.player.id),
+      isRequired: requiredIds.has(item.player.id),
     };
   });
 }
@@ -253,16 +293,25 @@ export function planMatchLineup(
   players: Player[],
   dedicatedGks: DedicatedGoalkeeper[],
   quarterLimits: MatchQuarterLimits = {},
-  rosterSize = players.filter((player) => player.primaryPosition !== "GK").length,
+  callupPlayers: Player[] = [],
 ): MatchPlanResult {
   const warnings: string[] = [];
-  const fieldPlayers = players.filter((player) => player.primaryPosition !== "GK");
+  const notes: string[] = [
+    "1Q는 베스트 11에 들지 않은 정규 참석자를 먼저 배정하고, 2Q와 4Q는 베스트 라인업으로 잡습니다.",
+    "3Q는 3Q까지 정규 참석자가 최소 1Q, 가능하면 2Q를 채우도록 배정합니다. 지고 있으면 4Q 베스트를 유지하고, 여유가 있으면 2Q 미만 선수와 교체하세요.",
+  ];
+  const requiredPlayers = uniqueFieldPlayers(players);
+  const requiredIds = new Set(requiredPlayers.map((player) => player.id));
+  const optionalPlayers = uniqueFieldPlayers(callupPlayers).filter((player) => !requiredIds.has(player.id));
+  const callupCandidateIds = new Set(optionalPlayers.map((player) => player.id));
+  const maxCallups = Math.max(0, MAX_MATCH_FIELD_PLAYERS - requiredPlayers.length);
+  const candidatePlayers = [...requiredPlayers, ...optionalPlayers];
 
-  if (rosterSize < MIN_MATCH_FIELD_PLAYERS || rosterSize > MAX_MATCH_FIELD_PLAYERS) {
-    throw new Error(`매치 모드는 필드 참석자 ${MIN_MATCH_FIELD_PLAYERS}명~${MAX_MATCH_FIELD_PLAYERS}명일 때 생성할 수 있습니다. 현재 ${rosterSize}명입니다.`);
+  if (requiredPlayers.length < MIN_MATCH_FIELD_PLAYERS || requiredPlayers.length > MAX_MATCH_FIELD_PLAYERS) {
+    throw new Error(`매치 모드는 정규 필드 참석자가 ${MIN_MATCH_FIELD_PLAYERS}명~${MAX_MATCH_FIELD_PLAYERS}명일 때 생성할 수 있습니다. 현재 ${requiredPlayers.length}명입니다.`);
   }
-  if (fieldPlayers.length < rosterSize) {
-    throw new Error(`매치 후보가 부족합니다. 참석 ${rosterSize}명에 후보 ${fieldPlayers.length}명입니다.`);
+  if (candidatePlayers.length < MATCH_FIELD_SLOTS_PER_QUARTER) {
+    throw new Error(`매치 후보가 부족합니다. 필드 10명을 만들려면 후보가 ${MATCH_FIELD_SLOTS_PER_QUARTER}명 이상 필요합니다.`);
   }
   if (dedicatedGks.length === 0) {
     warnings.push("전담 GK가 없습니다. GK를 먼저 추가해주세요.");
@@ -270,10 +319,18 @@ export function planMatchLineup(
   if (dedicatedGks.length > 1) {
     warnings.push("전담 GK가 2명 이상입니다. 첫 번째 GK를 선발 GK로 사용하고 나머지는 대기로 봅니다.");
   }
+  if (optionalPlayers.length > 0 && maxCallups === 0) {
+    notes.push("정규 참석자가 이미 18명이라 콜업 후보는 베스트 라인업 계산에서 제외됩니다.");
+  }
 
-  const bestFormation = pickFormation(fieldPlayers, (player, group) => roleScore(player, group));
+  const bestFormation = pickFormation(candidatePlayers, (player, group) => roleScore(player, group), {
+    optionalIds: callupCandidateIds,
+    maxOptional: maxCallups,
+  });
   const starterSelections = selectionsFor(bestFormation).sort(selectionSort);
   const starterIds = new Set(starterSelections.map((item) => item.player.id));
+  const usedCallupSelections = starterSelections.filter((item) => callupCandidateIds.has(item.player.id));
+  const usedCallupIds = new Set(usedCallupSelections.map((item) => item.player.id));
   const starters: MatchPlanResult["starters"] = {
     attack: bestFormation.attack,
     mid: bestFormation.mid,
@@ -281,26 +338,41 @@ export function planMatchLineup(
     gk: dedicatedGks[0] ?? null,
   };
 
-  const bench = fieldPlayers
-    .filter((player) => !starterIds.has(player.id))
-    .map((player) => selectionFor(player, bestGroupFor(player)))
-    .sort(selectionSort)
-    .slice(0, Math.max(0, rosterSize - MATCH_FIELD_SLOTS_PER_QUARTER));
-  const allSelections = [...starterSelections, ...bench].sort(selectionSort);
-  const rosterIds = new Set(allSelections.map((item) => item.player.id));
-  const excludedPlayers = fieldPlayers
-    .filter((player) => !rosterIds.has(player.id))
-    .sort((a, b) => playerComposite(b) - playerComposite(a) || a.name.localeCompare(b.name, "ko"));
-  if (excludedPlayers.length > 0) {
-    warnings.push(`매치 후보 ${fieldPlayers.length}명 중 ${rosterSize}명을 사용합니다. 제외: ${excludedPlayers.map((player) => player.name).join(", ")}`);
+  const selectionById = new Map<string, MatchSelection>();
+  for (const player of requiredPlayers) {
+    selectionById.set(player.id, selectionFor(player, bestGroupFor(player)));
   }
+  for (const item of starterSelections) {
+    selectionById.set(item.player.id, item);
+  }
+
+  const allSelections = Array.from(selectionById.values()).sort(selectionSort);
+  const bench = allSelections.filter((item) => !starterIds.has(item.player.id)).sort(selectionSort);
+  const unusedCallups = optionalPlayers
+    .filter((player) => !usedCallupIds.has(player.id))
+    .sort((a, b) => playerComposite(b) - playerComposite(a) || a.name.localeCompare(b.name, "ko"));
+  if (usedCallupSelections.length > 0) {
+    notes.push(`베스트 라인업에 콜업 후보 ${usedCallupSelections.length}명을 반영했습니다: ${usedCallupSelections.map((item) => item.player.name).join(", ")}`);
+  }
+  if (unusedCallups.length > 0) {
+    notes.push(`콜업 후보 ${unusedCallups.length}명은 정규 참석자 출전 보장을 위해 자동 배정하지 않았습니다: ${unusedCallups.map((player) => player.name).join(", ")}`);
+  }
+
   const rosterPlayers = allSelections.map((item) => item.player);
   const playCounts = new Map<string, number>();
   const quarters: MatchQuarterLineup[] = [];
 
   const q1Formation = pickFormation(rosterPlayers, (player, group) => {
-    const isBenchPriority = !starterIds.has(player.id);
-    return (isBenchPriority ? 1_000_000 : 0) + roleScore(player, group);
+    const isRequired = requiredIds.has(player.id);
+    const isStarter = starterIds.has(player.id);
+    const isCallup = usedCallupIds.has(player.id);
+    return (
+      (isRequired && !isStarter ? 1_000_000 : 0) +
+      (isRequired ? 250_000 : 0) +
+      (!isStarter ? 100_000 : 0) -
+      (isCallup ? 200_000 : 0) +
+      roleScore(player, group)
+    );
   });
   quarters.push(lineupFromFormation(1, q1Formation, allSelections, starters.gk, playCounts, quarterLimits));
 
@@ -308,18 +380,20 @@ export function planMatchLineup(
 
   const q3Formation = pickFormation(rosterPlayers, (player, group) => {
     const current = playCounts.get(player.id) ?? 0;
+    const isRequired = requiredIds.has(player.id);
     const isStarter = starterIds.has(player.id);
+    const isCallup = usedCallupIds.has(player.id);
     const target = targetFor(player.id, quarterLimits);
     const finalWithoutQ3 = current + (isStarter ? 1 : 0);
-    const needsSecondQuarter = current < 2;
-    const cannotReachSecondWithoutQ3 = finalWithoutQ3 < 2;
     const targetShortfall = Math.max(0, target - finalWithoutQ3);
     const targetOverflow = Math.max(0, current - target);
 
     return (
-      (needsSecondQuarter ? 500_000 : 0) +
-      (!isStarter && needsSecondQuarter ? 250_000 : 0) +
-      (cannotReachSecondWithoutQ3 ? 200_000 : 0) +
+      (isRequired && current === 0 ? 2_000_000 : 0) +
+      (isRequired && current < 2 ? 1_000_000 : 0) +
+      (isRequired && !isStarter && current < 2 ? 500_000 : 0) +
+      (isRequired ? 250_000 : 0) -
+      (isCallup && finalWithoutQ3 >= 2 ? 250_000 : 0) +
       targetShortfall * 50_000 -
       targetOverflow * 50_000 +
       roleScore(player, group)
@@ -336,7 +410,16 @@ export function planMatchLineup(
     warnings.push(`출전 쿼터 목표가 총 ${requestedSlots}칸이라 실제 필요한 ${MATCH_FIELD_SLOTS_TOTAL}칸보다 적습니다. 일부 선수는 목표보다 더 뛰게 됩니다.`);
   }
 
-  const playerSummaries = buildPlayerSummaries(allSelections, starterIds, quarters, quarterLimits);
+  const playerSummaries = buildPlayerSummaries(allSelections, starterIds, usedCallupIds, requiredIds, quarters, quarterLimits);
+  const requiredSummaries = playerSummaries.filter((summary) => summary.isRequired);
+  const requiredWithoutFirstByQ3 = requiredSummaries.filter((summary) => !summary.quarters.some((quarter) => quarter <= 3));
+  const requiredUnderTwoByQ3 = requiredSummaries.filter((summary) => summary.quarters.filter((quarter) => quarter <= 3).length < 2);
+  if (requiredWithoutFirstByQ3.length > 0) {
+    warnings.push(`3Q까지 첫 출전을 못 채운 정규 참석자: ${requiredWithoutFirstByQ3.map((summary) => summary.playerName).join(", ")}`);
+  } else if (requiredUnderTwoByQ3.length > 0) {
+    notes.push(`3Q까지 1Q만 뛴 정규 참석자: ${requiredUnderTwoByQ3.map((summary) => summary.playerName).join(", ")}. 지고 있지 않다면 4Q에 이 선수들을 먼저 보강하세요.`);
+  }
+
   const quotaDiffs = playerSummaries
     .map((item) => ({
       name: item.playerName,
@@ -358,7 +441,7 @@ export function planMatchLineup(
     const items = group === "ATTACK" ? starters.attack : group === "MID" ? starters.mid : starters.defense;
     return items.some((item) => item.reason === "전력 우선 포지션 변경");
   });
-  if (weakGroups.length > 0) warnings.push(`일부 포지션은 전력 우선으로 변경 배정되었습니다: ${weakGroups.join(", ")}`);
+  if (weakGroups.length > 0) warnings.push(`일부 포지션은 전력 우선으로 변경 배정했습니다: ${weakGroups.join(", ")}`);
 
-  return { starters, quarters, bench, playerSummaries, warnings };
+  return { starters, quarters, bench, playerSummaries, warnings, notes };
 }
