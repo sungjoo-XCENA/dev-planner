@@ -15,7 +15,7 @@ type FirebaseServiceAccount = {
 let cachedToken: { accessToken: string; expiresAt: number } | null = null;
 
 export async function firebaseGetJson(pathParts: string[]): Promise<unknown> {
-  const response = await firebaseRequest(pathParts, { method: "GET" });
+  const response = await firebaseGetRequest(pathParts);
   return response.json();
 }
 
@@ -45,6 +45,26 @@ export async function firebaseRequest(pathParts: string[], init: RequestInit): P
   return response;
 }
 
+async function firebaseGetRequest(pathParts: string[]): Promise<Response> {
+  try {
+    return await firebaseRequest(pathParts, { method: "GET" });
+  } catch (authError) {
+    const response = await firebasePublicRequest(pathParts, { method: "GET" });
+    if (response.ok) return response;
+
+    const detail = await response.text();
+    throw new Error(
+      `Firebase public read failed after authenticated read failed: ${authError instanceof Error ? authError.message : String(authError)}; HTTP ${response.status} ${detail.slice(0, 240)}`,
+    );
+  }
+}
+
+async function firebasePublicRequest(pathParts: string[], init: RequestInit): Promise<Response> {
+  const databaseUrl = getDatabaseUrl(null);
+  const encodedPath = pathParts.map((part) => encodeURIComponent(part)).join("/");
+  return fetch(`${databaseUrl}/${encodedPath}.json`, { cache: "no-store", ...init });
+}
+
 async function readServiceAccount(): Promise<FirebaseServiceAccount> {
   if (process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
     return JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON) as FirebaseServiceAccount;
@@ -55,9 +75,9 @@ async function readServiceAccount(): Promise<FirebaseServiceAccount> {
   return JSON.parse(text) as FirebaseServiceAccount;
 }
 
-function getDatabaseUrl(serviceAccount: FirebaseServiceAccount): string {
+function getDatabaseUrl(serviceAccount: FirebaseServiceAccount | null): string {
   if (process.env.FIREBASE_DATABASE_URL) return process.env.FIREBASE_DATABASE_URL.replace(/\/+$/, "");
-  if (serviceAccount.project_id) return `https://${serviceAccount.project_id}-default-rtdb.firebaseio.com`;
+  if (serviceAccount?.project_id) return `https://${serviceAccount.project_id}-default-rtdb.firebaseio.com`;
   return DEFAULT_DATABASE_URL;
 }
 
