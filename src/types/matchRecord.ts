@@ -1,4 +1,5 @@
 import type { Quarter, TeamQuarterLineup } from "@/types/lineup";
+import type { StaffRole } from "@/types/player";
 import type { TeamName } from "@/types/team";
 
 export type MatchRecordKind = "SELF" | "MATCH";
@@ -41,6 +42,7 @@ export type MatchRecordSaveRequest = {
   summaryStats?: MatchRecordPlayerStat[];
   teamScores?: MatchRecordTeamScore[];
   scoreOverride?: Partial<Record<TeamName, number>>;
+  staffRoles?: Partial<Record<string, StaffRole>>;
   overwriteExisting?: boolean;
   dryRun?: boolean;
 };
@@ -76,6 +78,7 @@ export type MatchRecordLoadResponse = {
   summaryStats?: MatchRecordPlayerStat[];
   teamScores?: MatchRecordTeamScore[];
   players?: Partial<Record<TeamName, string[]>>;
+  staffRoles?: Partial<Record<string, StaffRole>>;
   scoreOverride?: Partial<Record<TeamName, number>>;
   recordMode?: MatchRecordMode;
 };

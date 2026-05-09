@@ -1,5 +1,6 @@
 import type { TeamQuarterLineup } from "@/types/lineup";
 import type { MatchRecordEvent, MatchRecordKind, MatchRecordMode, MatchRecordPlayerStat, MatchRecordSaveRequest, MatchRecordTeamScore } from "@/types/matchRecord";
+import type { StaffRole } from "@/types/player";
 import type { TeamName } from "@/types/team";
 
 const NONE_GK = "없음";
@@ -53,6 +54,7 @@ type PlannerQuarterInfo = {
     B: "orange";
   };
   teams: Record<TeamName, { label: string; players: string[] }>;
+  staffRoles: Partial<Record<string, StaffRole>>;
   quarters: Record<string, PlannerQuarterRecord>;
   events: PlannerEventRecord[];
   summaryStats: PlannerSummaryStatRecord[];
@@ -117,8 +119,8 @@ export function validateMatchRecordRequest(body: MatchRecordSaveRequest): string
   if (normalizeMatchRecordDate(body.matchDate).length !== 8) {
     errors.push("matchDate는 YYYY-MM-DD 또는 YYYYMMDD 형식이어야 합니다.");
   }
-  if (!Array.isArray(body.quarters) || body.quarters.length === 0) {
-    errors.push("라인업 쿼터 정보가 없습니다.");
+  if (!Array.isArray(body.quarters)) {
+    errors.push("라인업 쿼터 정보가 올바르지 않습니다.");
   }
   if (!Array.isArray(body.events)) {
     errors.push("득점 이벤트 정보가 올바르지 않습니다.");
@@ -178,10 +180,10 @@ export function buildMatchInfoPayload(body: MatchRecordSaveRequest, savedAt = ne
     AwayGoal: awayGoal,
     HomePlayerInfo: firebaseNameList(teams.B),
     AwayPlayerInfo: firebaseNameList(teams.A),
-    HomeGoalInfo: firebaseNameList(homeGoalNames),
-    AwayGoalInfo: firebaseNameList(awayGoalNames),
-    HomeAssistInfo: firebaseNameList(homeAssistNames),
-    AwayAssistInfo: firebaseNameList(awayAssistNames),
+    HomeGoalInfo: firebaseNameList(homeGoalNames, { unique: false }),
+    AwayGoalInfo: firebaseNameList(awayGoalNames, { unique: false }),
+    HomeAssistInfo: firebaseNameList(homeAssistNames, { unique: false }),
+    AwayAssistInfo: firebaseNameList(awayAssistNames, { unique: false }),
     Comment: venueName,
     PlannerQuarterInfo: {
       schemaVersion: 1,
@@ -210,6 +212,7 @@ export function buildMatchInfoPayload(body: MatchRecordSaveRequest, savedAt = ne
         A: { label: awayTeamName, players: teams.A },
         B: { label: homeTeamName, players: teams.B },
       },
+      staffRoles: normalizeStaffRoles(body.staffRoles),
       quarters: quarterRecords(body.quarters, events, teamScores),
       events: events.map(toPlannerEvent),
       summaryStats: summaryStats.map(toPlannerSummaryStat),
@@ -370,10 +373,24 @@ function teamPlayers(quarters: TeamQuarterLineup[], team: TeamName): string[] {
   return uniqueNames(names);
 }
 
-function firebaseNameList(names: string[]): Array<{ Name: string } | null> {
-  const unique = uniqueNames(names);
-  if (unique.length === 0) return [];
-  return [null, ...unique.map((name) => ({ Name: name }))];
+function firebaseNameList(names: string[], options: { unique?: boolean } = {}): Array<{ Name: string } | null> {
+  const normalized = names
+    .map((name) => name.trim())
+    .filter((name) => name && name !== NONE_GK);
+  const output = options.unique === false ? normalized : uniqueNames(normalized);
+  if (output.length === 0) return [];
+  return [null, ...output.map((name) => ({ Name: name }))];
+}
+
+function normalizeStaffRoles(value: MatchRecordSaveRequest["staffRoles"]): Partial<Record<string, StaffRole>> {
+  const source = value && typeof value === "object" ? value : {};
+  const result: Partial<Record<string, StaffRole>> = {};
+  Object.entries(source).forEach(([rawName, rawRole]) => {
+    const name = rawName.trim();
+    if (!name || rawRole !== "단장" && rawRole !== "감독" && rawRole !== "코치") return;
+    result[name] = rawRole;
+  });
+  return result;
 }
 
 function uniqueNames(names: string[]): string[] {

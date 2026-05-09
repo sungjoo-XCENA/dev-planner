@@ -11,6 +11,7 @@ import type {
   MatchRecordTeamScore,
 } from "@/types/matchRecord";
 import type { Quarter } from "@/types/lineup";
+import type { StaffRole } from "@/types/player";
 import type { TeamName } from "@/types/team";
 
 export const dynamic = "force-dynamic";
@@ -128,6 +129,7 @@ function loadResponse(matchId: string, existing: unknown): MatchRecordLoadRespon
     summaryStats: plannerStats.length > 0 ? plannerStats : legacySummaryStats(record),
     teamScores: plannerTeamScores(planner.teamScores, record.HomeGoal, record.AwayGoal),
     players: playerListsFromRecord(planner, record),
+    staffRoles: staffRolesFromRecord(planner, record),
     scoreOverride: plannerScoreOverride(planner.scoreOverride, record.HomeGoal, record.AwayGoal),
     recordMode: plannerRecordMode(planner.recordMode),
   };
@@ -203,7 +205,7 @@ function plannerSummaryStats(value: unknown): MatchRecordPlayerStat[] {
     .map((item) => {
       const record = item && typeof item === "object" ? (item as Record<string, unknown>) : {};
       const team = teamValue(record.team);
-      const player = stringValue(record.player)?.trim() ?? "";
+      const player = normalizePersonName(stringValue(record.player) ?? "");
       const goals = countValue(record.goals);
       const assists = countValue(record.assists);
       const quarter = quarterValue(record.quarter);
@@ -237,8 +239,8 @@ function plannerTeamPlayers(value: unknown): string[] {
 
 function legacySummaryStats(record: Record<string, unknown>): MatchRecordPlayerStat[] {
   return [
-    ...legacyStatsForTeam("A", countNames(namesFromFirebaseList(record.AwayGoalInfo)), countNames(namesFromFirebaseList(record.AwayAssistInfo))),
-    ...legacyStatsForTeam("B", countNames(namesFromFirebaseList(record.HomeGoalInfo)), countNames(namesFromFirebaseList(record.HomeAssistInfo))),
+    ...legacyStatsForTeam("A", countNames(namesFromFirebaseList(record.AwayGoalInfo, { unique: false })), countNames(namesFromFirebaseList(record.AwayAssistInfo, { unique: false }))),
+    ...legacyStatsForTeam("B", countNames(namesFromFirebaseList(record.HomeGoalInfo, { unique: false })), countNames(namesFromFirebaseList(record.HomeAssistInfo, { unique: false }))),
   ];
 }
 
@@ -258,18 +260,31 @@ function countNames(names: string[]): Map<string, number> {
   return counts;
 }
 
-function namesFromFirebaseList(value: unknown): string[] {
-  if (Array.isArray(value)) {
-    return uniqueNames(value.map(nameFromFirebaseItem));
-  }
+function namesFromFirebaseList(value: unknown, options: { unique?: boolean } = {}): string[] {
+  const names = firebaseListItems(value).map(nameFromFirebaseItem).filter(Boolean);
+  return options.unique === false ? names : uniqueNames(names);
+}
+
+function firebaseListItems(value: unknown): unknown[] {
+  if (Array.isArray(value)) return value;
   const record = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
-  return uniqueNames(Object.keys(record).map((key) => nameFromFirebaseItem(record[key])));
+  return Object.keys(record).map((key) => record[key]);
 }
 
 function nameFromFirebaseItem(value: unknown): string {
-  if (typeof value === "string") return value.trim();
+  if (typeof value === "string") return normalizePersonName(value);
   const record = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
-  return stringValue(record.Name ?? record.name ?? record.PlayerName ?? record.playerName)?.trim() ?? "";
+  return normalizePersonName(stringValue(record.Name ?? record.name ?? record.PlayerName ?? record.playerName) ?? "");
+}
+
+function normalizePersonName(value: string): string {
+  return value
+    .replace(/\b\dQ(?:-GK\d)?\b/g, " ")
+    .replace(/\bGK\d\b/g, " ")
+    .replace(/(코치|감독|단장)/g, " ")
+    .replace(/[·+]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function uniqueNames(names: string[]): string[] {
@@ -282,6 +297,75 @@ function uniqueNames(names: string[]): string[] {
     result.push(trimmed);
   });
   return result;
+}
+
+const KNOWN_STAFF_ROLES: Partial<Record<string, StaffRole>> = {
+  "박지환": "단장",
+  "유지웅": "감독",
+  "정창영": "코치",
+  "하성주": "코치",
+  "박경덕": "코치",
+  "윤원빈": "코치",
+};
+
+function staffRolesFromRecord(planner: Record<string, unknown>, record: Record<string, unknown>): Partial<Record<string, StaffRole>> {
+  const roles: Partial<Record<string, StaffRole>> = {};
+  applyStaffRolesObject(roles, planner.staffRoles);
+  collectStaffRolesFromList(roles, record.AwayPlayerInfo);
+  collectStaffRolesFromList(roles, record.HomePlayerInfo);
+  collectStaffRolesFromList(roles, record.AwayGoalInfo);
+  collectStaffRolesFromList(roles, record.HomeGoalInfo);
+  collectStaffRolesFromList(roles, record.AwayAssistInfo);
+  collectStaffRolesFromList(roles, record.HomeAssistInfo);
+
+  const seenNames = uniqueNames([
+    ...namesFromFirebaseList(record.AwayPlayerInfo),
+    ...namesFromFirebaseList(record.HomePlayerInfo),
+    ...namesFromFirebaseList(record.AwayGoalInfo),
+    ...namesFromFirebaseList(record.HomeGoalInfo),
+    ...namesFromFirebaseList(record.AwayAssistInfo),
+    ...namesFromFirebaseList(record.HomeAssistInfo),
+    ...plannerSummaryStats(planner.summaryStats).map((stat) => stat.player),
+  ]);
+  seenNames.forEach((name) => {
+    if (!roles[name] && KNOWN_STAFF_ROLES[name]) roles[name] = KNOWN_STAFF_ROLES[name];
+  });
+  return roles;
+}
+
+function applyStaffRolesObject(target: Partial<Record<string, StaffRole>>, value: unknown) {
+  const source = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+  Object.entries(source).forEach(([rawName, rawRole]) => {
+    const name = normalizePersonName(rawName);
+    const role = staffRoleValue(rawRole);
+    if (name && role) target[name] = role;
+  });
+}
+
+function collectStaffRolesFromList(target: Partial<Record<string, StaffRole>>, value: unknown) {
+  firebaseListItems(value).forEach((item) => {
+    const name = nameFromFirebaseItem(item);
+    const role = staffRoleFromFirebaseItem(item);
+    if (name && role) target[name] = role;
+  });
+}
+
+function staffRoleFromFirebaseItem(value: unknown): StaffRole | undefined {
+  if (typeof value === "string") return staffRoleFromText(value);
+  const record = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+  return staffRoleValue(record.staffRole ?? record.StaffRole ?? record.role ?? record.Role)
+    ?? staffRoleFromText(stringValue(record.Memo ?? record.memo ?? record.Note ?? record.note ?? record.Name ?? record.name ?? record.PlayerName ?? record.playerName) ?? "");
+}
+
+function staffRoleValue(value: unknown): StaffRole | undefined {
+  return value === "단장" || value === "감독" || value === "코치" ? value : undefined;
+}
+
+function staffRoleFromText(value: string): StaffRole | undefined {
+  if (value.includes("단장")) return "단장";
+  if (value.includes("감독")) return "감독";
+  if (value.includes("코치")) return "코치";
+  return undefined;
 }
 
 function plannerTeamScores(value: unknown, homeGoal: unknown, awayGoal: unknown): MatchRecordTeamScore[] {

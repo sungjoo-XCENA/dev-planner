@@ -172,6 +172,18 @@ export default function Home() {
   const [teamsConfirmed, setTeamsConfirmed] = useState(false);
   const [swapSelection, setSwapSelection] = useState<SwapSelection>(null);
   const [hydrated, setHydrated] = useState(false);
+  const [showRecordEntry, setShowRecordEntry] = useState(false);
+
+  function openRecordEntry() {
+    setShowRecordEntry(true);
+    window.setTimeout(() => document.getElementById("lineup-result")?.scrollIntoView({ block: "start" }), 0);
+  }
+
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("record") !== "1") return;
+    setShowRecordEntry(true);
+    window.setTimeout(() => document.getElementById("lineup-result")?.scrollIntoView({ block: "start" }), 0);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -850,7 +862,10 @@ export default function Home() {
               <ModeButton active={plannerMode === "MATCH"} onClick={() => setPlannerMode("MATCH")}>매치</ModeButton>
             </div>
           </div>
-          <button className="rounded-xl bg-slate-900 px-5 py-3 font-semibold text-white disabled:bg-slate-300" onClick={runPlanner} disabled={!canGenerate}>자동 생성</button>
+          <div className="flex flex-wrap gap-2">
+            <button className="rounded-xl border border-slate-300 bg-white px-5 py-3 font-semibold text-slate-800 hover:bg-slate-50" onClick={openRecordEntry}>기록 입력</button>
+            <button className="rounded-xl bg-slate-900 px-5 py-3 font-semibold text-white disabled:bg-slate-300" onClick={runPlanner} disabled={!canGenerate}>자동 생성</button>
+          </div>
         </div>
       </section>
 
@@ -877,6 +892,17 @@ export default function Home() {
         />
       )}
       {matchResult && <MatchResultView result={matchResult} />}
+      {showRecordEntry && !lineupResult && (
+        <section id="lineup-result" data-mrw-standalone="true" className="mb-6 rounded-3xl bg-white p-6 shadow-sm">
+          <div className="mb-2 flex items-start justify-between gap-3">
+            <div>
+              <h2 className="text-xl font-bold">경기 기록 입력</h2>
+              <p className="mt-1 text-sm text-slate-600">라인업 없이도 지난 기록을 불러오거나 팀 점수와 개인 기록을 저장할 수 있습니다.</p>
+            </div>
+            <button className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-bold text-slate-700" onClick={() => setShowRecordEntry(false)}>닫기</button>
+          </div>
+        </section>
+      )}
 
       <div className="fixed inset-x-0 bottom-0 z-10 border-t border-slate-200 bg-white/95 p-3 backdrop-blur">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-3">
@@ -886,7 +912,10 @@ export default function Home() {
               : `매치 · 참석 ${matchRosterSize}명${waitingCount > 0 ? ` (콜업 후보 ${waitingCount})` : ""} · 전담 GK ${dedicatedGks.length}`}
             {!canGenerate && <p className="text-xs font-normal text-slate-500">{plannerMode === "BALANCE" ? "내부전은 24명 이상 권장, 22명부터 가능" : "매치는 필드 10명~18명 필요"}</p>}
           </div>
-          <button className="rounded-xl bg-slate-900 px-5 py-3 text-sm font-bold text-white disabled:bg-slate-300" onClick={runPlanner} disabled={!canGenerate}>자동 생성</button>
+          <div className="flex shrink-0 gap-2">
+            <button className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-bold text-slate-800" onClick={openRecordEntry}>기록 입력</button>
+            <button className="rounded-xl bg-slate-900 px-5 py-3 text-sm font-bold text-white disabled:bg-slate-300" onClick={runPlanner} disabled={!canGenerate}>자동 생성</button>
+          </div>
         </div>
       </div>
     </main>
