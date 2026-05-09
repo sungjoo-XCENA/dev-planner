@@ -4,7 +4,7 @@
   var PANEL_ID = "match-record-widget-panel";
   var STYLE_ID = "match-record-widget-style";
   var TEAM_LABELS = { A: "형광팀", B: "주황팀" };
-  var state = { events: [], status: "", conflict: null };
+  var state = { events: [], status: "", conflict: null, loadedRecord: null };
 
   function installStyle() {
     if (document.getElementById(STYLE_ID)) return;
@@ -38,6 +38,12 @@
 
   function compactDate(value) {
     return String(value || "").replace(/\D/g, "").slice(0, 8);
+  }
+
+  function dateInputFromFirebase(value) {
+    var digits = compactDate(value);
+    if (digits.length !== 8) return "";
+    return digits.slice(0, 4) + "-" + digits.slice(4, 6) + "-" + digits.slice(6, 8);
   }
 
   function todayInputValue() {
@@ -79,6 +85,15 @@
 
   function isVisible(element) {
     return Boolean(element && element.getClientRects && element.getClientRects().length > 0);
+  }
+
+  function hideNativeRecordPanel() {
+    Array.prototype.forEach.call(document.querySelectorAll("h3"), function (title) {
+      if ((title.textContent || "").trim() !== "경기 기록 저장") return;
+      if (title.closest("#" + PANEL_ID)) return;
+      var card = title.closest(".border-indigo-200");
+      if (card) card.style.display = "none";
+    });
   }
 
   function parseQuarterCards() {
@@ -171,6 +186,7 @@
     if (records.length === 0) return;
 
     installStyle();
+    hideNativeRecordPanel();
     var existing = document.getElementById(PANEL_ID);
     var prevDate = existing && existing.querySelector("[data-mrw=date]") ? existing.querySelector("[data-mrw=date]").value : todayInputValue();
     var prevMatchId = existing && existing.querySelector("[data-mrw=matchId]") ? existing.querySelector("[data-mrw=matchId]").value : compactDate(prevDate);
@@ -185,6 +201,7 @@
     if (availableNames.indexOf(prevAssist) < 0) prevAssist = "";
 
     var score = scoreSummary();
+    var loadedMatchId = state.loadedRecord && state.loadedRecord.matchId === prevMatchId ? state.loadedRecord.matchId : "";
     var eventHtml = state.events.length === 0
       ? "<span class=\"mrw-chip\">득점 기록 없음</span>"
       : state.events.map(function (event, index) {
@@ -206,7 +223,7 @@
       "<div class=\"mrw-field\"><label>득점</label><select data-mrw=\"scorer\">" + optionHtml(availableNames, prevScorer, false) + "</select></div>",
       "<div class=\"mrw-field\"><label>도움</label><select data-mrw=\"assist\">" + optionHtml(availableNames, prevAssist, true) + "</select></div>",
       "</div>",
-      "<div class=\"mrw-actions\"><button type=\"button\" class=\"mrw-button mrw-secondary\" data-mrw-action=\"add\">득점 추가</button><button type=\"button\" class=\"mrw-button mrw-secondary\" data-mrw-action=\"preview\">저장 미리보기</button><button type=\"button\" class=\"mrw-button mrw-primary\" data-mrw-action=\"save\">Firebase에 저장</button>" + (state.conflict ? "<button type=\"button\" class=\"mrw-button mrw-danger\" data-mrw-action=\"overwrite\">기존 MatchInfo에 PATCH 저장</button>" : "") + "</div>",
+      "<div class=\"mrw-actions\"><button type=\"button\" class=\"mrw-button mrw-secondary\" data-mrw-action=\"add\">득점 추가</button><button type=\"button\" class=\"mrw-button mrw-secondary\" data-mrw-action=\"load\">저장 기록 불러오기</button><button type=\"button\" class=\"mrw-button mrw-secondary\" data-mrw-action=\"preview\">저장 미리보기</button><button type=\"button\" class=\"mrw-button mrw-primary\" data-mrw-action=\"save\">Firebase에 저장</button>" + (loadedMatchId ? "<button type=\"button\" class=\"mrw-button mrw-danger\" data-mrw-action=\"update\">불러온 기록 PATCH 저장</button>" : "") + (state.conflict ? "<button type=\"button\" class=\"mrw-button mrw-danger\" data-mrw-action=\"overwrite\">기존 MatchInfo에 PATCH 저장</button>" : "") + "</div>",
       "<div class=\"mrw-score\"><span>형광 Away " + score.A + "</span><span>주황 Home " + score.B + "</span><span>라인업 " + records.length + "개</span></div>",
       "<div class=\"mrw-event-list\">" + eventHtml + "</div>",
       state.status ? "<div class=\"mrw-status\">" + escapeHtml(state.status) + "</div>" : "",
@@ -254,8 +271,11 @@
         renderPanel();
       });
     });
+    panel.querySelector("[data-mrw-action=load]").addEventListener("click", loadRecord);
     panel.querySelector("[data-mrw-action=preview]").addEventListener("click", function () { saveRecord(true, false); });
     panel.querySelector("[data-mrw-action=save]").addEventListener("click", function () { saveRecord(false, false); });
+    var update = panel.querySelector("[data-mrw-action=update]");
+    if (update) update.addEventListener("click", function () { saveRecord(false, true); });
     var overwrite = panel.querySelector("[data-mrw-action=overwrite]");
     if (overwrite) overwrite.addEventListener("click", function () { saveRecord(false, true); });
   }
@@ -272,6 +292,51 @@
       dryRun: dryRun,
       overwriteExisting: overwriteExisting,
     };
+  }
+
+  async function loadRecord() {
+    try {
+      var panel = document.getElementById(PANEL_ID);
+      var matchId = panel.querySelector("[data-mrw=matchId]").value.trim();
+      if (!matchId) matchId = compactDate(panel.querySelector("[data-mrw=date]").value);
+      if (!matchId) {
+        state.status = "불러올 MatchInfo 키를 입력해주세요.";
+        renderPanel();
+        return;
+      }
+
+      state.status = "Firebase 기록 불러오는 중...";
+      renderPanel();
+
+      var response = await fetch("/api/match-record?matchId=" + encodeURIComponent(matchId), {
+        method: "GET",
+        headers: { accept: "application/json" },
+      });
+      var data = await response.json().catch(function () { return {}; });
+      if (!response.ok) throw new Error(data.detail || data.error || "경기 기록을 찾지 못했습니다.");
+
+      state.events = Array.isArray(data.events) ? data.events : [];
+      state.conflict = null;
+      state.loadedRecord = data;
+
+      panel = document.getElementById(PANEL_ID);
+      var matchDate = dateInputFromFirebase(data.matchDate);
+      if (matchDate) panel.querySelector("[data-mrw=date]").value = matchDate;
+      if (data.matchTime) panel.querySelector("[data-mrw=time]").value = data.matchTime;
+      if (typeof data.comment === "string") panel.querySelector("[data-mrw=memo]").value = data.comment;
+      panel.querySelector("[data-mrw=matchId]").value = data.matchId || matchId;
+
+      state.status = [
+        "Firebase 기록을 불러왔습니다.",
+        "경로: " + data.path,
+        "스코어: 주황 Home " + (data.homeGoal ?? 0) + " / 형광 Away " + (data.awayGoal ?? 0),
+        data.hasPlannerQuarterInfo ? "쿼터 이벤트 " + state.events.length + "개를 수정할 수 있습니다." : "이 기록에는 dev-planner 쿼터 이벤트가 없어 레거시 점수만 확인했습니다.",
+      ].join("\n");
+      renderPanel();
+    } catch (error) {
+      state.status = error && error.message ? error.message : String(error);
+      renderPanel();
+    }
   }
 
   async function saveRecord(dryRun, overwriteExisting) {

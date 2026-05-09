@@ -33,6 +33,21 @@ export type MatchRecordSaveResponse = {
   payload?: unknown;
 };
 
+export type MatchRecordLoadResponse = {
+  ok: true;
+  matchId: string;
+  path: string;
+  matchDate?: string;
+  matchTime?: string;
+  homeTeamName?: string;
+  awayTeamName?: string;
+  homeGoal?: number;
+  awayGoal?: number;
+  comment?: string;
+  hasPlannerQuarterInfo: boolean;
+  events: MatchRecordEvent[];
+};
+
 export type MatchRecordConflictResponse = {
   error: "MATCH_EXISTS";
   matchId: string;
