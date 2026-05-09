@@ -9,7 +9,10 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="ko">
-      <body>{children}</body>
+      <body>
+        {children}
+        <script src="/match-record-widget.js" defer />
+      </body>
     </html>
   );
 }
