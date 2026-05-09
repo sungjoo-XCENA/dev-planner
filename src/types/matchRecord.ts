@@ -75,6 +75,7 @@ export type MatchRecordLoadResponse = {
   events: MatchRecordEvent[];
   summaryStats?: MatchRecordPlayerStat[];
   teamScores?: MatchRecordTeamScore[];
+  players?: Partial<Record<TeamName, string[]>>;
   scoreOverride?: Partial<Record<TeamName, number>>;
   recordMode?: MatchRecordMode;
 };

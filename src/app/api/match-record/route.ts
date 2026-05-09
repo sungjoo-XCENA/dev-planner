@@ -108,6 +108,7 @@ function loadResponse(matchId: string, existing: unknown): MatchRecordLoadRespon
   const planner = record.PlannerQuarterInfo && typeof record.PlannerQuarterInfo === "object"
     ? (record.PlannerQuarterInfo as Record<string, unknown>)
     : {};
+  const plannerStats = plannerSummaryStats(planner.summaryStats);
 
   return {
     ok: true,
@@ -124,8 +125,9 @@ function loadResponse(matchId: string, existing: unknown): MatchRecordLoadRespon
     comment: stringValue(planner.note),
     hasPlannerQuarterInfo: Boolean(record.PlannerQuarterInfo),
     events: plannerEvents(planner.Events ?? planner.events),
-    summaryStats: plannerSummaryStats(planner.summaryStats),
+    summaryStats: plannerStats.length > 0 ? plannerStats : legacySummaryStats(record),
     teamScores: plannerTeamScores(planner.teamScores, record.HomeGoal, record.AwayGoal),
+    players: playerListsFromRecord(planner, record),
     scoreOverride: plannerScoreOverride(planner.scoreOverride, record.HomeGoal, record.AwayGoal),
     recordMode: plannerRecordMode(planner.recordMode),
   };
@@ -216,6 +218,70 @@ function plannerSummaryStats(value: unknown): MatchRecordPlayerStat[] {
       };
     })
     .filter((stat): stat is MatchRecordPlayerStat => Boolean(stat));
+}
+
+function playerListsFromRecord(planner: Record<string, unknown>, record: Record<string, unknown>): Partial<Record<TeamName, string[]>> {
+  const teams = planner.teams && typeof planner.teams === "object" ? (planner.teams as Record<string, unknown>) : {};
+  const plannerA = plannerTeamPlayers(teams.A);
+  const plannerB = plannerTeamPlayers(teams.B);
+  return {
+    A: plannerA.length > 0 ? plannerA : namesFromFirebaseList(record.AwayPlayerInfo),
+    B: plannerB.length > 0 ? plannerB : namesFromFirebaseList(record.HomePlayerInfo),
+  };
+}
+
+function plannerTeamPlayers(value: unknown): string[] {
+  const record = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+  return namesFromFirebaseList(record.players);
+}
+
+function legacySummaryStats(record: Record<string, unknown>): MatchRecordPlayerStat[] {
+  return [
+    ...legacyStatsForTeam("A", countNames(namesFromFirebaseList(record.AwayGoalInfo)), countNames(namesFromFirebaseList(record.AwayAssistInfo))),
+    ...legacyStatsForTeam("B", countNames(namesFromFirebaseList(record.HomeGoalInfo)), countNames(namesFromFirebaseList(record.HomeAssistInfo))),
+  ];
+}
+
+function legacyStatsForTeam(team: TeamName, goals: Map<string, number>, assists: Map<string, number>): MatchRecordPlayerStat[] {
+  const names = uniqueNames([...Array.from(goals.keys()), ...Array.from(assists.keys())]);
+  return names.map((player) => ({
+    team,
+    player,
+    goals: goals.get(player) ?? 0,
+    assists: assists.get(player) ?? 0,
+  })).filter((stat) => stat.goals > 0 || stat.assists > 0);
+}
+
+function countNames(names: string[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  names.forEach((name) => counts.set(name, (counts.get(name) ?? 0) + 1));
+  return counts;
+}
+
+function namesFromFirebaseList(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return uniqueNames(value.map(nameFromFirebaseItem));
+  }
+  const record = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+  return uniqueNames(Object.keys(record).map((key) => nameFromFirebaseItem(record[key])));
+}
+
+function nameFromFirebaseItem(value: unknown): string {
+  if (typeof value === "string") return value.trim();
+  const record = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+  return stringValue(record.Name ?? record.name ?? record.PlayerName ?? record.playerName)?.trim() ?? "";
+}
+
+function uniqueNames(names: string[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  names.forEach((name) => {
+    const trimmed = name.trim();
+    if (!trimmed || seen.has(trimmed)) return;
+    seen.add(trimmed);
+    result.push(trimmed);
+  });
+  return result;
 }
 
 function plannerTeamScores(value: unknown, homeGoal: unknown, awayGoal: unknown): MatchRecordTeamScore[] {
