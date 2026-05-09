@@ -5,6 +5,7 @@
   var STYLE_ID = "match-record-widget-style";
   var TEAM_LABELS = { A: "DevUtd 형광", B: "DevUtd 주황" };
   var DEFAULT_VENUE = "성남 종합운동장 보조구장";
+  var KNOWN_STAFF_ROLES = { "박지환": "단장", "유지웅": "감독", "정창영": "코치", "하성주": "코치", "박경덕": "코치", "윤원빈": "코치" };
   var state = {
     status: "",
     conflict: null,
@@ -207,11 +208,37 @@
   function playerName(value) {
     var name = cleanName(value);
     rememberRole(name, roleFromText(value));
+    rememberKnownRole(name);
     return name;
   }
 
   function rememberRole(name, role) {
+    role = normalizeRole(role);
     if (name && role) state.roles[name] = role;
+  }
+
+  function rememberKnownRole(name) {
+    if (name && !state.roles[name] && KNOWN_STAFF_ROLES[name]) state.roles[name] = KNOWN_STAFF_ROLES[name];
+  }
+
+  function normalizeRole(role) {
+    return role === "단장" || role === "감독" || role === "코치" ? role : "";
+  }
+
+  function applyStaffRoles(roles) {
+    var source = roles && typeof roles === "object" ? roles : {};
+    Object.keys(source).forEach(function (rawName) {
+      rememberRole(cleanName(rawName), source[rawName] || roleFromText(rawName));
+    });
+  }
+
+  function staffRolesPayload() {
+    var out = {};
+    Object.keys(state.roles || {}).forEach(function (name) {
+      var role = normalizeRole(state.roles[name]);
+      if (name && role) out[name] = role;
+    });
+    return out;
   }
 
   function directChipNames(container) {
@@ -314,6 +341,15 @@
     return records;
   }
 
+  function hasStandaloneRecordAnchor() {
+    var section = document.getElementById("lineup-result");
+    return Boolean(section && section.getAttribute("data-mrw-standalone") === "true");
+  }
+
+  function emptyRecord(team) {
+    return { team: team, attack: [], mid: [], defense: [], gk: "", bench: [], warnings: [] };
+  }
+
   function teamPlayers(records, team, quarter) {
     return uniqueNames(records
       .filter(function (record) { return record.team === team && (!quarter || !record.quarter || record.quarter === quarter); })
@@ -340,7 +376,9 @@
   function loadedPlayerName(value) {
     if (typeof value === "string") return value;
     if (value && typeof value === "object") {
-      return value.Name || value.name || value.PlayerName || value.playerName || "";
+      var rawName = value.Name || value.name || value.PlayerName || value.playerName || "";
+      rememberRole(cleanName(rawName), value.staffRole || value.StaffRole || value.role || value.Role || roleFromText(rawName));
+      return rawName;
     }
     return "";
   }
@@ -615,6 +653,7 @@
   function renderPanel() {
     var lineupRecords = parseQuarterCards();
     var records = displayRecords(lineupRecords);
+    if (records.length === 0 && hasStandaloneRecordAnchor()) records = [emptyRecord("A"), emptyRecord("B")];
     if (records.length === 0) return;
 
     installStyle();
@@ -646,7 +685,10 @@
       state.editModalOpen ? renderEditModal(form) : "",
     ].join("");
 
-    if (!existing) document.getElementById("lineup-result").appendChild(panel);
+    if (!existing) {
+      var mount = document.getElementById("lineup-result");
+      if (mount) mount.appendChild(panel);
+    }
     bindPanel(panel);
   }
 
@@ -759,7 +801,7 @@
   }
 
   function renderRole(player) {
-    var role = state.roles[player];
+    var role = state.roles[player] || KNOWN_STAFF_ROLES[player];
     if (!role) return "";
     var cls = role === "감독" ? "mrw-role-manager" : role === "단장" ? "mrw-role-director" : "mrw-role-coach";
     return "<span class=\"mrw-role " + cls + "\">" + role + "</span>";
@@ -970,6 +1012,7 @@
       summaryStats: summaryStatsArray(),
       teamScores: teamScoresArray(),
       scoreOverride: teamScoreSummary(),
+      staffRoles: staffRolesPayload(),
       dryRun: dryRun,
       overwriteExisting: overwriteExisting,
     };
@@ -1016,6 +1059,7 @@
       var data = await response.json().catch(function () { return {}; });
       if (!response.ok) throw new Error(data.detail || data.error || "경기 기록을 찾지 못했습니다.");
 
+      applyStaffRoles(data.staffRoles);
       state.events = Array.isArray(data.events) ? data.events : [];
       setSummaryStatsFromArray(data.summaryStats);
       setTeamScoresFromArray(data.teamScores, data.scoreOverride);
