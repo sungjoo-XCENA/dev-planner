@@ -338,6 +338,21 @@ export default function Home() {
     setShowRecordEntry(false);
   }
 
+  function changePlannerMode(nextMode: PlannerMode) {
+    if (nextMode === plannerMode) return;
+    clearLineupShareHash();
+    setPlannerMode(nextMode);
+    setTeamResult(null);
+    setTeamVariants([]);
+    setSelectedVariantIdx(0);
+    setLineupResult(null);
+    setMatchResult(null);
+    setCopied(false);
+    setTeamsConfirmed(false);
+    setSwapSelection(null);
+    setShowRecordEntry(false);
+  }
+
   async function handleLoad() {
     resetResults();
     setErrors([]);
@@ -854,15 +869,15 @@ export default function Home() {
             <h2 className="text-xl font-bold">팀분배&라인업</h2>
             <p className="mt-1 text-sm text-slate-600">{modeHelp(plannerMode)}</p>
             <div className="mt-3 flex gap-2">
-              <ModeButton active={plannerMode === "BALANCE"} onClick={() => setPlannerMode("BALANCE")}>내부전</ModeButton>
-              <ModeButton active={plannerMode === "MATCH"} onClick={() => setPlannerMode("MATCH")}>매치</ModeButton>
+              <ModeButton active={plannerMode === "BALANCE"} onClick={() => changePlannerMode("BALANCE")}>내부전</ModeButton>
+              <ModeButton active={plannerMode === "MATCH"} onClick={() => changePlannerMode("MATCH")}>매치</ModeButton>
             </div>
           </div>
           <button className="rounded-xl bg-slate-900 px-5 py-3 font-semibold text-white disabled:bg-slate-300" onClick={runPlanner} disabled={!canGenerate}>자동 생성</button>
         </div>
       </section>
 
-      {teamResult && (
+      {plannerMode === "BALANCE" && teamResult && (
         <TeamResultView
           result={teamResult}
           confirmed={teamsConfirmed}
@@ -896,7 +911,7 @@ export default function Home() {
           onClose={() => setShowRecordEntry(false)}
         />
       )}
-      {matchResult && (
+      {plannerMode === "MATCH" && matchResult && (
         <MatchResultView
           result={matchResult}
           recordEntryOpen={showRecordEntry}

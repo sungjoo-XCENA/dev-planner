@@ -31,14 +31,14 @@
     var style = document.createElement("style");
     style.id = STYLE_ID;
     style.textContent = [
-      ".mrw-card{margin-top:16px;border:1px solid #dbe3ef;border-radius:22px;background:#fff;padding:18px;box-shadow:0 12px 32px rgba(15,23,42,.08);font-family:inherit;color:#0f172a}",
+      ".mrw-card{margin-top:16px;max-width:100%;box-sizing:border-box;overflow:hidden;border:1px solid #dbe3ef;border-radius:22px;background:#fff;padding:18px;box-shadow:0 12px 32px rgba(15,23,42,.08);font-family:inherit;color:#0f172a}",
       ".mrw-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap}",
       ".mrw-title{margin:0;color:#0f172a;font-size:20px;font-weight:950;letter-spacing:0}",
       ".mrw-help{margin:4px 0 0;color:#64748b;font-size:12px;line-height:1.55}",
       ".mrw-meta{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:14px}",
       ".mrw-field{display:flex;flex-direction:column;gap:4px;min-width:0}",
       ".mrw-field label{color:#64748b;font-size:11px;font-weight:900}",
-      ".mrw-field input,.mrw-field select,.mrw-field textarea{width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:12px;background:#fff;padding:9px 10px;color:#0f172a;font-size:13px;font-weight:800}",
+      ".mrw-field input,.mrw-field select,.mrw-field textarea{width:100%;min-width:0;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:12px;background:#fff;padding:9px 10px;color:#0f172a;font-size:13px;font-weight:800}",
       ".mrw-field input[readonly]{background:#f8fafc;color:#475569}",
       ".mrw-field textarea{min-height:38px;resize:vertical}",
       ".mrw-wide{grid-column:span 2}",
@@ -75,12 +75,12 @@
       ".mrw-score-num{font-size:48px;font-weight:950;line-height:.95;text-align:center}",
       ".mrw-score-sep{font-size:24px;font-weight:950;color:#cbd5e1}",
       ".mrw-score-minus{position:absolute;right:8px;top:8px;z-index:2;display:flex;align-items:center;justify-content:center;border:0;border-radius:999px;background:rgba(15,23,42,.36);color:#fff;width:30px;height:30px;font-size:18px;font-weight:950;line-height:1;cursor:pointer;box-shadow:0 4px 12px rgba(15,23,42,.18)}",
-      ".mrw-stats{margin-top:12px;display:grid;grid-template-columns:1fr 1fr;gap:10px}",
+      ".mrw-stats{margin-top:12px;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr));gap:10px}",
       ".mrw-stat-team{border:1px solid #e2e8f0;border-radius:18px;background:#fff;overflow:hidden}",
       ".mrw-stat-team-title{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:12px;background:#f8fafc;border-bottom:1px solid #eef2f7;font-size:13px;font-weight:950;color:#0f172a}",
       ".mrw-stat-total{color:#64748b;font-size:12px;font-weight:900}",
       ".mrw-stat-list{display:grid;gap:7px;padding:10px}",
-      ".mrw-stat-row{display:grid;grid-template-columns:minmax(78px,1fr) auto auto;align-items:center;gap:6px;border:1px solid #e2e8f0;border-radius:14px;background:#fff;padding:7px}",
+      ".mrw-stat-row{display:grid;grid-template-columns:minmax(70px,1fr) auto auto;align-items:center;gap:6px;border:1px solid #e2e8f0;border-radius:14px;background:#fff;padding:7px}",
       ".mrw-stat-name{min-width:0;display:flex;align-items:center;gap:6px;flex-wrap:wrap;color:#0f172a;font-size:13px;font-weight:950}",
       ".mrw-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
       ".mrw-role{display:inline-flex;align-items:center;border-radius:999px;padding:2px 6px;font-size:10px;font-weight:950;line-height:1.1}",
@@ -117,7 +117,7 @@
       ".mrw-modal-foot{display:flex;gap:8px;justify-content:flex-end;background:#fff;border-top:1px solid #e2e8f0;padding:12px 14px}",
       ".mrw-icon-close{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;border:0;border-radius:999px;background:#e2e8f0;color:#334155;font-size:20px;font-weight:950;line-height:1;cursor:pointer}",
       ".mrw-empty{color:#94a3b8;font-size:12px;font-weight:800}",
-      "@media(max-width:760px){.mrw-card{padding:14px;border-radius:18px}.mrw-title{font-size:18px}.mrw-meta{grid-template-columns:repeat(2,minmax(0,1fr))}.mrw-wide{grid-column:1/-1}.mrw-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.mrw-summary-item:last-child{grid-column:1/-1}.mrw-mode-head{align-items:stretch}.mrw-scope{width:100%}.mrw-scope select{flex:1}.mrw-layout{grid-template-columns:1fr}.mrw-score-num{font-size:40px}.mrw-score-row{gap:12px}.mrw-side{min-height:76px;padding:12px 36px}.mrw-team-name{font-size:12px}.mrw-score-minus{right:6px;top:6px;width:28px;height:28px;font-size:17px}.mrw-stats{grid-template-columns:1fr}.mrw-stat-list{gap:5px}.mrw-stat-row{grid-template-columns:minmax(78px,1fr) auto auto;gap:5px;padding:6px}.mrw-stat-name{font-size:12px;line-height:1.2}.mrw-name{white-space:normal}.mrw-role{padding:1px 5px;font-size:9px}.mrw-counter{grid-template-columns:22px 23px 16px 23px;gap:2px;padding:3px 4px;min-width:92px}.mrw-counter-label{font-size:9px;line-height:1}.mrw-counter button{width:23px;height:23px;font-size:13px}.mrw-counter-value{font-size:12px}.mrw-events{max-height:none}.mrw-actions .mrw-button{flex:1 1 100%}.mrw-modal-backdrop{align-items:flex-end;padding:0}.mrw-modal{width:100%;border-radius:22px 22px 0 0;max-height:84vh}}",
+      "@media(max-width:760px){.mrw-card{padding:14px;border-radius:18px}.mrw-title{font-size:18px}.mrw-meta{grid-template-columns:repeat(2,minmax(0,1fr))}.mrw-wide{grid-column:1/-1}.mrw-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.mrw-summary-item:last-child{grid-column:1/-1}.mrw-mode-head{align-items:stretch}.mrw-scope{width:100%}.mrw-scope select{flex:1}.mrw-layout{grid-template-columns:1fr}.mrw-scoreboard{padding:10px}.mrw-score-num{font-size:40px}.mrw-score-row{gap:8px}.mrw-side{min-height:76px;padding:12px 30px}.mrw-team-name{font-size:12px}.mrw-score-minus{right:6px;top:6px;width:28px;height:28px;font-size:17px}.mrw-stats{grid-template-columns:1fr}.mrw-stat-list{gap:5px}.mrw-stat-row{grid-template-columns:minmax(68px,1fr) auto auto;gap:4px;padding:6px}.mrw-stat-name{font-size:12px;line-height:1.2}.mrw-name{white-space:normal}.mrw-role{padding:1px 5px;font-size:9px}.mrw-counter{grid-template-columns:18px 20px 14px 20px;gap:1px;padding:3px;min-width:76px}.mrw-counter-label{font-size:9px;line-height:1}.mrw-counter button{width:20px;height:20px;font-size:12px}.mrw-counter-value{font-size:12px}.mrw-events{max-height:none}.mrw-actions .mrw-button{flex:1 1 100%}.mrw-modal-backdrop{align-items:flex-end;padding:0}.mrw-modal{width:100%;border-radius:22px 22px 0 0;max-height:84vh}}",
     ].join("\n");
     document.head.appendChild(style);
   }
@@ -358,12 +358,34 @@
     }
   }
 
+  function syncStandaloneContext() {
+    if (!hasStandaloneRecordAnchor()) {
+      if (state.standaloneKey) {
+        resetRecordEntryState();
+        state.standaloneKey = "";
+        removeExistingPanel();
+        return true;
+      }
+      return false;
+    }
+    var data = standaloneData();
+    var nextKey = data.key || "";
+    if (nextKey && state.standaloneKey !== nextKey) {
+      resetRecordEntryState();
+      state.standaloneKey = nextKey;
+      removeExistingPanel();
+      return true;
+    }
+    return false;
+  }
+
+  function removeExistingPanel() {
+    var existing = document.getElementById(PANEL_ID);
+    if (existing && existing.parentNode) existing.parentNode.removeChild(existing);
+  }
+
   function parseStandaloneRecords(section) {
     var data = standaloneData();
-    if (data.key && state.standaloneKey !== data.key) {
-      resetRecordEntryState();
-      state.standaloneKey = data.key;
-    }
     applyStaffRoles(data.staffRoles);
     if (!Array.isArray(data.records)) return [];
     return data.records.map(function (record) {
@@ -694,6 +716,7 @@
   }
 
   function renderPanel() {
+    syncStandaloneContext();
     var lineupRecords = parseQuarterCards();
     var records = displayRecords(lineupRecords);
     if (records.length === 0 && hasStandaloneRecordAnchor()) records = [emptyRecord("A"), emptyRecord("B")];
@@ -747,7 +770,6 @@
       renderVenueSelect(form.venueName),
       "<div class=\"mrw-field\"><label>홈팀</label><div class=\"mrw-fixed\" data-mrw=\"homeTeamName\">" + escapeHtml(home) + "</div></div>",
       renderAwayControl(form.matchKind, away),
-      "<div class=\"mrw-field mrw-wide\"><label>메모</label><textarea data-mrw=\"memo\">" + escapeHtml(form.memo) + "</textarea></div>",
       renderMetaSummary(form, home, away),
       "</div>",
     ].join("");
