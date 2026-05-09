@@ -292,6 +292,10 @@ export default function Home() {
   }, [waitingIds]);
   const activeFieldPlayers = useMemo(() => fieldPlayers.filter((p) => !isWaitingPlayer(p)), [fieldPlayers, isWaitingPlayer]);
   const waitingPlayers = useMemo(() => fieldPlayers.filter((p) => isWaitingPlayer(p)), [fieldPlayers, isWaitingPlayer]);
+  const matchActiveFieldPlayers = useMemo(() => activeFieldPlayers.filter((p) => p.primaryPosition !== "GK"), [activeFieldPlayers]);
+  const matchCallupPlayers = useMemo(() => waitingPlayers.filter((p) => p.primaryPosition !== "GK"), [waitingPlayers]);
+  const matchFieldPlayers = useMemo(() => [...matchActiveFieldPlayers, ...matchCallupPlayers], [matchActiveFieldPlayers, matchCallupPlayers]);
+  const matchRosterSize = matchActiveFieldPlayers.length;
   const regularCount = fieldPlayers.filter((p) => p.memberType === "REGULAR").length;
   const guestCount = fieldPlayers.filter((p) => p.memberType === "GUEST").length;
   const waitingCount = waitingPlayers.length;
@@ -310,7 +314,7 @@ export default function Home() {
 
   const canGenerate = plannerMode === "BALANCE"
     ? activeFieldPlayers.length >= 22 && activeFieldPlayers.length <= 36
-    : activeFieldPlayers.length >= 10 && activeFieldPlayers.length <= 18;
+    : matchRosterSize >= 10 && matchRosterSize <= 18 && matchFieldPlayers.length >= matchRosterSize;
 
   function resetResults() {
     clearLineupShareHash();
@@ -530,7 +534,7 @@ export default function Home() {
     resetResults();
     try {
       if (plannerMode === "MATCH") {
-        setMatchResult(planMatchLineup(activeFieldPlayers, dedicatedGks, matchQuarterLimits));
+        setMatchResult(planMatchLineup(matchActiveFieldPlayers, dedicatedGks, matchQuarterLimits, matchCallupPlayers));
       } else {
         const variants = balanceTeamsVariants(activeFieldPlayers, 10, relations);
         setTeamVariants(variants);
@@ -798,7 +802,7 @@ export default function Home() {
           <Stat label="정규" value={`${regularCount}명`} />
           <Stat label="용병" value={`${guestCount}명`} />
           <Stat label="대기" value={`${waitingCount}명`} />
-          <Stat label="필드" value={`${activeFieldPlayers.length}명`} />
+          <Stat label={plannerMode === "MATCH" ? "매치" : "필드"} value={`${plannerMode === "MATCH" ? matchRosterSize : activeFieldPlayers.length}명`} />
           <Stat label="GK" value={`${dedicatedGks.length}`} />
         </div>
         <h3 className="mt-5 font-semibold">필드 참석자</h3>
@@ -811,12 +815,12 @@ export default function Home() {
         <div className="mt-2 flex flex-wrap gap-2">{dedicatedGks.map((gk) => <Chip key={gk.id} label={gk.name} badge={<StaffRoleBadge role={extractStaffRole(gk.memo)} compact />} onRemove={() => removeDedicatedGk(gk.id)} />)}</div>
       </section>
 
-      {plannerMode === "MATCH" && fieldPlayers.length > 0 && (
+      {plannerMode === "MATCH" && matchFieldPlayers.length > 0 && (
         <section className="mb-6 rounded-3xl bg-white p-6 shadow-sm">
           <h2 className="text-xl font-bold">매치 출전 쿼터 설정</h2>
           <p className="mt-1 text-sm text-slate-600">자동 생성 전에 선수별로 몇 쿼터 뛸지 정하세요. 기본값은 3Q입니다.</p>
           <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-            {fieldPlayers.map((player) => (
+            {matchFieldPlayers.map((player) => (
               <div key={player.id} className="flex items-center justify-between gap-2 rounded-2xl bg-slate-50 p-3">
                 <div className="min-w-0">
                   <div className="flex min-w-0 items-center gap-1.5">
@@ -875,7 +879,9 @@ export default function Home() {
       <div className="fixed inset-x-0 bottom-0 z-10 border-t border-slate-200 bg-white/95 p-3 backdrop-blur">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-3">
           <div className="text-sm font-semibold">
-            {plannerMode === "BALANCE" ? "내부전" : "매치"} · 필드 {activeFieldPlayers.length}명{waitingCount > 0 ? ` (대기 ${waitingCount})` : ""} · 전담 GK {dedicatedGks.length}
+            {plannerMode === "BALANCE"
+              ? `내부전 · 필드 ${activeFieldPlayers.length}명${waitingCount > 0 ? ` (대기 ${waitingCount})` : ""} · 전담 GK ${dedicatedGks.length}`
+              : `매치 · 참석 ${matchRosterSize}명${waitingCount > 0 ? ` (콜업 후보 ${waitingCount})` : ""} · 전담 GK ${dedicatedGks.length}`}
             {!canGenerate && <p className="text-xs font-normal text-slate-500">{plannerMode === "BALANCE" ? "내부전은 24명 이상 권장, 22명부터 가능" : "매치는 필드 10명~18명 필요"}</p>}
           </div>
           <button className="rounded-xl bg-slate-900 px-5 py-3 text-sm font-bold text-white disabled:bg-slate-300" onClick={runPlanner} disabled={!canGenerate}>자동 생성</button>
@@ -907,8 +913,13 @@ function Stat({ label, value }: { label: string; value: string }) {
   return <div className="rounded-2xl bg-slate-100 p-4"><p className="text-xs font-semibold text-slate-500">{label}</p><p className="mt-1 text-xl font-bold">{value}</p></div>;
 }
 
-function MessageBox({ title, items, tone }: { title: string; items: string[]; tone: "error" | "warning" }) {
-  return <div className={`rounded-3xl p-5 ${tone === "error" ? "bg-red-50 text-red-900" : "bg-amber-50 text-amber-900"}`}><h3 className="font-bold">{title}</h3><ul className="mt-2 list-disc pl-5 text-sm">{items.map((item, i) => <li key={i}>{item}</li>)}</ul></div>;
+function MessageBox({ title, items, tone }: { title: string; items: string[]; tone: "error" | "warning" | "info" }) {
+  const toneClass = tone === "error"
+    ? "bg-red-50 text-red-900"
+    : tone === "warning"
+      ? "bg-amber-50 text-amber-900"
+      : "bg-sky-50 text-sky-900";
+  return <div className={`rounded-3xl p-5 ${toneClass}`}><h3 className="font-bold">{title}</h3><ul className="mt-2 list-disc pl-5 text-sm">{items.map((item, i) => <li key={i}>{item}</li>)}</ul></div>;
 }
 
 function Chip({ label, onRemove, tone = "regular", badge }: { label: string; onRemove: () => void; tone?: "regular" | "guest" | "waiting"; badge?: ReactNode }) {
@@ -1923,6 +1934,29 @@ function MatchResultView({ result }: { result: MatchPlanResult }) {
     addPlayer(result.starters.gk);
     return map;
   }, [result]);
+  const summaryByPlayerId = useMemo(() => new Map(result.playerSummaries.map((summary) => [summary.playerId, summary])), [result.playerSummaries]);
+  const countsByName = useMemo(() => {
+    const map = new Map<string, PlayerCount>();
+    result.playerSummaries.forEach((summary) => {
+      map.set(summary.playerName, { field: summary.fieldCount, gk: 0 });
+    });
+    if (result.starters.gk?.name) map.set(result.starters.gk.name, { field: 0, gk: result.quarters.length });
+    return map;
+  }, [result]);
+  const rotateCountsByName = useMemo(() => {
+    const map = new Map<string, PlayerCount>();
+    const rotateNames = new Set([
+      ...result.operation.rotateLineup.attack,
+      ...result.operation.rotateLineup.mid,
+      ...result.operation.rotateLineup.defense,
+    ]);
+    result.playerSummaries.forEach((summary) => {
+      const beforeFourth = summary.quarters.filter((quarter) => quarter < 4).length;
+      map.set(summary.playerName, { field: beforeFourth + (rotateNames.has(summary.playerName) ? 1 : 0), gk: 0 });
+    });
+    if (result.starters.gk?.name) map.set(result.starters.gk.name, { field: 0, gk: result.quarters.length });
+    return map;
+  }, [result]);
 
   async function downloadOne(quarter: number) {
     const key = `match-${quarter}`;
@@ -1947,6 +1981,8 @@ function MatchResultView({ result }: { result: MatchPlanResult }) {
         <button className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-bold text-white" onClick={downloadAll}>전체 이미지 저장</button>
       </div>
       {result.warnings.length > 0 && <div className="mt-4"><MessageBox title="매치 경고" items={result.warnings} tone="warning" /></div>}
+      {result.notes.length > 0 && <div className="mt-4"><MessageBox title="운영 메모" items={result.notes} tone="info" /></div>}
+      <MatchOperationBoard operation={result.operation} counts={rotateCountsByName} staffRoles={staffRolesByName} />
       <div className="mt-4 rounded-2xl border border-slate-200 p-4">
         <h3 className="font-bold">베스트 라인업</h3>
         <div className="mt-3">
@@ -1958,9 +1994,9 @@ function MatchResultView({ result }: { result: MatchPlanResult }) {
             </span>
           </div>
         </div>
-        <MatchGroup group="ATTACK" items={result.starters.attack} />
-        <MatchGroup group="MID" items={result.starters.mid} />
-        <MatchGroup group="DEFENSE" items={result.starters.defense} />
+        <MatchGroup group="ATTACK" items={result.starters.attack} summaryByPlayerId={summaryByPlayerId} />
+        <MatchGroup group="MID" items={result.starters.mid} summaryByPlayerId={summaryByPlayerId} />
+        <MatchGroup group="DEFENSE" items={result.starters.defense} summaryByPlayerId={summaryByPlayerId} />
       </div>
       <div className="mt-4 grid gap-4 md:grid-cols-2">
         {result.quarters.map((q) => {
@@ -1975,6 +2011,7 @@ function MatchResultView({ result }: { result: MatchPlanResult }) {
                   mid={q.mid}
                   defense={q.defense}
                   bench={q.bench}
+                  counts={countsByName}
                   staffRoles={staffRolesByName}
                 />
               </div>
@@ -1986,30 +2023,147 @@ function MatchResultView({ result }: { result: MatchPlanResult }) {
       <div className="mt-4 rounded-2xl border border-slate-200 p-4">
         <h3 className="font-bold">후보 / 교체 우선순위</h3>
         <div className="mt-2 flex flex-wrap gap-2">
-          {result.bench.map((item) => (
-            <span key={item.player.id} className="inline-flex items-center gap-1 rounded-full bg-violet-100 px-3 py-1 text-sm font-semibold text-violet-800">
-              <span>{item.player.name}({groupKorean(item.group)})</span>
-              <StaffRoleBadge role={extractStaffRole(item.player.memo)} compact />
+          {result.bench.map((item) => {
+            const summary = summaryByPlayerId.get(item.player.id);
+            return (
+              <span key={item.player.id} className="inline-flex items-center gap-1 rounded-full bg-violet-100 px-3 py-1 text-sm font-semibold text-violet-800">
+                <span>{item.player.name}({groupKorean(item.group)}){summary ? ` · ${summary.fieldCount}/${summary.targetQuarterCount}Q` : ""}</span>
+                <StaffRoleBadge role={extractStaffRole(item.player.memo)} compact />
+              </span>
+            );
+          })}
+          {result.bench.length === 0 && <span className="rounded-full bg-slate-100 px-3 py-1 text-sm text-slate-600">없음</span>}
+        </div>
+      </div>
+      <div className="mt-4 rounded-2xl border border-slate-200 p-4">
+        <h3 className="font-bold">출전 쿼터</h3>
+        <div className="mt-2 flex flex-wrap gap-2">
+          {result.playerSummaries.map((summary) => (
+            <span key={summary.playerId} className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-sm font-semibold ${summary.isCallup ? "bg-orange-100 text-orange-800" : summary.isStarter ? "bg-slate-100 text-slate-700" : "bg-violet-100 text-violet-800"}`}>
+              <span>{summary.playerName} {summary.fieldCount}/{summary.targetQuarterCount}Q</span>
+              <span className="text-xs opacity-70">{summary.quarters.length > 0 ? summary.quarters.map((q) => `${q}Q`).join(",") : "-"}</span>
             </span>
           ))}
-          {result.bench.length === 0 && <span className="rounded-full bg-slate-100 px-3 py-1 text-sm text-slate-600">없음</span>}
         </div>
       </div>
     </section>
   );
 }
 
-function MatchGroup({ group, items }: { group: PositionGroup; items: MatchSelection[] }) {
+function MatchOperationBoard({ operation, counts, staffRoles }: { operation: MatchPlanResult["operation"]; counts: Map<string, PlayerCount>; staffRoles: Map<string, StaffRole> }) {
+  const rotateRef = useRef<HTMLDivElement | null>(null);
+  const hasPriority = operation.q4PriorityNames.length > 0;
+  const hasSwaps = operation.rotateSwaps.length > 0;
+
+  async function downloadRotate() {
+    if (!rotateRef.current) return;
+    await downloadElementAsImage(rotateRef.current, "match_4Q_rotate.png");
+  }
+
+  return (
+    <div className="mt-4 rounded-2xl border border-slate-200 p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 className="font-bold">4Q 운영판</h3>
+          <p className="mt-1 text-xs text-slate-500">스코어 상황에 따라 바로 고를 수 있게 정리했습니다.</p>
+        </div>
+        <div className="flex flex-wrap gap-2 text-xs font-bold">
+          <span className="rounded-full bg-slate-100 px-3 py-1 text-slate-700">접전: 베스트 유지</span>
+          <span className="rounded-full bg-emerald-100 px-3 py-1 text-emerald-800">여유: 보장 교체</span>
+          <span className="rounded-full bg-sky-100 px-3 py-1 text-sky-800">2Q 이상 {operation.coveredByQ3Names.length}명</span>
+        </div>
+      </div>
+
+      <div className="mt-3 grid gap-3 md:grid-cols-2">
+        <div className="rounded-2xl bg-slate-50 p-3">
+          <p className="text-xs font-bold text-slate-500">지고 있거나 접전</p>
+          <p className="mt-1 text-sm font-bold text-slate-800">4Q 베스트 라인업 그대로</p>
+          <p className="mt-1 text-xs text-slate-500">이미 생성된 4Q 피치를 쓰면 됩니다.</p>
+        </div>
+        <div className="rounded-2xl bg-emerald-50 p-3">
+          <p className="text-xs font-bold text-emerald-700">리드하거나 여유 있음</p>
+          <p className="mt-1 text-sm font-bold text-emerald-900">{hasSwaps ? "아래 교체 추천 적용" : "추가 교체 없이 베스트 유지"}</p>
+          <p className="mt-1 text-xs text-emerald-700">{hasPriority ? "3Q까지 덜 뛴 정규 참석자를 먼저 챙깁니다." : "정규 참석자 2Q 보장이 이미 충분합니다."}</p>
+        </div>
+      </div>
+
+      {hasPriority && (
+        <div className="mt-3">
+          <p className="text-xs font-bold text-slate-500">4Q 먼저 챙길 선수</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {operation.q4PriorityNames.map((name) => (
+              <span key={name} className="rounded-full bg-amber-100 px-3 py-1 text-sm font-semibold text-amber-800">{name}</span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="mt-3">
+        <p className="text-xs font-bold text-slate-500">교체 추천</p>
+        <div className="mt-2 flex flex-wrap gap-2">
+          {operation.rotateSwaps.map((swap) => (
+            <span key={`${swap.outName}-${swap.inName}-${swap.group}`} className="rounded-full bg-emerald-100 px-3 py-1 text-sm font-semibold text-emerald-800" title={swap.reason}>
+              {swap.outName} → {swap.inName} ({groupKorean(swap.group)})
+            </span>
+          ))}
+          {!hasSwaps && <span className="rounded-full bg-slate-100 px-3 py-1 text-sm text-slate-600">없음</span>}
+        </div>
+      </div>
+
+      {(operation.callupUsedNames.length > 0 || operation.callupUnusedNames.length > 0) && (
+        <div className="mt-3 grid gap-3 md:grid-cols-2">
+          <div>
+            <p className="text-xs font-bold text-slate-500">콜업 사용</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {operation.callupUsedNames.map((name) => <span key={name} className="rounded-full bg-orange-100 px-3 py-1 text-sm font-semibold text-orange-800">{name}</span>)}
+              {operation.callupUsedNames.length === 0 && <span className="rounded-full bg-slate-100 px-3 py-1 text-sm text-slate-600">없음</span>}
+            </div>
+          </div>
+          <div>
+            <p className="text-xs font-bold text-slate-500">콜업 대기</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {operation.callupUnusedNames.map((name) => <span key={name} className="rounded-full bg-slate-100 px-3 py-1 text-sm text-slate-600">{name}</span>)}
+              {operation.callupUnusedNames.length === 0 && <span className="rounded-full bg-slate-100 px-3 py-1 text-sm text-slate-600">없음</span>}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {hasSwaps && (
+        <div className="mt-4 space-y-2">
+          <div ref={rotateRef}>
+            <Pitch
+              title="4Q 여유 운영안"
+              gk={operation.rotateLineup.gk}
+              attack={operation.rotateLineup.attack}
+              mid={operation.rotateLineup.mid}
+              defense={operation.rotateLineup.defense}
+              bench={operation.rotateLineup.bench}
+              counts={counts}
+              staffRoles={staffRoles}
+            />
+          </div>
+          <button className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700" onClick={downloadRotate}>여유 운영안 이미지 저장</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MatchGroup({ group, items, summaryByPlayerId }: { group: PositionGroup; items: MatchSelection[]; summaryByPlayerId: Map<string, MatchPlanResult["playerSummaries"][number]> }) {
   return (
     <div className="mt-3">
       <GroupBadge group={group} />
       <div className="mt-2 flex flex-wrap gap-2">
-        {items.map((item) => (
-          <span key={item.player.id} className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-700" title={item.reason}>
-            <span>{item.player.name}</span>
-            <StaffRoleBadge role={extractStaffRole(item.player.memo)} compact />
-          </span>
-        ))}
+        {items.map((item) => {
+          const summary = summaryByPlayerId.get(item.player.id);
+          return (
+            <span key={item.player.id} className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-700" title={item.reason}>
+              <span>{item.player.name}{summary ? ` · ${summary.fieldCount}/${summary.targetQuarterCount}Q` : ""}</span>
+              <StaffRoleBadge role={extractStaffRole(item.player.memo)} compact />
+            </span>
+          );
+        })}
       </div>
     </div>
   );
