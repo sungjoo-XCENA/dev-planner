@@ -1,15 +1,19 @@
 import type { TeamQuarterLineup } from "@/types/lineup";
-import type { MatchRecordEvent, MatchRecordSaveRequest } from "@/types/matchRecord";
+import type { MatchRecordEvent, MatchRecordKind, MatchRecordMode, MatchRecordPlayerStat, MatchRecordSaveRequest, MatchRecordTeamScore } from "@/types/matchRecord";
 import type { TeamName } from "@/types/team";
 
 const NONE_GK = "없음";
 const HOME_TEAM: TeamName = "B";
 const AWAY_TEAM: TeamName = "A";
+const DEFAULT_SELF_HOME = "DevUtd 주황";
+const DEFAULT_SELF_AWAY = "DevUtd 형광";
+const DEFAULT_MATCH_HOME = "DevUtd";
+const DEFAULT_MATCH_AWAY = "상대팀";
 
 type MatchInfoPayload = {
   MatchDate: string;
   MatchTime: string;
-  MatchType: 1;
+  MatchType: 0 | 1;
   InfoType: 1;
   HomeTeamName: string;
   AwayTeamName: string;
@@ -32,6 +36,16 @@ type PlannerQuarterInfo = {
   matchId: string;
   matchDate: string;
   matchTime: string;
+  matchKind: MatchRecordKind;
+  venueName: string;
+  note: string;
+  recordMode: MatchRecordMode;
+  scoreOverride: {
+    A: number;
+    B: number;
+    home: number;
+    away: number;
+  };
   teamMapping: {
     home: TeamName;
     away: TeamName;
@@ -41,6 +55,8 @@ type PlannerQuarterInfo = {
   teams: Record<TeamName, { label: string; players: string[] }>;
   quarters: Record<string, PlannerQuarterRecord>;
   events: PlannerEventRecord[];
+  summaryStats: PlannerSummaryStatRecord[];
+  teamScores: PlannerTeamScoreRecord[];
 };
 
 type PlannerQuarterRecord = {
@@ -73,6 +89,22 @@ type PlannerEventRecord = {
   assist?: string;
 };
 
+type PlannerSummaryStatRecord = {
+  team: TeamName;
+  side: "home" | "away";
+  player: string;
+  goals: number;
+  assists: number;
+  quarter?: number;
+};
+
+type PlannerTeamScoreRecord = {
+  team: TeamName;
+  side: "home" | "away";
+  goals: number;
+  quarter?: number;
+};
+
 export function normalizeMatchRecordDate(value: string): string {
   return value.replace(/\D/g, "").slice(0, 8);
 }
@@ -91,15 +123,45 @@ export function validateMatchRecordRequest(body: MatchRecordSaveRequest): string
   if (!Array.isArray(body.events)) {
     errors.push("득점 이벤트 정보가 올바르지 않습니다.");
   }
+  if (body.summaryStats !== undefined && !Array.isArray(body.summaryStats)) {
+    errors.push("선수별 일괄 기록 정보가 올바르지 않습니다.");
+  }
+  if (body.teamScores !== undefined && !Array.isArray(body.teamScores)) {
+    errors.push("팀 점수 정보가 올바르지 않습니다.");
+  }
   return errors;
 }
 
 export function buildMatchInfoPayload(body: MatchRecordSaveRequest, savedAt = new Date().toISOString()): MatchInfoPayload {
   const matchDate = normalizeMatchRecordDate(body.matchDate);
   const matchTime = body.matchTime?.trim() ?? "";
+  const matchKind = normalizeMatchKind(body.matchKind);
+  const venueName = body.venueName?.trim() || body.memo?.trim() || "";
+  const note = body.venueName?.trim() ? body.memo?.trim() ?? "" : "";
+  const homeTeamName = body.homeTeamName?.trim() || (matchKind === "SELF" ? DEFAULT_SELF_HOME : DEFAULT_MATCH_HOME);
+  const awayTeamName = body.awayTeamName?.trim() || (matchKind === "SELF" ? DEFAULT_SELF_AWAY : DEFAULT_MATCH_AWAY);
+  const recordMode = body.recordMode === "QUARTER" ? "QUARTER" : "SUMMARY";
   const events = normalizeEvents(body.events ?? []);
+  const summaryStats = normalizeSummaryStats(body.summaryStats ?? []);
+  const teamScores = normalizeTeamScores(body.teamScores ?? []);
   const homeEvents = events.filter((event) => event.team === HOME_TEAM);
   const awayEvents = events.filter((event) => event.team === AWAY_TEAM);
+  const homeSummaryStats = summaryStats.filter((stat) => stat.team === HOME_TEAM);
+  const awaySummaryStats = summaryStats.filter((stat) => stat.team === AWAY_TEAM);
+  const homeGoalNames = [...homeEvents.map((event) => event.scorer), ...repeatStatNames(homeSummaryStats, "goals")];
+  const awayGoalNames = [...awayEvents.map((event) => event.scorer), ...repeatStatNames(awaySummaryStats, "goals")];
+  const homeAssistNames = [
+    ...homeEvents.map((event) => event.assist).filter((name): name is string => Boolean(name)),
+    ...repeatStatNames(homeSummaryStats, "assists"),
+  ];
+  const awayAssistNames = [
+    ...awayEvents.map((event) => event.assist).filter((name): name is string => Boolean(name)),
+    ...repeatStatNames(awaySummaryStats, "assists"),
+  ];
+  const scoreOverride = normalizeScoreOverride(body.scoreOverride);
+  const teamScoreTotals = teamScoreSummary(teamScores);
+  const homeGoal = teamScores.length > 0 ? teamScoreTotals.B : (scoreOverride?.B ?? homeGoalNames.length);
+  const awayGoal = teamScores.length > 0 ? teamScoreTotals.A : (scoreOverride?.A ?? awayGoalNames.length);
   const teams = {
     A: teamPlayers(body.quarters, "A"),
     B: teamPlayers(body.quarters, "B"),
@@ -108,19 +170,19 @@ export function buildMatchInfoPayload(body: MatchRecordSaveRequest, savedAt = ne
   return {
     MatchDate: matchDate,
     MatchTime: matchTime,
-    MatchType: 1,
+    MatchType: matchKind === "SELF" ? 1 : 0,
     InfoType: 1,
-    HomeTeamName: "DevUtd 주황",
-    AwayTeamName: "DevUtd 형광",
-    HomeGoal: homeEvents.length,
-    AwayGoal: awayEvents.length,
+    HomeTeamName: homeTeamName,
+    AwayTeamName: awayTeamName,
+    HomeGoal: homeGoal,
+    AwayGoal: awayGoal,
     HomePlayerInfo: firebaseNameList(teams.B),
     AwayPlayerInfo: firebaseNameList(teams.A),
-    HomeGoalInfo: firebaseNameList(homeEvents.map((event) => event.scorer)),
-    AwayGoalInfo: firebaseNameList(awayEvents.map((event) => event.scorer)),
-    HomeAssistInfo: firebaseNameList(homeEvents.map((event) => event.assist).filter((name): name is string => Boolean(name))),
-    AwayAssistInfo: firebaseNameList(awayEvents.map((event) => event.assist).filter((name): name is string => Boolean(name))),
-    Comment: body.memo?.trim() ?? "",
+    HomeGoalInfo: firebaseNameList(homeGoalNames),
+    AwayGoalInfo: firebaseNameList(awayGoalNames),
+    HomeAssistInfo: firebaseNameList(homeAssistNames),
+    AwayAssistInfo: firebaseNameList(awayAssistNames),
+    Comment: venueName,
     PlannerQuarterInfo: {
       schemaVersion: 1,
       source: "dev-planner",
@@ -128,6 +190,16 @@ export function buildMatchInfoPayload(body: MatchRecordSaveRequest, savedAt = ne
       matchId: body.matchId,
       matchDate,
       matchTime,
+      matchKind,
+      venueName,
+      note,
+      recordMode,
+      scoreOverride: {
+        A: awayGoal,
+        B: homeGoal,
+        home: homeGoal,
+        away: awayGoal,
+      },
       teamMapping: {
         home: HOME_TEAM,
         away: AWAY_TEAM,
@@ -135,16 +207,22 @@ export function buildMatchInfoPayload(body: MatchRecordSaveRequest, savedAt = ne
         B: "orange",
       },
       teams: {
-        A: { label: "형광팀", players: teams.A },
-        B: { label: "주황팀", players: teams.B },
+        A: { label: awayTeamName, players: teams.A },
+        B: { label: homeTeamName, players: teams.B },
       },
-      quarters: quarterRecords(body.quarters, events),
+      quarters: quarterRecords(body.quarters, events, teamScores),
       events: events.map(toPlannerEvent),
+      summaryStats: summaryStats.map(toPlannerSummaryStat),
+      teamScores: teamScores.map(toPlannerTeamScore),
     },
   };
 }
 
-function quarterRecords(quarters: TeamQuarterLineup[], events: MatchRecordEvent[]): Record<string, PlannerQuarterRecord> {
+function normalizeMatchKind(value: MatchRecordSaveRequest["matchKind"]): MatchRecordKind {
+  return value === "MATCH" ? "MATCH" : "SELF";
+}
+
+function quarterRecords(quarters: TeamQuarterLineup[], events: MatchRecordEvent[], teamScores: MatchRecordTeamScore[]): Record<string, PlannerQuarterRecord> {
   const records: Record<string, PlannerQuarterRecord> = {};
   const quarterNumbers = uniqueNumbers(quarters.map((quarter) => quarter.quarter));
 
@@ -152,8 +230,13 @@ function quarterRecords(quarters: TeamQuarterLineup[], events: MatchRecordEvent[
     const teamA = quarters.find((quarter) => quarter.team === "A" && quarter.quarter === quarterNumber);
     const teamB = quarters.find((quarter) => quarter.team === "B" && quarter.quarter === quarterNumber);
     const quarterEvents = events.filter((event) => event.quarter === quarterNumber);
-    const scoreA = quarterEvents.filter((event) => event.team === "A").length;
-    const scoreB = quarterEvents.filter((event) => event.team === "B").length;
+    const quarterTeamScores = teamScores.filter((score) => score.quarter === quarterNumber);
+    const scoreA = quarterTeamScores.length > 0
+      ? quarterTeamScores.filter((score) => score.team === "A").reduce((sum, score) => sum + score.goals, 0)
+      : quarterEvents.filter((event) => event.team === "A").length;
+    const scoreB = quarterTeamScores.length > 0
+      ? quarterTeamScores.filter((score) => score.team === "B").reduce((sum, score) => sum + score.goals, 0)
+      : quarterEvents.filter((event) => event.team === "B").length;
 
     records[`Q${quarterNumber}`] = {
       quarter: quarterNumber,
@@ -193,6 +276,26 @@ function toPlannerEvent(event: MatchRecordEvent): PlannerEventRecord {
   };
 }
 
+function toPlannerSummaryStat(stat: MatchRecordPlayerStat): PlannerSummaryStatRecord {
+  return {
+    team: stat.team,
+    side: stat.team === HOME_TEAM ? "home" : "away",
+    player: stat.player,
+    goals: stat.goals,
+    assists: stat.assists,
+    ...(stat.quarter ? { quarter: stat.quarter } : {}),
+  };
+}
+
+function toPlannerTeamScore(score: MatchRecordTeamScore): PlannerTeamScoreRecord {
+  return {
+    team: score.team,
+    side: score.team === HOME_TEAM ? "home" : "away",
+    goals: score.goals,
+    ...(score.quarter ? { quarter: score.quarter } : {}),
+  };
+}
+
 function normalizeEvents(events: MatchRecordEvent[]): MatchRecordEvent[] {
   return events
     .map((event, index) => ({
@@ -203,6 +306,57 @@ function normalizeEvents(events: MatchRecordEvent[]): MatchRecordEvent[] {
       assist: event.assist?.trim() || undefined,
     }))
     .filter((event) => event.scorer && (event.team === "A" || event.team === "B"));
+}
+
+function normalizeSummaryStats(stats: MatchRecordPlayerStat[]): MatchRecordPlayerStat[] {
+  return stats
+    .map((stat) => ({
+      team: stat.team,
+      player: stat.player.trim(),
+      goals: clampCount(stat.goals),
+      assists: clampCount(stat.assists),
+      quarter: normalizeQuarter(stat.quarter),
+    }))
+    .filter((stat) => (stat.team === "A" || stat.team === "B") && stat.player && (stat.goals > 0 || stat.assists > 0));
+}
+
+function normalizeTeamScores(scores: MatchRecordTeamScore[]): MatchRecordTeamScore[] {
+  return scores
+    .map((score) => ({
+      team: score.team,
+      goals: clampCount(score.goals),
+      quarter: normalizeQuarter(score.quarter),
+    }))
+    .filter((score) => (score.team === "A" || score.team === "B") && score.goals > 0);
+}
+
+function teamScoreSummary(scores: MatchRecordTeamScore[]): Record<TeamName, number> {
+  return scores.reduce<Record<TeamName, number>>((acc, score) => {
+    acc[score.team] += score.goals;
+    return acc;
+  }, { A: 0, B: 0 });
+}
+
+function normalizeScoreOverride(value: MatchRecordSaveRequest["scoreOverride"]): { A: number; B: number } | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const A = clampCount(value.A ?? 0);
+  const B = clampCount(value.B ?? 0);
+  return { A, B };
+}
+
+function repeatStatNames(stats: MatchRecordPlayerStat[], key: "goals" | "assists"): string[] {
+  return stats.flatMap((stat) => Array.from({ length: stat[key] }, () => stat.player));
+}
+
+function clampCount(value: number): number {
+  const count = Math.floor(Number(value));
+  if (!Number.isFinite(count) || count < 0) return 0;
+  return Math.min(count, 20);
+}
+
+function normalizeQuarter(value: unknown): MatchRecordPlayerStat["quarter"] {
+  const quarter = Number(value);
+  return quarter === 1 || quarter === 2 || quarter === 3 || quarter === 4 ? quarter : undefined;
 }
 
 function teamPlayers(quarters: TeamQuarterLineup[], team: TeamName): string[] {
