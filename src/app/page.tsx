@@ -5,6 +5,7 @@ import type { DedicatedGoalkeeper, FieldPosition, Player, PositionGroup, StaffRo
 import type { PlayerRelation } from "@/types/relation";
 import type { LineupResult, LineupRole, Quarter } from "@/types/lineup";
 import type { TeamBalanceResult, TeamName } from "@/types/team";
+import type { HistoryInsightResponse, HistoryPairInsight, HistoryPlayerForm, TeamHistoryInsight } from "@/types/history";
 import { appConfig } from "@/config/appConfig";
 import { loadPlayersFromCsv } from "@/lib/loadPlayersFromCsv";
 import { POSITIONS, getPositionGroup, hasGroup } from "@/lib/positions";
@@ -16,6 +17,7 @@ import { formatTeamName } from "@/lib/teamLabels";
 import { extractStaffRole } from "@/lib/staffRoles";
 import { INJURY_ACTIVITY_RATE, effectiveActivityScore, formatScore, hasInjury } from "@/lib/injury";
 import { isMultiPositionPlayer, multiPositionGroups } from "@/lib/multiPosition";
+import { makeHistoryInsightKey } from "@/lib/historyInsights";
 
 const SCORE_OPTIONS = Array.from({ length: 10 }, (_, index) => index + 1);
 const QUARTER_OPTIONS = [1, 2, 3, 4];
@@ -1111,13 +1113,69 @@ function TeamResultView({
   const totalB = s.attackScoreB + s.midScoreB + s.defenseScoreB + s.activityB;
   const overridesA = result.teamA.players.filter((p) => p.isPositionOverride).length;
   const overridesB = result.teamB.players.filter((p) => p.isPositionOverride).length;
+  const [history, setHistory] = useState<HistoryInsightResponse | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const teamAHistoryNames = useMemo(() => historyNames(result.teamA.players), [result.teamA.players]);
+  const teamBHistoryNames = useMemo(() => historyNames(result.teamB.players), [result.teamB.players]);
+  const historyKey = useMemo(
+    () => makeHistoryInsightKey(teamAHistoryNames, teamBHistoryNames, [2025, 2026]),
+    [teamAHistoryNames, teamBHistoryNames],
+  );
+  const isHistoryStale = history != null && history.key !== historyKey;
+  const loadHistoryInsights = useCallback(async (openModal = true) => {
+    setHistoryLoading(true);
+    setHistoryError(null);
+    try {
+      const response = await fetch("/api/history", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ teamA: teamAHistoryNames, teamB: teamBHistoryNames, years: [2025, 2026] }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.detail || data?.error || "히스토리 조회에 실패했습니다.");
+      }
+      setHistory(data as HistoryInsightResponse);
+      if (openModal) setHistoryOpen(true);
+    } catch (error) {
+      setHistoryError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, [teamAHistoryNames, teamBHistoryNames]);
   return (
     <section className="mb-6 rounded-3xl bg-white p-6 shadow-sm">
       <div className="flex flex-wrap items-center gap-2">
         <h2 className="text-xl font-bold">팀 분배 결과</h2>
         <span className={`rounded-full px-3 py-1 text-xs font-bold ${qualityBadgeClass(result.quality)}`}>{result.quality}</span>
         {!confirmed && <span className="rounded-full bg-blue-100 px-3 py-1 text-xs font-bold text-blue-700">조정 가능</span>}
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            className="rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-black text-indigo-700 hover:bg-indigo-100 disabled:cursor-wait disabled:opacity-60"
+            onClick={() => void loadHistoryInsights(true)}
+            disabled={historyLoading}
+          >
+            {historyLoading ? "히스토리 읽는 중" : history ? "히스토리 다시 읽기" : "히스토리 인사이트"}
+          </button>
+          {history && (
+            <button
+              type="button"
+              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-700 hover:bg-slate-50"
+              onClick={() => setHistoryOpen(true)}
+            >
+              상세 대시보드
+            </button>
+          )}
+        </div>
       </div>
+      {historyError && (
+        <div className="mt-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-800">
+          히스토리 조회 실패: {historyError}
+        </div>
+      )}
       {result.warnings.length > 0 && <div className="mt-4"><MessageBox title="팀 경고" items={result.warnings} tone="warning" /></div>}
       <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <MetricCard label="공격 점수" a={s.attackScoreA} b={s.attackScoreB} />
@@ -1203,6 +1261,23 @@ function TeamResultView({
           groupScores={{ ATTACK: s.attackScoreB, MID: s.midScoreB, DEFENSE: s.defenseScoreB }}
         />
       </div>
+      {history && (
+        <div className="mt-4">
+          {isHistoryStale && (
+            <div className="mb-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">
+              팀 구성이 바뀌었습니다. 현재 A/B 기준으로 보려면 히스토리 다시 읽기를 눌러주세요.
+            </div>
+          )}
+          <div className={`grid gap-4 md:grid-cols-2 ${isHistoryStale ? "opacity-70" : ""}`}>
+            <TeamHistoryInsightCard teamName={formatTeamName("A")} insight={history.teamA} />
+            <TeamHistoryInsightCard teamName={formatTeamName("B")} insight={history.teamB} />
+          </div>
+          <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
+            <span>{history.seasons.join(", ")} 시즌 {history.matchCount}경기 기준 · {historySourceLabel(history.source)}</span>
+            {history.warnings.length > 0 && <span className="font-semibold text-amber-700">주의 {history.warnings.length}개</span>}
+          </div>
+        </div>
+      )}
       <p className="mt-4 text-xs text-slate-500"><span className="font-bold">*</span> 부포지션으로 배정된 선수 · <span className="font-bold">**</span> 인원 균형을 위해 주·부와 무관한 포지션으로 강제 배정된 선수 · <span className="inline-flex rounded-md border border-fuchsia-200 bg-fuchsia-50 px-1 py-0 text-[10px] font-black leading-none text-fuchsia-700">멀티</span> 공격/미드/수비 중 7점 이상이 2개 이상인 선수</p>
       {variantCount > 1 && !confirmed && (
         <div className="mt-5 flex flex-wrap items-center gap-2 rounded-2xl bg-slate-50 px-3 py-3">
@@ -1226,7 +1301,296 @@ function TeamResultView({
           <button className="w-full rounded-xl bg-emerald-600 px-5 py-3 text-base font-bold text-white sm:w-auto" onClick={onConfirm}>팀 확정 → 라인업 생성</button>
         )}
       </div>
+      {historyOpen && history && (
+        <HistoryInsightModal history={history} onClose={() => setHistoryOpen(false)} stale={isHistoryStale} />
+      )}
     </section>
+  );
+}
+
+function historyNames(players: TeamBalanceResult["teamA"]["players"]): string[] {
+  return players.map((player) => player.name.trim()).filter(Boolean);
+}
+
+function historySourceLabel(source: HistoryInsightResponse["source"]): string {
+  return source === "firebase" ? "Firebase 직접 조회" : "로컬 Firebase 캐시";
+}
+
+function formatHistorySigned(value: number): string {
+  if (value > 0) return `+${formatScore(value)}`;
+  return formatScore(value);
+}
+
+function pairLabelText(label: HistoryPairInsight["label"]): string {
+  if (label === "good") return "좋음";
+  if (label === "caution") return "주의";
+  return "표본";
+}
+
+function pairLabelClass(label: HistoryPairInsight["label"]): string {
+  if (label === "good") return "border-emerald-200 bg-emerald-50 text-emerald-800";
+  if (label === "caution") return "border-rose-200 bg-rose-50 text-rose-800";
+  return "border-slate-200 bg-slate-50 text-slate-700";
+}
+
+function trendLabel(trend: HistoryPlayerForm["trend"]): string {
+  if (trend === "hot") return "상승";
+  if (trend === "caution") return "주의";
+  if (trend === "steady") return "안정";
+  return "표본";
+}
+
+function trendClass(trend: HistoryPlayerForm["trend"]): string {
+  if (trend === "hot") return "bg-emerald-500";
+  if (trend === "caution") return "bg-rose-500";
+  if (trend === "steady") return "bg-sky-500";
+  return "bg-slate-400";
+}
+
+function TeamHistoryInsightCard({ teamName, insight }: { teamName: string; insight: TeamHistoryInsight }) {
+  const hasPairs = insight.goodPairs.length > 0 || insight.cautionPairs.length > 0 || insight.samplePairs.length > 0;
+
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <p className="text-sm font-black text-slate-900">{teamName} 히스토리 인사이트</p>
+          <p className="mt-0.5 text-xs font-semibold text-slate-500">현재 팀 안의 과거 같은 편 기록 기준</p>
+        </div>
+        <div className="rounded-full bg-white px-3 py-1 text-xs font-black text-slate-700 ring-1 ring-slate-200">
+          {insight.matchedPlayerCount}/{insight.playerCount}명 매칭
+        </div>
+      </div>
+
+      <div className="mt-3 grid gap-2 sm:grid-cols-3">
+        <HistoryMiniStat label="조합 표본" value={`${insight.coPlaySamples}경기`} />
+        <HistoryMiniStat label="평균 득실" value={formatHistorySigned(insight.avgGoalDiff)} />
+        <HistoryMiniStat label="주의 조합" value={`${insight.cautionPairs.length}개`} />
+      </div>
+
+      <div className="mt-3">
+        <p className="mb-1 text-xs font-black text-slate-600">득실 그래프</p>
+        <GoalDiffBar value={insight.avgGoalDiff} />
+      </div>
+
+      <div className="mt-3 grid gap-3 lg:grid-cols-2">
+        <PairPillList title="좋은 궁합" pairs={insight.goodPairs.slice(0, 3)} empty="좋은 궁합 표본 부족" />
+        <PairPillList title="주의 궁합" pairs={insight.cautionPairs.slice(0, 3)} empty="큰 주의 조합 없음" />
+      </div>
+
+      <div className="mt-3">
+        <p className="text-xs font-black text-slate-600">최근 폼</p>
+        <RecentFormBars forms={insight.recentForms.slice(0, 4)} />
+      </div>
+
+      {!hasPairs && (
+        <p className="mt-3 rounded-xl bg-white px-3 py-2 text-xs font-semibold text-slate-500 ring-1 ring-slate-200">
+          현재 구성끼리 과거 같은 편으로 뛴 기록이 적어서, 선수별 최근 폼 위주로 참고하세요.
+        </p>
+      )}
+
+      {insight.summary.length > 0 && (
+        <div className="mt-3 space-y-1 rounded-xl bg-white px-3 py-2 ring-1 ring-slate-200">
+          {insight.summary.slice(0, 4).map((item) => (
+            <p key={item} className="text-xs font-semibold text-slate-700">{item}</p>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function HistoryMiniStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl bg-white px-3 py-2 ring-1 ring-slate-200">
+      <p className="text-[11px] font-bold text-slate-500">{label}</p>
+      <p className="mt-1 text-sm font-black text-slate-900">{value}</p>
+    </div>
+  );
+}
+
+function GoalDiffBar({ value }: { value: number }) {
+  const width = Math.min(50, Math.max(4, Math.abs(value) * 16));
+  const isPositive = value >= 0;
+
+  return (
+    <div className="relative h-5 rounded-full bg-white ring-1 ring-slate-200">
+      <div className="absolute left-1/2 top-0 h-full w-px bg-slate-300" />
+      <div
+        className={`absolute top-1/2 h-2 -translate-y-1/2 rounded-full ${isPositive ? "left-1/2 bg-emerald-500" : "right-1/2 bg-rose-500"}`}
+        style={{ width: `${width}%` }}
+      />
+      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] font-black text-rose-500">-</span>
+      <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-black text-emerald-600">+</span>
+    </div>
+  );
+}
+
+function PairPillList({ title, pairs, empty }: { title: string; pairs: HistoryPairInsight[]; empty: string }) {
+  return (
+    <div>
+      <p className="mb-1 text-xs font-black text-slate-600">{title}</p>
+      {pairs.length === 0 ? (
+        <p className="rounded-xl bg-white px-3 py-2 text-xs font-semibold text-slate-400 ring-1 ring-slate-200">{empty}</p>
+      ) : (
+        <div className="flex flex-wrap gap-1.5">
+          {pairs.map((pair) => (
+            <span
+              key={`${pair.players[0]}-${pair.players[1]}-${pair.matches}`}
+              className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-black ${pairLabelClass(pair.label)}`}
+              title={`${pair.matches}경기 ${pair.wins}승 ${pair.draws}무 ${pair.losses}패, 득실 ${formatHistorySigned(pair.avgGoalDiff)}`}
+            >
+              {pair.players[0]}-{pair.players[1]}
+              <span className="font-mono">{formatHistorySigned(pair.avgGoalDiff)}</span>
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RecentFormBars({ forms }: { forms: HistoryPlayerForm[] }) {
+  const maxPoints = Math.max(1, ...forms.map((form) => form.points));
+
+  if (forms.length === 0) {
+    return <p className="mt-1 rounded-xl bg-white px-3 py-2 text-xs font-semibold text-slate-400 ring-1 ring-slate-200">최근 출전 표본 부족</p>;
+  }
+
+  return (
+    <div className="mt-1 space-y-1.5">
+      {forms.map((form) => (
+        <div key={form.name} className="rounded-xl bg-white px-3 py-2 ring-1 ring-slate-200">
+          <div className="flex items-center justify-between gap-2 text-xs">
+            <span className="font-black text-slate-800">{form.name}</span>
+            <span className="font-mono font-bold text-slate-500">{form.matches}경기 {form.points}P · {formatHistorySigned(form.avgGoalDiff)}</span>
+          </div>
+          <div className="mt-1 flex items-center gap-2">
+            <div className="h-2 flex-1 rounded-full bg-slate-100">
+              <div className={`h-2 rounded-full ${trendClass(form.trend)}`} style={{ width: `${Math.max(8, (form.points / maxPoints) * 100)}%` }} />
+            </div>
+            <span className="w-9 text-right text-[10px] font-black text-slate-500">{trendLabel(form.trend)}</span>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function HistoryInsightModal({
+  history,
+  onClose,
+  stale,
+}: {
+  history: HistoryInsightResponse;
+  onClose: () => void;
+  stale: boolean;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-950/50 px-3 py-6 backdrop-blur-sm">
+      <div className="w-full max-w-6xl overflow-hidden rounded-3xl bg-white shadow-2xl">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-5 py-4">
+          <div>
+            <p className="text-lg font-black text-slate-950">라인업 히스토리 대시보드</p>
+            <p className="mt-1 text-xs font-semibold text-slate-500">
+              {history.seasons.join(", ")} 시즌 {history.matchCount}경기 · {historySourceLabel(history.source)} · 현재 A/B팀 조합 기준
+            </p>
+          </div>
+          <button type="button" className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-black text-white" onClick={onClose}>
+            닫기
+          </button>
+        </div>
+
+        <div className="max-h-[82vh] overflow-y-auto p-5">
+          {stale && (
+            <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">
+              이 대시보드는 이전 팀 구성 기준입니다. 선수 이동 후에는 히스토리 다시 읽기로 갱신하세요.
+            </div>
+          )}
+          {history.warnings.length > 0 && (
+            <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
+              <p className="text-sm font-black text-amber-900">조회 주의</p>
+              <div className="mt-1 space-y-1">
+                {history.warnings.map((warning) => (
+                  <p key={warning} className="text-xs font-semibold text-amber-800">{warning}</p>
+                ))}
+              </div>
+            </div>
+          )}
+          <div className="grid gap-4 lg:grid-cols-2">
+            <HistoryTeamDetail title={formatTeamName("A")} insight={history.teamA} />
+            <HistoryTeamDetail title={formatTeamName("B")} insight={history.teamB} />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function HistoryTeamDetail({ title, insight }: { title: string; insight: TeamHistoryInsight }) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-base font-black text-slate-900">{title}</p>
+        <span className="rounded-full bg-white px-3 py-1 text-xs font-black text-slate-600 ring-1 ring-slate-200">
+          표본 {insight.coPlaySamples} · 평균득실 {formatHistorySigned(insight.avgGoalDiff)}
+        </span>
+      </div>
+
+      <div className="mt-3">
+        <GoalDiffBar value={insight.avgGoalDiff} />
+      </div>
+
+      <HistoryPairTable title="좋은 궁합" pairs={insight.goodPairs} empty="좋은 궁합으로 볼 만큼 누적된 조합이 아직 없습니다." />
+      <HistoryPairTable title="주의 궁합" pairs={insight.cautionPairs} empty="현재 팀 안에서 크게 경계할 누적 조합은 없습니다." />
+      <HistoryPairTable title="표본 있는 조합" pairs={insight.samplePairs} empty="과거 같은 편 표본이 거의 없습니다." />
+
+      <div className="mt-4">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-sm font-black text-slate-800">선수 최근 폼</p>
+          <p className="text-xs font-semibold text-slate-500">최근 최대 5경기 기준</p>
+        </div>
+        <RecentFormBars forms={insight.recentForms.slice(0, 8)} />
+      </div>
+
+      {insight.unmatchedNames.length > 0 && (
+        <div className="mt-4 rounded-xl bg-white px-3 py-2 ring-1 ring-slate-200">
+          <p className="text-xs font-black text-slate-600">히스토리 매칭 안 된 선수</p>
+          <p className="mt-1 text-xs font-semibold text-slate-500">{insight.unmatchedNames.join(", ")}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function HistoryPairTable({ title, pairs, empty }: { title: string; pairs: HistoryPairInsight[]; empty: string }) {
+  return (
+    <div className="mt-4">
+      <p className="text-sm font-black text-slate-800">{title}</p>
+      {pairs.length === 0 ? (
+        <p className="mt-1 rounded-xl bg-white px-3 py-2 text-xs font-semibold text-slate-400 ring-1 ring-slate-200">{empty}</p>
+      ) : (
+        <div className="mt-1 overflow-hidden rounded-xl bg-white ring-1 ring-slate-200">
+          {pairs.map((pair) => (
+            <div key={`${title}-${pair.players[0]}-${pair.players[1]}`} className="grid grid-cols-[1fr_auto] gap-2 border-b border-slate-100 px-3 py-2 last:border-b-0">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <p className="truncate text-xs font-black text-slate-800">{pair.players[0]} · {pair.players[1]}</p>
+                  <span className={`rounded-full border px-2 py-0.5 text-[10px] font-black ${pairLabelClass(pair.label)}`}>{pairLabelText(pair.label)}</span>
+                </div>
+                <p className="mt-0.5 text-[11px] font-semibold text-slate-500">
+                  {pair.matches}경기 {pair.wins}승 {pair.draws}무 {pair.losses}패 · 득점관여 {pair.points}
+                </p>
+              </div>
+              <div className="text-right">
+                <p className="font-mono text-sm font-black text-slate-900">{formatHistorySigned(pair.avgGoalDiff)}</p>
+                <p className="text-[10px] font-bold text-slate-400">평균득실</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
