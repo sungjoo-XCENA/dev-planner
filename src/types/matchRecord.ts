@@ -1,6 +1,9 @@
 import type { Quarter, TeamQuarterLineup } from "@/types/lineup";
 import type { TeamName } from "@/types/team";
 
+export type MatchRecordKind = "SELF" | "MATCH";
+export type MatchRecordMode = "SUMMARY" | "QUARTER";
+
 export type MatchRecordEvent = {
   id: string;
   quarter: Quarter;
@@ -9,13 +12,35 @@ export type MatchRecordEvent = {
   assist?: string;
 };
 
+export type MatchRecordPlayerStat = {
+  team: TeamName;
+  player: string;
+  goals: number;
+  assists: number;
+  quarter?: Quarter;
+};
+
+export type MatchRecordTeamScore = {
+  team: TeamName;
+  goals: number;
+  quarter?: Quarter;
+};
+
 export type MatchRecordSaveRequest = {
   matchId: string;
   matchDate: string;
   matchTime?: string;
+  matchKind?: MatchRecordKind;
+  recordMode?: MatchRecordMode;
+  venueName?: string;
+  homeTeamName?: string;
+  awayTeamName?: string;
   memo?: string;
   quarters: TeamQuarterLineup[];
   events: MatchRecordEvent[];
+  summaryStats?: MatchRecordPlayerStat[];
+  teamScores?: MatchRecordTeamScore[];
+  scoreOverride?: Partial<Record<TeamName, number>>;
   overwriteExisting?: boolean;
   dryRun?: boolean;
 };
@@ -39,6 +64,8 @@ export type MatchRecordLoadResponse = {
   path: string;
   matchDate?: string;
   matchTime?: string;
+  matchKind?: MatchRecordKind;
+  venueName?: string;
   homeTeamName?: string;
   awayTeamName?: string;
   homeGoal?: number;
@@ -46,6 +73,10 @@ export type MatchRecordLoadResponse = {
   comment?: string;
   hasPlannerQuarterInfo: boolean;
   events: MatchRecordEvent[];
+  summaryStats?: MatchRecordPlayerStat[];
+  teamScores?: MatchRecordTeamScore[];
+  scoreOverride?: Partial<Record<TeamName, number>>;
+  recordMode?: MatchRecordMode;
 };
 
 export type MatchRecordConflictResponse = {
