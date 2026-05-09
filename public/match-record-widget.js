@@ -87,6 +87,27 @@
     return Boolean(element && element.getClientRects && element.getClientRects().length > 0);
   }
 
+  function isInsidePanel(node) {
+    if (!node || node.nodeType !== 1) return false;
+    var element = node;
+    return Boolean(element.id === PANEL_ID || (element.closest && element.closest("#" + PANEL_ID)));
+  }
+
+  function isPanelControlFocused() {
+    var panel = document.getElementById(PANEL_ID);
+    var active = document.activeElement;
+    if (!panel || !active || !panel.contains(active)) return false;
+    return /^(INPUT|SELECT|TEXTAREA)$/.test(active.tagName || "");
+  }
+
+  function shouldObserveMutation(mutation) {
+    if (isInsidePanel(mutation.target)) return false;
+    var nodes = Array.prototype.slice.call(mutation.addedNodes || []).concat(Array.prototype.slice.call(mutation.removedNodes || []));
+    return nodes.some(function (node) {
+      return node.nodeType !== 1 || !isInsidePanel(node);
+    });
+  }
+
   function hideNativeRecordPanel() {
     Array.prototype.forEach.call(document.querySelectorAll("h3"), function (title) {
       if ((title.textContent || "").trim() !== "경기 기록 저장") return;
@@ -369,14 +390,17 @@
 
   function scheduleRender() {
     window.clearTimeout(scheduleRender.timer);
-    scheduleRender.timer = window.setTimeout(renderPanel, 250);
+    scheduleRender.timer = window.setTimeout(function () {
+      if (isPanelControlFocused()) return;
+      renderPanel();
+    }, 250);
   }
 
   function boot() {
     installStyle();
     scheduleRender();
-    var observer = new MutationObserver(function () {
-      if (document.getElementById("lineup-result")) scheduleRender();
+    var observer = new MutationObserver(function (mutations) {
+      if (document.getElementById("lineup-result") && mutations.some(shouldObserveMutation)) scheduleRender();
     });
     observer.observe(document.body, { childList: true, subtree: true });
   }
