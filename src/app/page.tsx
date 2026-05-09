@@ -174,11 +174,6 @@ export default function Home() {
   const [hydrated, setHydrated] = useState(false);
   const [showRecordEntry, setShowRecordEntry] = useState(false);
 
-  function openRecordEntry() {
-    setShowRecordEntry(true);
-    window.setTimeout(() => document.getElementById("lineup-result")?.scrollIntoView({ block: "start" }), 0);
-  }
-
   useEffect(() => {
     if (new URLSearchParams(window.location.search).get("record") !== "1") return;
     setShowRecordEntry(true);
@@ -340,6 +335,7 @@ export default function Home() {
     setCopied(false);
     setTeamsConfirmed(false);
     setSwapSelection(null);
+    setShowRecordEntry(false);
   }
 
   async function handleLoad() {
@@ -862,10 +858,7 @@ export default function Home() {
               <ModeButton active={plannerMode === "MATCH"} onClick={() => setPlannerMode("MATCH")}>매치</ModeButton>
             </div>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <button className="rounded-xl border border-slate-300 bg-white px-5 py-3 font-semibold text-slate-800 hover:bg-slate-50" onClick={openRecordEntry}>기록 입력</button>
-            <button className="rounded-xl bg-slate-900 px-5 py-3 font-semibold text-white disabled:bg-slate-300" onClick={runPlanner} disabled={!canGenerate}>자동 생성</button>
-          </div>
+          <button className="rounded-xl bg-slate-900 px-5 py-3 font-semibold text-white disabled:bg-slate-300" onClick={runPlanner} disabled={!canGenerate}>자동 생성</button>
         </div>
       </section>
 
@@ -874,6 +867,7 @@ export default function Home() {
           result={teamResult}
           confirmed={teamsConfirmed}
           selection={swapSelection}
+          recordEntryOpen={showRecordEntry}
           variantCount={teamVariants.length}
           selectedVariantIdx={selectedVariantIdx}
           onSelectVariant={selectVariant}
@@ -881,6 +875,7 @@ export default function Home() {
           onGroupTarget={handleGroupTarget}
           onConfirm={handleConfirmTeams}
           onReadjust={handleReadjustTeams}
+          onToggleRecordEntry={() => setShowRecordEntry((value) => !value)}
         />
       )}
       {lineupResult && (
@@ -891,17 +886,33 @@ export default function Home() {
           onQuartersChange={handleLineupQuartersChange}
         />
       )}
-      {matchResult && <MatchResultView result={matchResult} />}
-      {showRecordEntry && !lineupResult && (
-        <section id="lineup-result" data-mrw-standalone="true" className="mb-6 rounded-3xl bg-white p-6 shadow-sm">
-          <div className="mb-2 flex items-start justify-between gap-3">
-            <div>
-              <h2 className="text-xl font-bold">경기 기록 입력</h2>
-              <p className="mt-1 text-sm text-slate-600">라인업 없이도 지난 기록을 불러오거나 팀 점수와 개인 기록을 저장할 수 있습니다.</p>
-            </div>
-            <button className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-bold text-slate-700" onClick={() => setShowRecordEntry(false)}>닫기</button>
-          </div>
-        </section>
+      {showRecordEntry && !lineupResult && plannerMode === "BALANCE" && teamResult && (
+        <RecordEntryAnchor
+          title="팀 분배 기준 기록 입력"
+          description="현재 나뉜 형광/주황팀 선수 기준으로 팀 점수와 개인 골/도움을 입력합니다."
+          matchKind="SELF"
+          records={balanceRecordEntryRecords(teamResult)}
+          staffRoles={balanceRecordStaffRoles(teamResult)}
+          onClose={() => setShowRecordEntry(false)}
+        />
+      )}
+      {matchResult && (
+        <MatchResultView
+          result={matchResult}
+          recordEntryOpen={showRecordEntry}
+          onToggleRecordEntry={() => setShowRecordEntry((value) => !value)}
+        />
+      )}
+      {showRecordEntry && !lineupResult && plannerMode === "MATCH" && matchResult && (
+        <RecordEntryAnchor
+          title="매치 인원 기준 기록 입력"
+          description="현재 매치 라인업 추천에 포함된 DevUtd 선수 기준으로 개인 골/도움을 입력합니다."
+          matchKind="MATCH"
+          records={matchRecordEntryRecords(matchResult)}
+          staffRoles={matchRecordStaffRoles(matchResult, matchFieldPlayers, dedicatedGks)}
+          awayTeamName="상대팀"
+          onClose={() => setShowRecordEntry(false)}
+        />
       )}
 
       <div className="fixed inset-x-0 bottom-0 z-10 border-t border-slate-200 bg-white/95 p-3 backdrop-blur">
@@ -912,14 +923,129 @@ export default function Home() {
               : `매치 · 참석 ${matchRosterSize}명${waitingCount > 0 ? ` (콜업 후보 ${waitingCount})` : ""} · 전담 GK ${dedicatedGks.length}`}
             {!canGenerate && <p className="text-xs font-normal text-slate-500">{plannerMode === "BALANCE" ? "내부전은 24명 이상 권장, 22명부터 가능" : "매치는 필드 10명~18명 필요"}</p>}
           </div>
-          <div className="flex shrink-0 gap-2">
-            <button className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-bold text-slate-800" onClick={openRecordEntry}>기록 입력</button>
-            <button className="rounded-xl bg-slate-900 px-5 py-3 text-sm font-bold text-white disabled:bg-slate-300" onClick={runPlanner} disabled={!canGenerate}>자동 생성</button>
-          </div>
+          <button className="shrink-0 rounded-xl bg-slate-900 px-5 py-3 text-sm font-bold text-white disabled:bg-slate-300" onClick={runPlanner} disabled={!canGenerate}>자동 생성</button>
         </div>
       </div>
     </main>
   );
+}
+
+type RecordEntryRecord = {
+  quarter: 1;
+  team: TeamName;
+  attack: string[];
+  mid: string[];
+  defense: string[];
+  gk: string;
+  bench: string[];
+};
+
+function RecordEntryAnchor({
+  title,
+  description,
+  matchKind,
+  records,
+  staffRoles,
+  awayTeamName,
+  onClose,
+}: {
+  title: string;
+  description: string;
+  matchKind: "SELF" | "MATCH";
+  records: RecordEntryRecord[];
+  staffRoles: Partial<Record<string, StaffRole>>;
+  awayTeamName?: string;
+  onClose: () => void;
+}) {
+  const payload = {
+    key: recordEntryKey(matchKind, records),
+    matchKind,
+    awayTeamName,
+    records,
+    staffRoles,
+  };
+  return (
+    <section id="lineup-result" data-mrw-standalone="true" className="mb-6 rounded-3xl bg-white p-6 shadow-sm">
+      <script
+        type="application/json"
+        data-mrw-records
+        dangerouslySetInnerHTML={{ __html: safeJson(payload) }}
+      />
+      <div className="mb-2 flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-xl font-bold">{title}</h2>
+          <p className="mt-1 text-sm text-slate-600">{description}</p>
+        </div>
+        <button className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-bold text-slate-700" onClick={onClose}>닫기</button>
+      </div>
+    </section>
+  );
+}
+
+function balanceRecordEntryRecords(result: TeamBalanceResult): RecordEntryRecord[] {
+  return [
+    recordEntryRecord("A", result.teamA.players.map((player) => player.name)),
+    recordEntryRecord("B", result.teamB.players.map((player) => player.name)),
+  ];
+}
+
+function matchRecordEntryRecords(result: MatchPlanResult): RecordEntryRecord[] {
+  return [
+    recordEntryRecord("B", uniqueRecordNames([
+      ...result.playerSummaries.map((summary) => summary.playerName),
+      result.starters.gk?.name ?? "",
+    ])),
+  ];
+}
+
+function recordEntryRecord(team: TeamName, names: string[]): RecordEntryRecord {
+  return {
+    quarter: 1,
+    team,
+    attack: uniqueRecordNames(names),
+    mid: [],
+    defense: [],
+    gk: "없음",
+    bench: [],
+  };
+}
+
+function recordEntryKey(matchKind: "SELF" | "MATCH", records: RecordEntryRecord[]): string {
+  return `${matchKind}:${records.map((record) => `${record.team}:${record.attack.join("|")}`).join("::")}`;
+}
+
+function balanceRecordStaffRoles(result: TeamBalanceResult): Partial<Record<string, StaffRole>> {
+  return staffRolesFromPlayers([...result.teamA.players, ...result.teamB.players]);
+}
+
+function matchRecordStaffRoles(result: MatchPlanResult, players: Player[], gks: DedicatedGoalkeeper[]): Partial<Record<string, StaffRole>> {
+  const visibleNames = new Set(matchRecordEntryRecords(result).flatMap((record) => record.attack));
+  return staffRolesFromPlayers([...players, ...gks].filter((player) => visibleNames.has(player.name)));
+}
+
+function staffRolesFromPlayers(players: Array<Pick<Player, "name" | "memo"> | Pick<DedicatedGoalkeeper, "name" | "memo">>): Partial<Record<string, StaffRole>> {
+  const roles: Partial<Record<string, StaffRole>> = {};
+  players.forEach((player) => {
+    const role = extractStaffRole(player.memo);
+    if (role) roles[player.name] = role;
+  });
+  return roles;
+}
+
+function uniqueRecordNames(names: string[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  names.forEach((name) => {
+    const trimmed = name.trim();
+    if (!trimmed || trimmed === "없음" || seen.has(trimmed)) return;
+    seen.add(trimmed);
+    result.push(trimmed);
+  });
+  return result;
+}
+
+function safeJson(value: unknown): string {
+  return JSON.stringify(value).replace(/</g, "\\u003c");
 }
 
 function ModeButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: ReactNode }) {
@@ -1118,6 +1244,7 @@ function TeamResultView({
   result,
   confirmed,
   selection,
+  recordEntryOpen,
   variantCount,
   selectedVariantIdx,
   onSelectVariant,
@@ -1125,10 +1252,12 @@ function TeamResultView({
   onGroupTarget,
   onConfirm,
   onReadjust,
+  onToggleRecordEntry,
 }: {
   result: TeamBalanceResult;
   confirmed: boolean;
   selection: SwapSelection;
+  recordEntryOpen: boolean;
   variantCount: number;
   selectedVariantIdx: number;
   onSelectVariant: (idx: number) => void;
@@ -1136,6 +1265,7 @@ function TeamResultView({
   onGroupTarget: (targetTeam: "A" | "B", targetGroup: PositionGroup) => void;
   onConfirm: () => void;
   onReadjust: () => void;
+  onToggleRecordEntry: () => void;
 }) {
   const s = result.summary;
   const totalA = s.attackScoreA + s.midScoreA + s.defenseScoreA + s.activityA;
@@ -1327,7 +1457,10 @@ function TeamResultView({
         {confirmed ? (
           <button className="w-full rounded-xl border border-slate-300 px-5 py-3 text-sm font-semibold sm:w-auto" onClick={onReadjust}>팀 다시 조정</button>
         ) : (
-          <button className="w-full rounded-xl bg-emerald-600 px-5 py-3 text-base font-bold text-white sm:w-auto" onClick={onConfirm}>팀 확정 → 라인업 생성</button>
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+            <button className="rounded-xl border border-slate-300 bg-white px-5 py-3 text-base font-bold text-slate-800 hover:bg-slate-50" onClick={onToggleRecordEntry}>{recordEntryOpen ? "기록 입력 닫기" : "기록 입력"}</button>
+            <button className="rounded-xl bg-emerald-600 px-5 py-3 text-base font-bold text-white" onClick={onConfirm}>팀 확정 → 라인업 생성</button>
+          </div>
         )}
       </div>
       {historyOpen && history && (
@@ -2311,7 +2444,7 @@ function TeamLineupImage({
   );
 }
 
-function MatchResultView({ result }: { result: MatchPlanResult }) {
+function MatchResultView({ result, recordEntryOpen, onToggleRecordEntry }: { result: MatchPlanResult; recordEntryOpen: boolean; onToggleRecordEntry: () => void }) {
   const refs = useRef<Map<string, HTMLDivElement | null>>(new Map());
   const staffRolesByName = useMemo(() => {
     const map = new Map<string, StaffRole>();
@@ -2371,7 +2504,10 @@ function MatchResultView({ result }: { result: MatchPlanResult }) {
     <section className="mb-6 rounded-3xl bg-white p-6 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-xl font-bold">매치 라인업 추천</h2>
-        <button className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-bold text-white" onClick={downloadAll}>전체 이미지 저장</button>
+        <div className="flex flex-wrap gap-2">
+          <button className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-800 hover:bg-slate-50" onClick={onToggleRecordEntry}>{recordEntryOpen ? "기록 입력 닫기" : "기록 입력"}</button>
+          <button className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-bold text-white" onClick={downloadAll}>전체 이미지 저장</button>
+        </div>
       </div>
       {result.warnings.length > 0 && <div className="mt-4"><MessageBox title="매치 경고" items={result.warnings} tone="warning" /></div>}
       {result.notes.length > 0 && <div className="mt-4"><MessageBox title="운영 메모" items={result.notes} tone="info" /></div>}
