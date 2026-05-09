@@ -1943,6 +1943,20 @@ function MatchResultView({ result }: { result: MatchPlanResult }) {
     if (result.starters.gk?.name) map.set(result.starters.gk.name, { field: 0, gk: result.quarters.length });
     return map;
   }, [result]);
+  const rotateCountsByName = useMemo(() => {
+    const map = new Map<string, PlayerCount>();
+    const rotateNames = new Set([
+      ...result.operation.rotateLineup.attack,
+      ...result.operation.rotateLineup.mid,
+      ...result.operation.rotateLineup.defense,
+    ]);
+    result.playerSummaries.forEach((summary) => {
+      const beforeFourth = summary.quarters.filter((quarter) => quarter < 4).length;
+      map.set(summary.playerName, { field: beforeFourth + (rotateNames.has(summary.playerName) ? 1 : 0), gk: 0 });
+    });
+    if (result.starters.gk?.name) map.set(result.starters.gk.name, { field: 0, gk: result.quarters.length });
+    return map;
+  }, [result]);
 
   async function downloadOne(quarter: number) {
     const key = `match-${quarter}`;
@@ -1968,6 +1982,7 @@ function MatchResultView({ result }: { result: MatchPlanResult }) {
       </div>
       {result.warnings.length > 0 && <div className="mt-4"><MessageBox title="매치 경고" items={result.warnings} tone="warning" /></div>}
       {result.notes.length > 0 && <div className="mt-4"><MessageBox title="운영 메모" items={result.notes} tone="info" /></div>}
+      <MatchOperationBoard operation={result.operation} counts={rotateCountsByName} staffRoles={staffRolesByName} />
       <div className="mt-4 rounded-2xl border border-slate-200 p-4">
         <h3 className="font-bold">베스트 라인업</h3>
         <div className="mt-3">
@@ -2032,6 +2047,106 @@ function MatchResultView({ result }: { result: MatchPlanResult }) {
         </div>
       </div>
     </section>
+  );
+}
+
+function MatchOperationBoard({ operation, counts, staffRoles }: { operation: MatchPlanResult["operation"]; counts: Map<string, PlayerCount>; staffRoles: Map<string, StaffRole> }) {
+  const rotateRef = useRef<HTMLDivElement | null>(null);
+  const hasPriority = operation.q4PriorityNames.length > 0;
+  const hasSwaps = operation.rotateSwaps.length > 0;
+
+  async function downloadRotate() {
+    if (!rotateRef.current) return;
+    await downloadElementAsImage(rotateRef.current, "match_4Q_rotate.png");
+  }
+
+  return (
+    <div className="mt-4 rounded-2xl border border-slate-200 p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 className="font-bold">4Q 운영판</h3>
+          <p className="mt-1 text-xs text-slate-500">스코어 상황에 따라 바로 고를 수 있게 정리했습니다.</p>
+        </div>
+        <div className="flex flex-wrap gap-2 text-xs font-bold">
+          <span className="rounded-full bg-slate-100 px-3 py-1 text-slate-700">접전: 베스트 유지</span>
+          <span className="rounded-full bg-emerald-100 px-3 py-1 text-emerald-800">여유: 보장 교체</span>
+          <span className="rounded-full bg-sky-100 px-3 py-1 text-sky-800">2Q 이상 {operation.coveredByQ3Names.length}명</span>
+        </div>
+      </div>
+
+      <div className="mt-3 grid gap-3 md:grid-cols-2">
+        <div className="rounded-2xl bg-slate-50 p-3">
+          <p className="text-xs font-bold text-slate-500">지고 있거나 접전</p>
+          <p className="mt-1 text-sm font-bold text-slate-800">4Q 베스트 라인업 그대로</p>
+          <p className="mt-1 text-xs text-slate-500">이미 생성된 4Q 피치를 쓰면 됩니다.</p>
+        </div>
+        <div className="rounded-2xl bg-emerald-50 p-3">
+          <p className="text-xs font-bold text-emerald-700">리드하거나 여유 있음</p>
+          <p className="mt-1 text-sm font-bold text-emerald-900">{hasSwaps ? "아래 교체 추천 적용" : "추가 교체 없이 베스트 유지"}</p>
+          <p className="mt-1 text-xs text-emerald-700">{hasPriority ? "3Q까지 덜 뛴 정규 참석자를 먼저 챙깁니다." : "정규 참석자 2Q 보장이 이미 충분합니다."}</p>
+        </div>
+      </div>
+
+      {hasPriority && (
+        <div className="mt-3">
+          <p className="text-xs font-bold text-slate-500">4Q 먼저 챙길 선수</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {operation.q4PriorityNames.map((name) => (
+              <span key={name} className="rounded-full bg-amber-100 px-3 py-1 text-sm font-semibold text-amber-800">{name}</span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="mt-3">
+        <p className="text-xs font-bold text-slate-500">교체 추천</p>
+        <div className="mt-2 flex flex-wrap gap-2">
+          {operation.rotateSwaps.map((swap) => (
+            <span key={`${swap.outName}-${swap.inName}-${swap.group}`} className="rounded-full bg-emerald-100 px-3 py-1 text-sm font-semibold text-emerald-800" title={swap.reason}>
+              {swap.outName} → {swap.inName} ({groupKorean(swap.group)})
+            </span>
+          ))}
+          {!hasSwaps && <span className="rounded-full bg-slate-100 px-3 py-1 text-sm text-slate-600">없음</span>}
+        </div>
+      </div>
+
+      {(operation.callupUsedNames.length > 0 || operation.callupUnusedNames.length > 0) && (
+        <div className="mt-3 grid gap-3 md:grid-cols-2">
+          <div>
+            <p className="text-xs font-bold text-slate-500">콜업 사용</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {operation.callupUsedNames.map((name) => <span key={name} className="rounded-full bg-orange-100 px-3 py-1 text-sm font-semibold text-orange-800">{name}</span>)}
+              {operation.callupUsedNames.length === 0 && <span className="rounded-full bg-slate-100 px-3 py-1 text-sm text-slate-600">없음</span>}
+            </div>
+          </div>
+          <div>
+            <p className="text-xs font-bold text-slate-500">콜업 대기</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {operation.callupUnusedNames.map((name) => <span key={name} className="rounded-full bg-slate-100 px-3 py-1 text-sm text-slate-600">{name}</span>)}
+              {operation.callupUnusedNames.length === 0 && <span className="rounded-full bg-slate-100 px-3 py-1 text-sm text-slate-600">없음</span>}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {hasSwaps && (
+        <div className="mt-4 space-y-2">
+          <div ref={rotateRef}>
+            <Pitch
+              title="4Q 여유 운영안"
+              gk={operation.rotateLineup.gk}
+              attack={operation.rotateLineup.attack}
+              mid={operation.rotateLineup.mid}
+              defense={operation.rotateLineup.defense}
+              bench={operation.rotateLineup.bench}
+              counts={counts}
+              staffRoles={staffRoles}
+            />
+          </div>
+          <button className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700" onClick={downloadRotate}>여유 운영안 이미지 저장</button>
+        </div>
+      )}
+    </div>
   );
 }
 
