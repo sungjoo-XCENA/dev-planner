@@ -353,6 +353,14 @@ export default function Home() {
     setShowRecordEntry(false);
   }
 
+  function toggleRecordEntry() {
+    setShowRecordEntry((value) => {
+      const next = !value;
+      if (next) window.setTimeout(() => document.getElementById("lineup-result")?.scrollIntoView({ block: "start" }), 0);
+      return next;
+    });
+  }
+
   async function handleLoad() {
     resetResults();
     setErrors([]);
@@ -890,7 +898,7 @@ export default function Home() {
           onGroupTarget={handleGroupTarget}
           onConfirm={handleConfirmTeams}
           onReadjust={handleReadjustTeams}
-          onToggleRecordEntry={() => setShowRecordEntry((value) => !value)}
+          onToggleRecordEntry={toggleRecordEntry}
         />
       )}
       {lineupResult && (
@@ -911,13 +919,6 @@ export default function Home() {
           onClose={() => setShowRecordEntry(false)}
         />
       )}
-      {plannerMode === "MATCH" && matchResult && (
-        <MatchResultView
-          result={matchResult}
-          recordEntryOpen={showRecordEntry}
-          onToggleRecordEntry={() => setShowRecordEntry((value) => !value)}
-        />
-      )}
       {showRecordEntry && !lineupResult && plannerMode === "MATCH" && matchResult && (
         <RecordEntryAnchor
           title="매치 인원 기준 기록 입력"
@@ -927,6 +928,13 @@ export default function Home() {
           staffRoles={matchRecordStaffRoles(matchResult, matchFieldPlayers, dedicatedGks)}
           awayTeamName="상대팀"
           onClose={() => setShowRecordEntry(false)}
+        />
+      )}
+      {plannerMode === "MATCH" && matchResult && (
+        <MatchResultView
+          result={matchResult}
+          recordEntryOpen={showRecordEntry}
+          onToggleRecordEntry={toggleRecordEntry}
         />
       )}
 
@@ -1473,7 +1481,7 @@ function TeamResultView({
           <button className="w-full rounded-xl border border-slate-300 px-5 py-3 text-sm font-semibold sm:w-auto" onClick={onReadjust}>팀 다시 조정</button>
         ) : (
           <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
-            <button className="rounded-xl border border-slate-300 bg-white px-5 py-3 text-base font-bold text-slate-800 hover:bg-slate-50" onClick={onToggleRecordEntry}>{recordEntryOpen ? "기록 입력 닫기" : "기록 입력"}</button>
+            <button className="whitespace-nowrap rounded-xl border border-slate-300 bg-white px-5 py-3 text-base font-bold text-slate-800 hover:bg-slate-50" onClick={onToggleRecordEntry}>{recordEntryOpen ? "기록 입력 닫기" : "기록 입력"}</button>
             <button className="rounded-xl bg-emerald-600 px-5 py-3 text-base font-bold text-white" onClick={onConfirm}>팀 확정 → 라인업 생성</button>
           </div>
         )}
@@ -2132,7 +2140,15 @@ function Pitch({ title, gk, attack, mid, defense, bench, accent = "emerald", sel
   );
 }
 
-function swapInsideQuarter(q: LineupResult["quarters"][0], sec1: LineupSection, name1: string, sec2: LineupSection, name2: string): LineupResult["quarters"][0] {
+type SwappableQuarter = {
+  attack: string[];
+  mid: string[];
+  defense: string[];
+  gk: string;
+  bench: string[];
+};
+
+function swapInsideQuarter<T extends SwappableQuarter>(q: T, sec1: LineupSection, name1: string, sec2: LineupSection, name2: string): T {
   if (sec1 === sec2) {
     if (sec1 === "gk" || name1 === name2) return q;
     const arr = (q[sec1] as string[]).map((name) => {
@@ -2140,18 +2156,18 @@ function swapInsideQuarter(q: LineupResult["quarters"][0], sec1: LineupSection, 
       if (name === name2) return name1;
       return name;
     });
-    return { ...q, [sec1]: arr };
+    return { ...q, [sec1]: arr } as T;
   }
 
   const setSection = (
-    target: LineupResult["quarters"][0],
+    target: T,
     section: LineupSection,
     oldName: string,
     newName: string,
-  ): LineupResult["quarters"][0] => {
+  ): T => {
     if (section === "gk") return { ...target, gk: newName };
     const arr = (target[section] as string[]).map((n) => (n === oldName ? newName : n));
-    return { ...target, [section]: arr };
+    return { ...target, [section]: arr } as T;
   };
   let updated = setSection(q, sec1, name1, name2);
   updated = setSection(updated, sec2, name2, name1);
@@ -2460,7 +2476,15 @@ function TeamLineupImage({
 }
 
 function MatchResultView({ result, recordEntryOpen, onToggleRecordEntry }: { result: MatchPlanResult; recordEntryOpen: boolean; onToggleRecordEntry: () => void }) {
+  const [quarters, setQuarters] = useState(result.quarters);
+  const [selection, setSelection] = useState<{ key: string; section: LineupSection; name: string } | null>(null);
   const refs = useRef<Map<string, HTMLDivElement | null>>(new Map());
+
+  useEffect(() => {
+    setQuarters(result.quarters);
+    setSelection(null);
+  }, [result]);
+
   const staffRolesByName = useMemo(() => {
     const map = new Map<string, StaffRole>();
     const addPlayer = (player?: { name: string; memo?: string } | null) => {
@@ -2475,15 +2499,31 @@ function MatchResultView({ result, recordEntryOpen, onToggleRecordEntry }: { res
     addPlayer(result.starters.gk);
     return map;
   }, [result]);
-  const summaryByPlayerId = useMemo(() => new Map(result.playerSummaries.map((summary) => [summary.playerId, summary])), [result.playerSummaries]);
   const countsByName = useMemo(() => {
     const map = new Map<string, PlayerCount>();
-    result.playerSummaries.forEach((summary) => {
-      map.set(summary.playerName, { field: summary.fieldCount, gk: 0 });
+    const ensurePlayer = (name: string) => {
+      if (!name || name === "없음") return;
+      if (!map.has(name)) map.set(name, { field: 0, gk: 0 });
+    };
+    const bumpField = (name: string) => {
+      ensurePlayer(name);
+      const count = map.get(name) ?? { field: 0, gk: 0 };
+      map.set(name, { field: count.field + 1, gk: count.gk });
+    };
+    const bumpGk = (name: string) => {
+      ensurePlayer(name);
+      const count = map.get(name) ?? { field: 0, gk: 0 };
+      map.set(name, { field: count.field, gk: count.gk + 1 });
+    };
+    quarters.forEach((quarter) => {
+      quarter.attack.forEach(bumpField);
+      quarter.mid.forEach(bumpField);
+      quarter.defense.forEach(bumpField);
+      bumpGk(quarter.gk);
+      quarter.bench.forEach(ensurePlayer);
     });
-    if (result.starters.gk?.name) map.set(result.starters.gk.name, { field: 0, gk: result.quarters.length });
     return map;
-  }, [result]);
+  }, [quarters]);
   const rotateCountsByName = useMemo(() => {
     const map = new Map<string, PlayerCount>();
     const rotateNames = new Set([
@@ -2495,9 +2535,29 @@ function MatchResultView({ result, recordEntryOpen, onToggleRecordEntry }: { res
       const beforeFourth = summary.quarters.filter((quarter) => quarter < 4).length;
       map.set(summary.playerName, { field: beforeFourth + (rotateNames.has(summary.playerName) ? 1 : 0), gk: 0 });
     });
-    if (result.starters.gk?.name) map.set(result.starters.gk.name, { field: 0, gk: result.quarters.length });
+    if (result.starters.gk?.name) map.set(result.starters.gk.name, { field: 0, gk: quarters.length });
     return map;
-  }, [result]);
+  }, [result, quarters.length]);
+
+  function handleSelect(key: string, section: LineupSection, name: string) {
+    if (!selection) {
+      setSelection({ key, section, name });
+      return;
+    }
+    if (selection.key === key && selection.section === section && selection.name === name) {
+      setSelection(null);
+      return;
+    }
+    if (selection.key !== key) {
+      setSelection({ key, section, name });
+      return;
+    }
+    const next = quarters.map((quarter) => (
+      `match-${quarter.quarter}` === key ? swapInsideQuarter(quarter, selection.section, selection.name, section, name) : quarter
+    ));
+    setQuarters(next);
+    setSelection(null);
+  }
 
   async function downloadOne(quarter: number) {
     const key = `match-${quarter}`;
@@ -2507,7 +2567,7 @@ function MatchResultView({ result, recordEntryOpen, onToggleRecordEntry }: { res
   }
 
   async function downloadAll() {
-    for (const q of result.quarters) {
+    for (const q of quarters) {
       const key = `match-${q.quarter}`;
       const elem = refs.current.get(key);
       if (!elem) continue;
@@ -2520,8 +2580,8 @@ function MatchResultView({ result, recordEntryOpen, onToggleRecordEntry }: { res
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-xl font-bold">매치 라인업 추천</h2>
         <div className="flex flex-wrap gap-2">
-          <button className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-800 hover:bg-slate-50" onClick={onToggleRecordEntry}>{recordEntryOpen ? "기록 입력 닫기" : "기록 입력"}</button>
-          <button className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-bold text-white" onClick={downloadAll}>전체 이미지 저장</button>
+          <button className="whitespace-nowrap rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-800 hover:bg-slate-50" onClick={onToggleRecordEntry}>{recordEntryOpen ? "기록 입력 닫기" : "기록 입력"}</button>
+          <button className="whitespace-nowrap rounded-xl bg-slate-900 px-4 py-2 text-sm font-bold text-white" onClick={downloadAll}>전체 이미지 저장</button>
         </div>
       </div>
       {result.warnings.length > 0 && <div className="mt-4"><MessageBox title="매치 경고" items={result.warnings} tone="warning" /></div>}
@@ -2537,13 +2597,14 @@ function MatchResultView({ result, recordEntryOpen, onToggleRecordEntry }: { res
             </span>
           </div>
         </div>
-        <MatchGroup group="ATTACK" items={result.starters.attack} summaryByPlayerId={summaryByPlayerId} />
-        <MatchGroup group="MID" items={result.starters.mid} summaryByPlayerId={summaryByPlayerId} />
-        <MatchGroup group="DEFENSE" items={result.starters.defense} summaryByPlayerId={summaryByPlayerId} />
+        <MatchGroup group="ATTACK" items={result.starters.attack} />
+        <MatchGroup group="MID" items={result.starters.mid} />
+        <MatchGroup group="DEFENSE" items={result.starters.defense} />
       </div>
       <div className="mt-4 grid gap-4 md:grid-cols-2">
-        {result.quarters.map((q) => {
+        {quarters.map((q) => {
           const key = `match-${q.quarter}`;
+          const selectedKey = selection && selection.key === key ? `${selection.section}|${selection.name}` : null;
           return (
             <div key={key} className="space-y-2">
               <div ref={(el) => { refs.current.set(key, el); }}>
@@ -2556,6 +2617,8 @@ function MatchResultView({ result, recordEntryOpen, onToggleRecordEntry }: { res
                   bench={q.bench}
                   counts={countsByName}
                   staffRoles={staffRolesByName}
+                  selectedKey={selectedKey}
+                  onSelect={(section, name) => handleSelect(key, section, name)}
                 />
               </div>
               <button className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700" onClick={() => downloadOne(q.quarter)}>이 화면 이미지 저장</button>
@@ -2564,32 +2627,6 @@ function MatchResultView({ result, recordEntryOpen, onToggleRecordEntry }: { res
         })}
       </div>
       <MatchOperationBoard operation={result.operation} counts={rotateCountsByName} staffRoles={staffRolesByName} />
-      <div className="mt-4 rounded-2xl border border-slate-200 p-4">
-        <h3 className="font-bold">후보 / 교체 우선순위</h3>
-        <div className="mt-2 flex flex-wrap gap-2">
-          {result.bench.map((item) => {
-            const summary = summaryByPlayerId.get(item.player.id);
-            return (
-              <span key={item.player.id} className="inline-flex items-center gap-1 rounded-full bg-violet-100 px-3 py-1 text-sm font-semibold text-violet-800">
-                <span>{item.player.name}({groupKorean(item.group)}){summary ? ` · ${summary.fieldCount}/${summary.targetQuarterCount}Q` : ""}</span>
-                <StaffRoleBadge role={extractStaffRole(item.player.memo)} compact />
-              </span>
-            );
-          })}
-          {result.bench.length === 0 && <span className="rounded-full bg-slate-100 px-3 py-1 text-sm text-slate-600">없음</span>}
-        </div>
-      </div>
-      <div className="mt-4 rounded-2xl border border-slate-200 p-4">
-        <h3 className="font-bold">출전 쿼터</h3>
-        <div className="mt-2 flex flex-wrap gap-2">
-          {result.playerSummaries.map((summary) => (
-            <span key={summary.playerId} className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-sm font-semibold ${summary.isCallup ? "bg-orange-100 text-orange-800" : summary.isStarter ? "bg-slate-100 text-slate-700" : "bg-violet-100 text-violet-800"}`}>
-              <span>{summary.playerName} {summary.fieldCount}/{summary.targetQuarterCount}Q</span>
-              <span className="text-xs opacity-70">{summary.quarters.length > 0 ? summary.quarters.map((q) => `${q}Q`).join(",") : "-"}</span>
-            </span>
-          ))}
-        </div>
-      </div>
     </section>
   );
 }
@@ -2694,16 +2731,15 @@ function MatchOperationBoard({ operation, counts, staffRoles }: { operation: Mat
   );
 }
 
-function MatchGroup({ group, items, summaryByPlayerId }: { group: PositionGroup; items: MatchSelection[]; summaryByPlayerId: Map<string, MatchPlanResult["playerSummaries"][number]> }) {
+function MatchGroup({ group, items }: { group: PositionGroup; items: MatchSelection[] }) {
   return (
     <div className="mt-3">
       <GroupBadge group={group} />
       <div className="mt-2 flex flex-wrap gap-2">
         {items.map((item) => {
-          const summary = summaryByPlayerId.get(item.player.id);
           return (
             <span key={item.player.id} className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-700" title={item.reason}>
-              <span>{item.player.name}{summary ? ` · ${summary.fieldCount}/${summary.targetQuarterCount}Q` : ""}</span>
+              <span>{item.player.name}</span>
               <StaffRoleBadge role={extractStaffRole(item.player.memo)} compact />
             </span>
           );
