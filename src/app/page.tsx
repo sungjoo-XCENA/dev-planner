@@ -988,18 +988,18 @@ function RecordEntryAnchor({
     staffRoles,
   };
   return (
-    <section id="lineup-result" data-mrw-standalone="true" className="mb-6 rounded-3xl bg-white p-6 shadow-sm">
+    <section id="lineup-result" data-mrw-standalone="true" className="mb-6 rounded-3xl bg-white p-4 shadow-sm sm:p-6">
       <script
         type="application/json"
         data-mrw-records
         dangerouslySetInnerHTML={{ __html: safeJson(payload) }}
       />
       <div className="mb-2 flex items-start justify-between gap-3">
-        <div>
+        <div className="min-w-0 flex-1">
           <h2 className="text-xl font-bold">{title}</h2>
           <p className="mt-1 text-sm text-slate-600">{description}</p>
         </div>
-        <button className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-bold text-slate-700" onClick={onClose}>닫기</button>
+        <button className="shrink-0 whitespace-nowrap rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-bold text-slate-700" onClick={onClose}>닫기</button>
       </div>
     </section>
   );
@@ -2499,46 +2499,6 @@ function MatchResultView({ result, recordEntryOpen, onToggleRecordEntry }: { res
     addPlayer(result.starters.gk);
     return map;
   }, [result]);
-  const countsByName = useMemo(() => {
-    const map = new Map<string, PlayerCount>();
-    const ensurePlayer = (name: string) => {
-      if (!name || name === "없음") return;
-      if (!map.has(name)) map.set(name, { field: 0, gk: 0 });
-    };
-    const bumpField = (name: string) => {
-      ensurePlayer(name);
-      const count = map.get(name) ?? { field: 0, gk: 0 };
-      map.set(name, { field: count.field + 1, gk: count.gk });
-    };
-    const bumpGk = (name: string) => {
-      ensurePlayer(name);
-      const count = map.get(name) ?? { field: 0, gk: 0 };
-      map.set(name, { field: count.field, gk: count.gk + 1 });
-    };
-    quarters.forEach((quarter) => {
-      quarter.attack.forEach(bumpField);
-      quarter.mid.forEach(bumpField);
-      quarter.defense.forEach(bumpField);
-      bumpGk(quarter.gk);
-      quarter.bench.forEach(ensurePlayer);
-    });
-    return map;
-  }, [quarters]);
-  const rotateCountsByName = useMemo(() => {
-    const map = new Map<string, PlayerCount>();
-    const rotateNames = new Set([
-      ...result.operation.rotateLineup.attack,
-      ...result.operation.rotateLineup.mid,
-      ...result.operation.rotateLineup.defense,
-    ]);
-    result.playerSummaries.forEach((summary) => {
-      const beforeFourth = summary.quarters.filter((quarter) => quarter < 4).length;
-      map.set(summary.playerName, { field: beforeFourth + (rotateNames.has(summary.playerName) ? 1 : 0), gk: 0 });
-    });
-    if (result.starters.gk?.name) map.set(result.starters.gk.name, { field: 0, gk: quarters.length });
-    return map;
-  }, [result, quarters.length]);
-
   function handleSelect(key: string, section: LineupSection, name: string) {
     if (!selection) {
       setSelection({ key, section, name });
@@ -2615,7 +2575,6 @@ function MatchResultView({ result, recordEntryOpen, onToggleRecordEntry }: { res
                   mid={q.mid}
                   defense={q.defense}
                   bench={q.bench}
-                  counts={countsByName}
                   staffRoles={staffRolesByName}
                   selectedKey={selectedKey}
                   onSelect={(section, name) => handleSelect(key, section, name)}
@@ -2626,12 +2585,12 @@ function MatchResultView({ result, recordEntryOpen, onToggleRecordEntry }: { res
           );
         })}
       </div>
-      <MatchOperationBoard operation={result.operation} counts={rotateCountsByName} staffRoles={staffRolesByName} />
+      <MatchOperationBoard operation={result.operation} staffRoles={staffRolesByName} />
     </section>
   );
 }
 
-function MatchOperationBoard({ operation, counts, staffRoles }: { operation: MatchPlanResult["operation"]; counts: Map<string, PlayerCount>; staffRoles: Map<string, StaffRole> }) {
+function MatchOperationBoard({ operation, staffRoles }: { operation: MatchPlanResult["operation"]; staffRoles: Map<string, StaffRole> }) {
   const rotateRef = useRef<HTMLDivElement | null>(null);
   const hasPriority = operation.q4PriorityNames.length > 0;
   const hasSwaps = operation.rotateSwaps.length > 0;
@@ -2720,7 +2679,6 @@ function MatchOperationBoard({ operation, counts, staffRoles }: { operation: Mat
               mid={operation.rotateLineup.mid}
               defense={operation.rotateLineup.defense}
               bench={operation.rotateLineup.bench}
-              counts={counts}
               staffRoles={staffRoles}
             />
           </div>
