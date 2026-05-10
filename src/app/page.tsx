@@ -1689,6 +1689,21 @@ function allHistoryPairs(insight: TeamHistoryInsight): HistoryPairInsight[] {
   });
 }
 
+function historyInsightNames(insight: TeamHistoryInsight): string[] {
+  const names = new Map<string, string>();
+  const add = (name: string) => {
+    const normalized = normalizeHistoryName(name);
+    if (normalized && !names.has(normalized)) names.set(normalized, name);
+  };
+
+  allHistoryPairs(insight).forEach((pair) => pair.players.forEach(add));
+  insight.recentForms.forEach((form) => add(form.name));
+  insight.defenseForms.forEach((form) => add(form.name));
+  insight.unmatchedNames.forEach(add);
+
+  return Array.from(names.values());
+}
+
 function topGoodPairs(insight: TeamHistoryInsight, limit: number): HistoryPairInsight[] {
   return sortGoodPairs(allHistoryPairs(insight)).slice(0, limit);
 }
@@ -1786,8 +1801,8 @@ function compatibilityChipClass(pair: HistoryPairInsight): string {
   return "border-amber-200 bg-amber-50 text-amber-800";
 }
 
-function buildCompatibilityMapNodes(pairs: HistoryPairInsight[], groupMap: HistoryGroupMap): CompatibilityMapNode[] {
-  const names = Array.from(new Set(pairs.flatMap((pair) => pair.players)));
+function buildCompatibilityMapNodes(pairs: HistoryPairInsight[], groupMap: HistoryGroupMap, nodeNames?: string[]): CompatibilityMapNode[] {
+  const names = Array.from(new Set([...(nodeNames ?? []), ...pairs.flatMap((pair) => pair.players)]));
   const groupRank: Record<PositionGroup, number> = { ATTACK: 0, MID: 1, DEFENSE: 2 };
   names.sort((a, b) => {
     const groupA = groupMap.get(normalizeHistoryName(a));
@@ -1803,11 +1818,13 @@ function buildCompatibilityMapNodes(pairs: HistoryPairInsight[], groupMap: Histo
 
   return names.map((name, index) => {
     const angle = -Math.PI / 2 + (Math.PI * 2 * index) / names.length;
+    const radiusX = names.length > 18 && index % 2 === 1 ? 30 : 40;
+    const radiusY = names.length > 18 && index % 2 === 1 ? 27 : 35;
     return {
       name,
       group: groupMap.get(normalizeHistoryName(name)),
-      x: 50 + Math.cos(angle) * 38,
-      y: 50 + Math.sin(angle) * 34,
+      x: 50 + Math.cos(angle) * radiusX,
+      y: 50 + Math.sin(angle) * radiusY,
     };
   });
 }
@@ -1817,16 +1834,19 @@ function CompatibilityMapCard({
   subtitle,
   pairs,
   connectionPairs,
+  nodeNames,
   groupMap,
 }: {
   title: string;
   subtitle: string;
   pairs: HistoryPairInsight[];
   connectionPairs?: HistoryPairInsight[];
+  nodeNames?: string[];
   groupMap: HistoryGroupMap;
 }) {
-  const nodes = buildCompatibilityMapNodes(pairs, groupMap);
+  const nodes = buildCompatibilityMapNodes(pairs, groupMap, nodeNames);
   const nodeByName = new Map(nodes.map((node) => [normalizeHistoryName(node.name), node]));
+  const dense = nodes.length > 18;
   const [selectedName, setSelectedName] = useState<string | null>(null);
   const activeName = selectedName && nodes.some((node) => normalizeHistoryName(node.name) === normalizeHistoryName(selectedName))
     ? selectedName
@@ -1854,7 +1874,7 @@ function CompatibilityMapCard({
         <p className="mt-3 rounded-xl bg-slate-50 px-3 py-4 text-center text-xs font-bold text-slate-400 ring-1 ring-slate-200">궁합 지도로 볼 기록이 아직 부족합니다.</p>
       ) : (
         <>
-          <div className="relative mt-3 h-72 overflow-hidden rounded-2xl bg-[radial-gradient(circle_at_center,_#ffffff_0,_#f8fafc_58%,_#eef2ff_100%)] ring-1 ring-slate-200">
+          <div className={`relative mt-3 overflow-hidden rounded-2xl bg-[radial-gradient(circle_at_center,_#ffffff_0,_#f8fafc_58%,_#eef2ff_100%)] ring-1 ring-slate-200 ${dense ? "h-96" : "h-72"}`}>
             <svg className="absolute inset-0 h-full w-full" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
               {pairs.map((pair) => {
                 const from = nodeByName.get(normalizeHistoryName(pair.players[0]));
@@ -1879,7 +1899,7 @@ function CompatibilityMapCard({
               <button
                 key={node.name}
                 type="button"
-                className={`absolute max-w-[5.75rem] -translate-x-1/2 -translate-y-1/2 truncate rounded-full px-2.5 py-1 text-center text-[11px] font-black shadow-sm ring-1 transition hover:scale-105 focus:outline-none focus:ring-2 focus:ring-slate-900 ${compatibilityNodeClass(node.group)} ${activeKey === normalizeHistoryName(node.name) ? "ring-2 ring-slate-900" : ""}`}
+                className={`absolute -translate-x-1/2 -translate-y-1/2 truncate rounded-full text-center font-black shadow-sm ring-1 transition hover:scale-105 focus:outline-none focus:ring-2 focus:ring-slate-900 ${dense ? "max-w-[4.5rem] px-1.5 py-0.5 text-[10px]" : "max-w-[5.75rem] px-2.5 py-1 text-[11px]"} ${compatibilityNodeClass(node.group)} ${activeKey === normalizeHistoryName(node.name) ? "ring-2 ring-slate-900" : ""}`}
                 style={{ left: `${node.x}%`, top: `${node.y}%` }}
                 title={node.group ? `${node.name} · ${groupKorean(node.group)}` : node.name}
                 onClick={() => setSelectedName(node.name)}
@@ -2044,6 +2064,8 @@ function GoalsAgainstBars({ forms }: { forms: HistoryDefenseForm[] }) {
   );
 }
 
+type HistoryInsightTab = "OVERALL" | "A" | "B" | "PLAYERS";
+
 function HistoryInsightModal({
   history,
   onClose,
@@ -2055,6 +2077,14 @@ function HistoryInsightModal({
   stale: boolean;
   groupMaps: Record<"A" | "B" | "ALL", HistoryGroupMap>;
 }) {
+  const [activeTab, setActiveTab] = useState<HistoryInsightTab>("OVERALL");
+  const tabs: Array<{ id: HistoryInsightTab; label: string }> = [
+    { id: "OVERALL", label: "전체" },
+    { id: "A", label: formatTeamName("A") },
+    { id: "B", label: formatTeamName("B") },
+    { id: "PLAYERS", label: "선수별" },
+  ];
+
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-950/50 px-3 py-6 backdrop-blur-sm">
       <div className="w-full max-w-6xl overflow-hidden rounded-3xl bg-white shadow-2xl">
@@ -2086,11 +2116,54 @@ function HistoryInsightModal({
               </div>
             </div>
           )}
-          <HistoryOverallInsight insight={history.overall} groupMap={groupMaps.ALL} />
-          <div className="grid gap-4 lg:grid-cols-2">
-            <HistoryTeamDetail title={formatTeamName("A")} insight={history.teamA} groupMap={groupMaps.A} />
-            <HistoryTeamDetail title={formatTeamName("B")} insight={history.teamB} groupMap={groupMaps.B} />
+          <div className="sticky top-0 z-10 mb-4 grid grid-cols-4 gap-2 rounded-2xl bg-white/95 p-2 shadow-sm ring-1 ring-slate-200 backdrop-blur">
+            {tabs.map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                className={`rounded-xl px-3 py-2 text-sm font-black transition ${activeTab === tab.id ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-700 hover:bg-slate-200"}`}
+                onClick={() => setActiveTab(tab.id)}
+              >
+                {tab.label}
+              </button>
+            ))}
           </div>
+
+          {activeTab === "OVERALL" && <HistoryOverallInsight insight={history.overall} groupMap={groupMaps.ALL} />}
+          {activeTab === "A" && <HistoryTeamDetail title={formatTeamName("A")} insight={history.teamA} groupMap={groupMaps.A} />}
+          {activeTab === "B" && <HistoryTeamDetail title={formatTeamName("B")} insight={history.teamB} groupMap={groupMaps.B} />}
+          {activeTab === "PLAYERS" && <HistoryPlayerInsight insight={history.overall} />}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function HistoryPlayerInsight({ insight }: { insight: TeamHistoryInsight }) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <p className="text-base font-black text-slate-950">선수별</p>
+          <p className="mt-1 text-xs font-semibold text-slate-600">전체 인원 기준 개인 기록 랭킹입니다.</p>
+        </div>
+        <span className="rounded-full bg-white px-3 py-1 text-xs font-black text-slate-600 ring-1 ring-slate-200">
+          매칭 {insight.matchedPlayerCount}/{insight.playerCount}명
+        </span>
+      </div>
+
+      <div className="mt-4 grid gap-3 lg:grid-cols-3">
+        <div>
+          <p className="text-sm font-black text-slate-800">공격 포인트 순위</p>
+          <RecentFormBars forms={insight.recentForms.slice(0, 10)} />
+        </div>
+        <div>
+          <p className="text-sm font-black text-slate-800">clean sheet 순위</p>
+          <DefenseFormBars forms={insight.defenseForms.slice(0, 10)} />
+        </div>
+        <div>
+          <p className="text-sm font-black text-slate-800">평균 실점 낮은 순위</p>
+          <GoalsAgainstBars forms={insight.defenseForms.slice(0, 10)} />
         </div>
       </div>
     </div>
@@ -2099,6 +2172,7 @@ function HistoryInsightModal({
 
 function HistoryOverallInsight({ insight, groupMap }: { insight: TeamHistoryInsight; groupMap: HistoryGroupMap }) {
   const allPairs = allHistoryPairs(insight);
+  const allNames = historyInsightNames(insight);
   const goodPairs = topGoodPairs(insight, 10);
   const badPairs = topBadPairs(insight, 10);
   const mapPairs = compatibilityMapPairs(insight, 6, 6, 16);
@@ -2130,6 +2204,7 @@ function HistoryOverallInsight({ insight, groupMap }: { insight: TeamHistoryInsi
         subtitle="현재 선택된 전체 인원에서 좋은 연결과 주의 연결만 핵심선으로 표시합니다."
         pairs={mapPairs}
         connectionPairs={allPairs}
+        nodeNames={allNames}
         groupMap={groupMap}
       />
 
@@ -2144,27 +2219,14 @@ function HistoryOverallInsight({ insight, groupMap }: { insight: TeamHistoryInsi
         <HistoryPairTable title="미드-공격 좋은 궁합 Top 5" pairs={sortGoodPairs(midAttackPairs).slice(0, 5)} empty="미드-공격 좋은 궁합 기록이 아직 부족합니다." />
         <HistoryPairTable title="미드-공격 낮은 궁합 Worst 5" pairs={sortBadPairs(midAttackPairs).slice(0, 5)} empty="미드-공격 낮은 궁합 기록이 아직 부족합니다." />
       </div>
-
-      <div className="mt-4 grid gap-3 lg:grid-cols-3">
-        <div>
-          <p className="text-sm font-black text-slate-800">공격 포인트 순위</p>
-          <RecentFormBars forms={insight.recentForms.slice(0, 8)} />
-        </div>
-        <div>
-          <p className="text-sm font-black text-slate-800">수비 clean sheet 순위</p>
-          <DefenseFormBars forms={insight.defenseForms.slice(0, 8)} />
-        </div>
-        <div>
-          <p className="text-sm font-black text-slate-800">평균 실점 낮은 순위</p>
-          <GoalsAgainstBars forms={insight.defenseForms.slice(0, 8)} />
-        </div>
-      </div>
     </div>
   );
 }
 
 function HistoryTeamDetail({ title, insight, groupMap }: { title: string; insight: TeamHistoryInsight; groupMap: HistoryGroupMap }) {
   const allPairs = allHistoryPairs(insight);
+  const allNames = historyInsightNames(insight);
+  const mapPairs = compatibilityMapPairs(insight, 5, 5, 14);
   const goodPairs = topGoodPairs(insight, 5);
   const badPairs = topBadPairs(insight, 5);
 
@@ -2180,6 +2242,15 @@ function HistoryTeamDetail({ title, insight, groupMap }: { title: string; insigh
       <div className="mt-3">
         <GoalDiffBar value={insight.avgGoalDiff} />
       </div>
+
+      <CompatibilityMapCard
+        title={`${title} 내부 궁합지도`}
+        subtitle={`현재 ${title} 선수끼리만 표시합니다.`}
+        pairs={mapPairs}
+        connectionPairs={allPairs}
+        nodeNames={allNames}
+        groupMap={groupMap}
+      />
 
       <LineCompatibilityBreakdown insight={insight} groupMap={groupMap} />
 
