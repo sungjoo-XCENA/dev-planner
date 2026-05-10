@@ -1754,15 +1754,21 @@ function compatibilityStroke(pair: HistoryPairInsight): string {
   return "#f59e0b";
 }
 
-function compatibilityStrokeWidth(pair: HistoryPairInsight, maxMatches: number): number {
-  const ratio = maxMatches > 0 ? pair.matches / maxMatches : 0;
-  return 0.7 + Math.sqrt(ratio) * 3.6;
+function compatibilityPairTouches(pair: HistoryPairInsight, activeKey: string): boolean {
+  return pair.players.some((name) => normalizeHistoryName(name) === activeKey);
 }
 
-function compatibilityStrokeOpacity(pair: HistoryPairInsight, maxMatches: number): number {
+function compatibilityStrokeWidth(pair: HistoryPairInsight, maxMatches: number, highlighted: boolean): number {
   const ratio = maxMatches > 0 ? pair.matches / maxMatches : 0;
-  const base = compatibilityPairTone(pair) === "watch" ? 0.22 : 0.34;
-  return Math.min(0.82, base + ratio * 0.36);
+  const width = 0.2 + Math.sqrt(ratio) * 0.75;
+  return highlighted ? Math.min(5.2, 1.2 + Math.sqrt(ratio) * 3.3) : width;
+}
+
+function compatibilityStrokeOpacity(pair: HistoryPairInsight, maxMatches: number, highlighted: boolean, hasSelection: boolean): number {
+  const ratio = maxMatches > 0 ? pair.matches / maxMatches : 0;
+  if (highlighted) return Math.min(0.9, 0.48 + ratio * 0.34);
+  if (hasSelection) return 0.025;
+  return Math.min(0.105, 0.025 + ratio * 0.08);
 }
 
 function compatibilityNodeClass(group?: PositionGroup): string {
@@ -1811,14 +1817,12 @@ function CompatibilityMapCard({
   title,
   subtitle,
   pairs,
-  connectionPairs,
   nodeNames,
   groupMap,
 }: {
   title: string;
   subtitle: string;
   pairs: HistoryPairInsight[];
-  connectionPairs?: HistoryPairInsight[];
   nodeNames?: string[];
   groupMap: HistoryGroupMap;
 }) {
@@ -1826,9 +1830,6 @@ function CompatibilityMapCard({
   const nodeByName = new Map(nodes.map((node) => [normalizeHistoryName(node.name), node]));
   const dense = nodes.length > 18;
   const maxPairMatches = Math.max(1, ...pairs.map((pair) => pair.matches));
-  const mapLinePairs = pairs
-    .slice()
-    .sort((a, b) => a.matches - b.matches || Math.abs(a.avgGoalDiff) - Math.abs(b.avgGoalDiff));
   const highlightPairs = [...sortGoodPairs(pairs).slice(0, 4), ...sortBadPairs(pairs).slice(0, 4)].filter((pair, index, array) => {
     const key = pair.players.slice().sort().join("|");
     return array.findIndex((item) => item.players.slice().sort().join("|") === key) === index;
@@ -1836,9 +1837,17 @@ function CompatibilityMapCard({
   const [selectedName, setSelectedName] = useState<string | null>(null);
   const activeName = selectedName && nodes.some((node) => normalizeHistoryName(node.name) === normalizeHistoryName(selectedName))
     ? selectedName
-    : nodes[0]?.name ?? null;
+    : null;
   const activeKey = activeName ? normalizeHistoryName(activeName) : "";
-  const activeConnections = (connectionPairs ?? pairs).filter((pair) => pair.players.some((name) => normalizeHistoryName(name) === activeKey));
+  const hasActiveSelection = Boolean(activeKey);
+  const mapLinePairs = pairs
+    .slice()
+    .sort((a, b) => {
+      const aActive = activeKey ? compatibilityPairTouches(a, activeKey) : false;
+      const bActive = activeKey ? compatibilityPairTouches(b, activeKey) : false;
+      return Number(aActive) - Number(bActive) || a.matches - b.matches || Math.abs(a.avgGoalDiff) - Math.abs(b.avgGoalDiff);
+    });
+  const activeConnections = activeKey ? pairs.filter((pair) => compatibilityPairTouches(pair, activeKey)) : [];
   const activeGoodConnections = sortGoodPairs(activeConnections).slice(0, 5);
   const activeLowConnections = sortBadPairs(activeConnections).slice(0, 5);
 
@@ -1854,6 +1863,7 @@ function CompatibilityMapCard({
           <span className="inline-flex items-center gap-1 text-amber-700"><span className="h-2 w-4 rounded-full bg-amber-500" />보통</span>
           <span className="inline-flex items-center gap-1 text-rose-700"><span className="h-2 w-4 rounded-full bg-rose-500" />주의</span>
           <span className="inline-flex items-center gap-1 text-slate-500"><span className="h-2 w-5 rounded-full bg-slate-300" />두께=경기 수</span>
+          <span className="text-slate-400">선수 클릭=강조</span>
         </div>
       </div>
 
@@ -1867,6 +1877,7 @@ function CompatibilityMapCard({
                 const from = nodeByName.get(normalizeHistoryName(pair.players[0]));
                 const to = nodeByName.get(normalizeHistoryName(pair.players[1]));
                 if (!from || !to) return null;
+                const highlighted = activeKey ? compatibilityPairTouches(pair, activeKey) : false;
                 return (
                   <line
                     key={`${pair.players[0]}-${pair.players[1]}`}
@@ -1874,10 +1885,10 @@ function CompatibilityMapCard({
                     y1={from.y}
                     x2={to.x}
                     y2={to.y}
-                    stroke={compatibilityStroke(pair)}
-                    strokeWidth={compatibilityStrokeWidth(pair, maxPairMatches)}
+                    stroke={hasActiveSelection && !highlighted ? "#94a3b8" : compatibilityStroke(pair)}
+                    strokeWidth={compatibilityStrokeWidth(pair, maxPairMatches, highlighted)}
                     strokeLinecap="round"
-                    opacity={compatibilityStrokeOpacity(pair, maxPairMatches)}
+                    opacity={compatibilityStrokeOpacity(pair, maxPairMatches, highlighted, hasActiveSelection)}
                   />
                 );
               })}
@@ -1902,6 +1913,11 @@ function CompatibilityMapCard({
               </span>
             ))}
           </div>
+          {!activeName && (
+            <p className="mt-3 rounded-xl bg-slate-50 px-3 py-2 text-xs font-bold text-slate-500 ring-1 ring-slate-200">
+              전체 조합은 흐린 선으로 모두 깔려 있습니다. 선수 이름을 누르면 그 선수의 연결만 진하게 표시됩니다.
+            </p>
+          )}
           {activeName && (
             <div className="mt-3 rounded-2xl bg-slate-50 p-3 ring-1 ring-slate-200">
               <div className="flex flex-wrap items-center justify-between gap-2">
