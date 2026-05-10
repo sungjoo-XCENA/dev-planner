@@ -9,8 +9,9 @@
     var style = document.createElement("style");
     style.id = STYLE_ID;
     style.textContent = [
-      ".mrw-score-row{grid-template-columns:minmax(0,1fr) auto minmax(0,1fr)!important;gap:28px!important}",
-      ".mrw-side{min-height:86px!important;display:flex!important;flex-direction:column!important;align-items:center!important;justify-content:center!important;gap:6px!important;padding:14px 42px!important;text-align:center!important}",
+      ".mrw-score-row{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important;align-items:stretch!important;gap:14px!important}",
+      ".mrw-side-wrap{width:100%!important;min-width:0!important;box-sizing:border-box!important}",
+      ".mrw-side{width:100%!important;inline-size:100%!important;max-width:100%!important;box-sizing:border-box!important;min-height:86px!important;display:flex!important;flex-direction:column!important;align-items:center!important;justify-content:center!important;gap:6px!important;padding:14px 42px!important;text-align:center!important}",
       ".mrw-team-name{max-width:100%!important;font-size:13px!important;line-height:1.15!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important}",
       ".mrw-score-num{font-size:48px!important;line-height:.95!important;text-align:center!important}",
       ".mrw-score-hint,.mrw-qscore{display:none!important}",
@@ -20,7 +21,7 @@
       ".mrw-counter-label{white-space:nowrap!important;line-height:1!important;text-align:center!important}",
       ".mrw-counter button{width:24px!important;height:24px!important;line-height:1!important}",
       ".mrw-counter-value{line-height:1!important}",
-      "@media(max-width:760px){.mrw-score-row{gap:12px!important}.mrw-side{min-height:76px!important;padding:12px 36px!important}.mrw-team-name{font-size:12px!important}.mrw-score-minus{right:6px!important;top:6px!important;width:28px!important;height:28px!important;font-size:17px!important}.mrw-counter{grid-template-columns:22px 23px 16px 23px!important;min-width:92px!important}.mrw-counter button{width:23px!important;height:23px!important}}",
+      "@media(max-width:760px){.mrw-score-row{grid-template-columns:1fr!important;gap:10px!important}.mrw-side{min-height:76px!important;padding:12px 36px!important}.mrw-team-name{font-size:12px!important}.mrw-score-minus{right:6px!important;top:6px!important;width:28px!important;height:28px!important;font-size:17px!important}.mrw-counter{grid-template-columns:22px 23px 16px 23px!important;min-width:92px!important}.mrw-counter button{width:23px!important;height:23px!important}}",
     ].join("\n");
     document.head.appendChild(style);
   }
