@@ -1414,6 +1414,7 @@ function TeamResultView({
   const teamBHistoryNames = useMemo(() => historyNames(result.teamB.players), [result.teamB.players]);
   const teamAHistoryGroups = useMemo(() => historyGroupMap(result.teamA.players), [result.teamA.players]);
   const teamBHistoryGroups = useMemo(() => historyGroupMap(result.teamB.players), [result.teamB.players]);
+  const overallHistoryGroups = useMemo(() => mergeHistoryGroupMaps(teamAHistoryGroups, teamBHistoryGroups), [teamAHistoryGroups, teamBHistoryGroups]);
   const historyKey = useMemo(
     () => makeHistoryInsightKey(teamAHistoryNames, teamBHistoryNames, [2025, 2026]),
     [teamAHistoryNames, teamBHistoryNames],
@@ -1587,7 +1588,7 @@ function TeamResultView({
           history={history}
           onClose={() => setHistoryOpen(false)}
           stale={isHistoryStale}
-          groupMaps={{ A: teamAHistoryGroups, B: teamBHistoryGroups }}
+          groupMaps={{ A: teamAHistoryGroups, B: teamBHistoryGroups, ALL: overallHistoryGroups }}
         />
       )}
     </section>
@@ -1607,6 +1608,14 @@ function historyGroupMap(players: TeamBalanceResult["teamA"]["players"]): Histor
     if (key) map.set(key, player.assignedGroup);
   });
   return map;
+}
+
+function mergeHistoryGroupMaps(...maps: HistoryGroupMap[]): HistoryGroupMap {
+  const merged: HistoryGroupMap = new Map();
+  maps.forEach((map) => {
+    map.forEach((group, name) => merged.set(name, group));
+  });
+  return merged;
 }
 
 function historySourceLabel(source: HistoryInsightResponse["source"]): string {
@@ -1644,86 +1653,6 @@ function trendClass(trend: HistoryPlayerForm["trend"]): string {
   return "bg-slate-400";
 }
 
-function TeamHistoryInsightCard({ teamName, insight, groupMap }: { teamName: string; insight: TeamHistoryInsight; groupMap: HistoryGroupMap }) {
-  const hasPairs = insight.goodPairs.length > 0 || insight.cautionPairs.length > 0 || insight.samplePairs.length > 0;
-  const attackPairs = groupPairs(insight, groupMap, "ATTACK").sort((a, b) => b.points - a.points || b.avgGoalDiff - a.avgGoalDiff || b.matches - a.matches);
-  const defensePairs = groupPairs(insight, groupMap, "DEFENSE").sort((a, b) => a.goalsAgainst / a.matches - b.goalsAgainst / b.matches || b.avgGoalDiff - a.avgGoalDiff || b.matches - a.matches);
-  const badPairs = allHistoryPairs(insight).sort((a, b) => a.avgGoalDiff - b.avgGoalDiff || b.losses - a.losses || b.matches - a.matches);
-  const impactPairs = allHistoryPairs(insight)
-    .filter((pair) => pair.matches >= 1)
-    .sort((a, b) => Math.abs(b.avgGoalDiff) - Math.abs(a.avgGoalDiff) || b.matches - a.matches)
-    .slice(0, 5);
-
-  return (
-    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div>
-          <p className="text-sm font-black text-slate-900">{teamName} 히스토리 인사이트</p>
-          <p className="mt-0.5 text-xs font-semibold text-slate-500">현재 팀 안의 과거 같은 편 기록 기준</p>
-        </div>
-        <div className="rounded-full bg-white px-3 py-1 text-xs font-black text-slate-700 ring-1 ring-slate-200">
-          {insight.matchedPlayerCount}/{insight.playerCount}명 매칭
-        </div>
-      </div>
-
-      <div className="mt-3 grid gap-2 sm:grid-cols-5">
-        <HistoryMiniStat label="조합 표본" value={`${insight.coPlaySamples}경기`} />
-        <HistoryMiniStat label="평균 득실" value={formatHistorySigned(insight.avgGoalDiff)} />
-        <HistoryMiniStat label="clean sheet" value={`${insight.cleanSheets}회`} />
-        <HistoryMiniStat label="총 실점" value={`${insight.goalsAgainst}점`} />
-        <HistoryMiniStat label="평균 실점" value={formatScore(insight.avgGoalsAgainst)} />
-      </div>
-
-      <div className="mt-3">
-        <p className="mb-1 text-xs font-black text-slate-600">득실 그래프</p>
-        <GoalDiffBar value={insight.avgGoalDiff} />
-      </div>
-
-      <HistorySignalGrid insight={insight} groupMap={groupMap} compact />
-
-      <div className="mt-3 grid gap-3 lg:grid-cols-2">
-        <PairPillList title="좋은 궁합" pairs={insight.goodPairs.slice(0, 3)} empty="좋은 궁합 표본 부족" />
-        <PairPillList title="주의 궁합" pairs={insight.cautionPairs.slice(0, 3)} empty="큰 주의 조합 없음" />
-      </div>
-
-      <div className="mt-3">
-        <p className="text-xs font-black text-slate-600">궁합 그래프</p>
-        <PairImpactBars pairs={impactPairs} />
-      </div>
-
-      <div className="mt-3 grid gap-3 lg:grid-cols-2">
-        <PairPillList title="공격 조합" pairs={attackPairs.slice(0, 3)} empty="공격끼리 표본 부족" />
-        <PairPillList title="수비 조합" pairs={defensePairs.slice(0, 3)} empty="수비끼리 표본 부족" />
-        <PairPillList title="성적 안 좋은 궁합" pairs={badPairs.slice(0, 3)} empty="나쁜 궁합 표본 없음" />
-      </div>
-
-      <div className="mt-3">
-        <p className="text-xs font-black text-slate-600">최근 폼</p>
-        <RecentFormBars forms={insight.recentForms.slice(0, 4)} />
-      </div>
-
-      <div className="mt-3">
-        <p className="text-xs font-black text-slate-600">수비 히스토리</p>
-        <DefenseFormBars forms={insight.defenseForms.slice(0, 4)} />
-      </div>
-
-      {!hasPairs && (
-        <p className="mt-3 rounded-xl bg-white px-3 py-2 text-xs font-semibold text-slate-500 ring-1 ring-slate-200">
-          현재 구성끼리 과거 같은 편으로 뛴 기록이 적어서, 선수별 최근 폼 위주로 참고하세요.
-        </p>
-      )}
-
-      {insight.summary.length > 0 && (
-        <div className="mt-3 space-y-1 rounded-xl bg-white px-3 py-2 ring-1 ring-slate-200">
-          {insight.summary.slice(0, 4).map((item) => (
-            <p key={item} className="text-xs font-semibold text-slate-700">{item}</p>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
 function HistoryMiniStat({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-xl bg-white px-3 py-2 ring-1 ring-slate-200">
@@ -1750,109 +1679,6 @@ function GoalDiffBar({ value }: { value: number }) {
   );
 }
 
-type HistorySignalTone = "good" | "caution" | "neutral";
-
-function HistorySignalGrid({ insight, groupMap, compact = false }: { insight: TeamHistoryInsight; groupMap: HistoryGroupMap; compact?: boolean }) {
-  const allPairs = allHistoryPairs(insight);
-  const attackPair = groupPairs(insight, groupMap, "ATTACK")
-    .sort((a, b) => b.points - a.points || b.goalsFor / b.matches - a.goalsFor / a.matches || b.avgGoalDiff - a.avgGoalDiff)[0];
-  const defensePair = groupPairs(insight, groupMap, "DEFENSE")
-    .sort((a, b) => a.goalsAgainst / a.matches - b.goalsAgainst / b.matches || b.avgGoalDiff - a.avgGoalDiff || b.matches - a.matches)[0];
-  const cautionPair = allPairs
-    .slice()
-    .sort((a, b) => a.avgGoalDiff - b.avgGoalDiff || b.goalsAgainst / b.matches - a.goalsAgainst / a.matches || b.losses - a.losses)[0];
-  const hotPlayer = insight.recentForms[0];
-  const safePlayer = insight.defenseForms[0];
-
-  const signals = [
-    attackPair ? {
-      title: "공격 연결",
-      main: `${attackPair.players[0]} · ${attackPair.players[1]}`,
-      sub: `${attackPair.matches}경기, 평균 득점 ${formatScore(attackPair.goalsFor / attackPair.matches)}, 관여 ${attackPair.points}`,
-      tone: attackPair.points > 0 || attackPair.avgGoalDiff > 0 ? "good" : "neutral",
-    } : null,
-    defensePair ? {
-      title: "수비 안정",
-      main: `${defensePair.players[0]} · ${defensePair.players[1]}`,
-      sub: `${defensePair.matches}경기, 평균 실점 ${formatScore(defensePair.goalsAgainst / defensePair.matches)}, 득실 ${formatHistorySigned(defensePair.avgGoalDiff)}`,
-      tone: defensePair.goalsAgainst / defensePair.matches <= 1.5 ? "good" : "neutral",
-    } : safePlayer ? {
-      title: "수비 안정",
-      main: safePlayer.name,
-      sub: `${safePlayer.matches}경기, clean sheet ${safePlayer.cleanSheets}회, 평균 실점 ${formatScore(safePlayer.avgGoalsAgainst)}`,
-      tone: safePlayer.trend === "hot" ? "good" : "neutral",
-    } : null,
-    cautionPair ? {
-      title: "주의 조합",
-      main: `${cautionPair.players[0]} · ${cautionPair.players[1]}`,
-      sub: `${cautionPair.matches}경기, 평균 실점 ${formatScore(cautionPair.goalsAgainst / cautionPair.matches)}, 득실 ${formatHistorySigned(cautionPair.avgGoalDiff)}`,
-      tone: cautionPair.avgGoalDiff < 0 ? "caution" : "neutral",
-    } : null,
-    hotPlayer ? {
-      title: "최근 폼",
-      main: hotPlayer.name,
-      sub: `최근 ${hotPlayer.matches}경기 ${hotPlayer.goals}골 ${hotPlayer.assists}도움, 득실 ${formatHistorySigned(hotPlayer.avgGoalDiff)}`,
-      tone: hotPlayer.trend === "caution" ? "caution" : hotPlayer.trend === "hot" ? "good" : "neutral",
-    } : null,
-  ].filter((signal): signal is { title: string; main: string; sub: string; tone: HistorySignalTone } => Boolean(signal));
-
-  if (signals.length === 0) {
-    return (
-      <div className="mt-3 rounded-xl bg-white px-3 py-2 text-xs font-semibold text-slate-500 ring-1 ring-slate-200">
-        아직 현재 구성원으로 뽑을 만한 조합 신호가 부족합니다.
-      </div>
-    );
-  }
-
-  return (
-    <div className={`mt-3 grid gap-2 ${compact ? "sm:grid-cols-2" : "sm:grid-cols-2 xl:grid-cols-4"}`}>
-      {signals.map((signal) => (
-        <HistorySignalCard key={`${signal.title}-${signal.main}`} signal={signal} />
-      ))}
-    </div>
-  );
-}
-
-function HistorySignalCard({ signal }: { signal: { title: string; main: string; sub: string; tone: HistorySignalTone } }) {
-  return (
-    <div className={`rounded-xl px-3 py-2 ring-1 ${historySignalClass(signal.tone)}`}>
-      <p className="text-[11px] font-black">{signal.title}</p>
-      <p className="mt-1 truncate text-sm font-black">{signal.main}</p>
-      <p className="mt-1 text-[11px] font-semibold leading-snug opacity-80">{signal.sub}</p>
-    </div>
-  );
-}
-
-function historySignalClass(tone: HistorySignalTone): string {
-  if (tone === "good") return "bg-emerald-50 text-emerald-950 ring-emerald-200";
-  if (tone === "caution") return "bg-rose-50 text-rose-950 ring-rose-200";
-  return "bg-white text-slate-800 ring-slate-200";
-}
-
-function PairPillList({ title, pairs, empty }: { title: string; pairs: HistoryPairInsight[]; empty: string }) {
-  return (
-    <div>
-      <p className="mb-1 text-xs font-black text-slate-600">{title}</p>
-      {pairs.length === 0 ? (
-        <p className="rounded-xl bg-white px-3 py-2 text-xs font-semibold text-slate-400 ring-1 ring-slate-200">{empty}</p>
-      ) : (
-        <div className="flex flex-wrap gap-1.5">
-          {pairs.map((pair) => (
-            <span
-              key={`${pair.players[0]}-${pair.players[1]}-${pair.matches}`}
-              className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-black ${pairLabelClass(pair.label)}`}
-              title={`${pair.matches}경기 ${pair.wins}승 ${pair.draws}무 ${pair.losses}패, 득실 ${formatHistorySigned(pair.avgGoalDiff)}`}
-            >
-              {pair.players[0]}-{pair.players[1]}
-              <span className="font-mono">{formatHistorySigned(pair.avgGoalDiff)}</span>
-            </span>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
 function allHistoryPairs(insight: TeamHistoryInsight): HistoryPairInsight[] {
   const seen = new Set<string>();
   return [...insight.goodPairs, ...insight.cautionPairs, ...insight.samplePairs].filter((pair) => {
@@ -1864,17 +1690,25 @@ function allHistoryPairs(insight: TeamHistoryInsight): HistoryPairInsight[] {
 }
 
 function topGoodPairs(insight: TeamHistoryInsight, limit: number): HistoryPairInsight[] {
-  return allHistoryPairs(insight)
-    .filter((pair) => pair.matches > 0)
-    .sort((a, b) => b.avgGoalDiff - a.avgGoalDiff || b.wins - a.wins || b.points - a.points || b.matches - a.matches)
-    .slice(0, limit);
+  return sortGoodPairs(allHistoryPairs(insight)).slice(0, limit);
 }
 
 function topBadPairs(insight: TeamHistoryInsight, limit: number): HistoryPairInsight[] {
-  return allHistoryPairs(insight)
+  return sortBadPairs(allHistoryPairs(insight)).slice(0, limit);
+}
+
+function sortGoodPairs(pairs: HistoryPairInsight[]): HistoryPairInsight[] {
+  return pairs
     .filter((pair) => pair.matches > 0)
-    .sort((a, b) => a.avgGoalDiff - b.avgGoalDiff || b.losses - a.losses || b.goalsAgainst / b.matches - a.goalsAgainst / a.matches || b.matches - a.matches)
-    .slice(0, limit);
+    .slice()
+    .sort((a, b) => b.avgGoalDiff - a.avgGoalDiff || b.wins - a.wins || b.points - a.points || b.matches - a.matches);
+}
+
+function sortBadPairs(pairs: HistoryPairInsight[]): HistoryPairInsight[] {
+  return pairs
+    .filter((pair) => pair.matches > 0)
+    .slice()
+    .sort((a, b) => a.avgGoalDiff - b.avgGoalDiff || b.losses - a.losses || b.goalsAgainst / b.matches - a.goalsAgainst / a.matches || b.matches - a.matches);
 }
 
 function groupPairs(insight: TeamHistoryInsight, groupMap: HistoryGroupMap, group: PositionGroup): HistoryPairInsight[] {
@@ -1884,33 +1718,12 @@ function groupPairs(insight: TeamHistoryInsight, groupMap: HistoryGroupMap, grou
   ));
 }
 
-function PairImpactBars({ pairs }: { pairs: HistoryPairInsight[] }) {
-  if (pairs.length === 0) {
-    return <p className="mt-1 rounded-xl bg-white px-3 py-2 text-xs font-semibold text-slate-400 ring-1 ring-slate-200">궁합 표본 부족</p>;
-  }
-
-  return (
-    <div className="mt-1 space-y-1.5">
-      {pairs.map((pair) => {
-        const positive = pair.avgGoalDiff >= 0;
-        const width = Math.min(100, Math.max(10, Math.abs(pair.avgGoalDiff) * 34));
-        return (
-          <div key={`${pair.players[0]}-${pair.players[1]}-${pair.matches}`} className="rounded-xl bg-white px-3 py-2 ring-1 ring-slate-200">
-            <div className="flex items-center justify-between gap-2 text-xs">
-              <span className="truncate font-black text-slate-800">{pair.players[0]}-{pair.players[1]}</span>
-              <span className={`font-mono font-black ${positive ? "text-emerald-600" : "text-rose-600"}`}>{formatHistorySigned(pair.avgGoalDiff)}</span>
-            </div>
-            <div className="mt-1 flex items-center gap-2">
-              <div className="h-2 flex-1 rounded-full bg-slate-100">
-                <div className={`h-2 rounded-full ${positive ? "bg-emerald-500" : "bg-rose-500"}`} style={{ width: `${width}%` }} />
-              </div>
-              <span className="w-16 text-right text-[10px] font-bold text-slate-500">{pair.matches}경기</span>
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
+function betweenGroupPairs(insight: TeamHistoryInsight, groupMap: HistoryGroupMap, groupA: PositionGroup, groupB: PositionGroup): HistoryPairInsight[] {
+  return allHistoryPairs(insight).filter((pair) => {
+    const first = groupMap.get(normalizeHistoryName(pair.players[0]));
+    const second = groupMap.get(normalizeHistoryName(pair.players[1]));
+    return (first === groupA && second === groupB) || (first === groupB && second === groupA);
+  });
 }
 
 function RecentFormBars({ forms }: { forms: HistoryPlayerForm[] }) {
@@ -2009,7 +1822,7 @@ function HistoryInsightModal({
   history: HistoryInsightResponse;
   onClose: () => void;
   stale: boolean;
-  groupMaps: Record<"A" | "B", HistoryGroupMap>;
+  groupMaps: Record<"A" | "B" | "ALL", HistoryGroupMap>;
 }) {
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-950/50 px-3 py-6 backdrop-blur-sm">
@@ -2042,7 +1855,7 @@ function HistoryInsightModal({
               </div>
             </div>
           )}
-          <HistoryOverallInsight insight={history.overall} />
+          <HistoryOverallInsight insight={history.overall} groupMap={groupMaps.ALL} />
           <div className="grid gap-4 lg:grid-cols-2">
             <HistoryTeamDetail title={formatTeamName("A")} insight={history.teamA} groupMap={groupMaps.A} />
             <HistoryTeamDetail title={formatTeamName("B")} insight={history.teamB} groupMap={groupMaps.B} />
@@ -2053,13 +1866,11 @@ function HistoryInsightModal({
   );
 }
 
-function HistoryOverallInsight({ insight }: { insight: TeamHistoryInsight }) {
-  const goodPairs = topGoodPairs(insight, 5);
-  const badPairs = topBadPairs(insight, 5);
-  const impactPairs = allHistoryPairs(insight)
-    .filter((pair) => pair.matches >= 1)
-    .sort((a, b) => Math.abs(b.avgGoalDiff) - Math.abs(a.avgGoalDiff) || b.matches - a.matches)
-    .slice(0, 8);
+function HistoryOverallInsight({ insight, groupMap }: { insight: TeamHistoryInsight; groupMap: HistoryGroupMap }) {
+  const goodPairs = topGoodPairs(insight, 10);
+  const badPairs = topBadPairs(insight, 10);
+  const defenseMidPairs = betweenGroupPairs(insight, groupMap, "DEFENSE", "MID");
+  const midAttackPairs = betweenGroupPairs(insight, groupMap, "MID", "ATTACK");
 
   return (
     <div className="mb-4 rounded-2xl border border-indigo-100 bg-indigo-50/70 p-4">
@@ -2081,13 +1892,15 @@ function HistoryOverallInsight({ insight }: { insight: TeamHistoryInsight }) {
       </div>
 
       <div className="mt-3 grid gap-3 lg:grid-cols-2">
-        <HistoryPairTable title="전체 좋은 궁합 Top 5" pairs={goodPairs} empty="전체 인원 기준 좋은 궁합 표본이 아직 부족합니다." />
-        <HistoryPairTable title="전체 나쁜 궁합 Top 5" pairs={badPairs} empty="전체 인원 기준 나쁜 궁합 표본이 아직 부족합니다." />
+        <HistoryPairTable title="전체 좋은 궁합 Top 10" pairs={goodPairs} empty="전체 인원 기준 좋은 궁합 표본이 아직 부족합니다." />
+        <HistoryPairTable title="전체 나쁜 궁합 Top 10" pairs={badPairs} empty="전체 인원 기준 나쁜 궁합 표본이 아직 부족합니다." />
       </div>
 
-      <div className="mt-4">
-        <p className="text-sm font-black text-slate-800">전체 궁합 영향도 그래프</p>
-        <PairImpactBars pairs={impactPairs} />
+      <div className="mt-4 grid gap-3 lg:grid-cols-2">
+        <HistoryPairTable title="수비-미드 좋은 궁합 Top 10" pairs={sortGoodPairs(defenseMidPairs).slice(0, 10)} empty="수비-미드 좋은 궁합 표본이 아직 부족합니다." />
+        <HistoryPairTable title="수비-미드 나쁜 궁합 Top 10" pairs={sortBadPairs(defenseMidPairs).slice(0, 10)} empty="수비-미드 나쁜 궁합 표본이 아직 부족합니다." />
+        <HistoryPairTable title="미드-공격 좋은 궁합 Top 10" pairs={sortGoodPairs(midAttackPairs).slice(0, 10)} empty="미드-공격 좋은 궁합 표본이 아직 부족합니다." />
+        <HistoryPairTable title="미드-공격 나쁜 궁합 Top 10" pairs={sortBadPairs(midAttackPairs).slice(0, 10)} empty="미드-공격 나쁜 궁합 표본이 아직 부족합니다." />
       </div>
 
       <div className="mt-4 grid gap-3 lg:grid-cols-3">
@@ -2109,15 +1922,8 @@ function HistoryOverallInsight({ insight }: { insight: TeamHistoryInsight }) {
 }
 
 function HistoryTeamDetail({ title, insight, groupMap }: { title: string; insight: TeamHistoryInsight; groupMap: HistoryGroupMap }) {
-  const attackPairs = groupPairs(insight, groupMap, "ATTACK").sort((a, b) => b.points - a.points || b.avgGoalDiff - a.avgGoalDiff || b.matches - a.matches);
-  const midPairs = groupPairs(insight, groupMap, "MID").sort((a, b) => b.avgGoalDiff - a.avgGoalDiff || b.matches - a.matches);
-  const defensePairs = groupPairs(insight, groupMap, "DEFENSE").sort((a, b) => b.avgGoalDiff - a.avgGoalDiff || b.matches - a.matches);
   const goodPairs = topGoodPairs(insight, 5);
   const badPairs = topBadPairs(insight, 5);
-  const impactPairs = allHistoryPairs(insight)
-    .filter((pair) => pair.matches >= 1)
-    .sort((a, b) => Math.abs(b.avgGoalDiff) - Math.abs(a.avgGoalDiff) || b.matches - a.matches)
-    .slice(0, 8);
 
   return (
     <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
@@ -2132,42 +1938,10 @@ function HistoryTeamDetail({ title, insight, groupMap }: { title: string; insigh
         <GoalDiffBar value={insight.avgGoalDiff} />
       </div>
 
-      <HistorySignalGrid insight={insight} groupMap={groupMap} />
-
-      <div className="mt-4">
-        <p className="text-sm font-black text-slate-800">궁합 그래프</p>
-        <PairImpactBars pairs={impactPairs} />
-      </div>
+      <LineCompatibilityBreakdown insight={insight} groupMap={groupMap} />
 
       <HistoryPairTable title={`${title} 좋은 궁합 Top 5`} pairs={goodPairs} empty="좋은 궁합으로 볼 만큼 누적된 조합이 아직 없습니다." />
       <HistoryPairTable title={`${title} 나쁜 궁합 Top 5`} pairs={badPairs} empty="성적이 눈에 띄게 나쁜 궁합 표본은 아직 없습니다." />
-      <HistoryPairTable title="공격끼리 좋은 조합" pairs={attackPairs.slice(0, 5)} empty="현재 공격 그룹끼리 같이 뛴 표본이 아직 부족합니다." />
-      <HistoryPairTable title="미드끼리 좋은 조합" pairs={midPairs.slice(0, 5)} empty="현재 미드 그룹끼리 같이 뛴 표본이 아직 부족합니다." />
-      <HistoryPairTable title="수비끼리 좋은 조합" pairs={defensePairs.slice(0, 5)} empty="현재 수비 그룹끼리 같이 뛴 표본이 아직 부족합니다." />
-
-      <div className="mt-4">
-        <div className="flex items-center justify-between gap-2">
-          <p className="text-sm font-black text-slate-800">공격 포인트 순위</p>
-          <p className="text-xs font-semibold text-slate-500">최근 최대 5경기 기준</p>
-        </div>
-        <RecentFormBars forms={insight.recentForms.slice(0, 8)} />
-      </div>
-
-      <div className="mt-4">
-        <div className="flex items-center justify-between gap-2">
-          <p className="text-sm font-black text-slate-800">수비 clean sheet 순위</p>
-          <p className="text-xs font-semibold text-slate-500">clean sheet {insight.cleanSheets}회 · 평균 실점 {formatScore(insight.avgGoalsAgainst)}</p>
-        </div>
-        <DefenseFormBars forms={insight.defenseForms.slice(0, 8)} />
-      </div>
-
-      <div className="mt-4">
-        <div className="flex items-center justify-between gap-2">
-          <p className="text-sm font-black text-slate-800">평균 실점 낮은 순위</p>
-          <p className="text-xs font-semibold text-slate-500">clean sheet가 아니어도 실점 억제 기준으로 봅니다</p>
-        </div>
-        <GoalsAgainstBars forms={insight.defenseForms.slice(0, 8)} />
-      </div>
 
       {insight.unmatchedNames.length > 0 && (
         <div className="mt-4 rounded-xl bg-white px-3 py-2 ring-1 ring-slate-200">
@@ -2177,6 +1951,102 @@ function HistoryTeamDetail({ title, insight, groupMap }: { title: string; insigh
       )}
     </div>
   );
+}
+
+type LineWeakness = {
+  group: PositionGroup;
+  pairs: HistoryPairInsight[];
+  worstPair?: HistoryPairInsight;
+  weakestPlayer?: string;
+  weakestScore?: number;
+};
+
+function LineCompatibilityBreakdown({ insight, groupMap }: { insight: TeamHistoryInsight; groupMap: HistoryGroupMap }) {
+  const lines = (["ATTACK", "MID", "DEFENSE"] as PositionGroup[]).map((group) => lineWeakness(insight, groupMap, group));
+
+  return (
+    <div className="mt-4">
+      <div className="flex flex-wrap items-end justify-between gap-2">
+        <div>
+          <p className="text-sm font-black text-slate-800">라인별 궁합 위험</p>
+          <p className="mt-0.5 text-xs font-semibold text-slate-500">공격/미드/수비 안에서 평균 득실이 가장 낮은 선수와 페어를 빨간색으로 표시합니다.</p>
+        </div>
+      </div>
+      <div className="mt-2 grid gap-2 lg:grid-cols-3">
+        {lines.map((line) => (
+          <LineWeaknessCard key={line.group} line={line} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function LineWeaknessCard({ line }: { line: LineWeakness }) {
+  const worstPair = line.worstPair;
+  const hasRisk = Boolean(worstPair);
+
+  return (
+    <div className={`rounded-2xl p-3 ring-1 ${hasRisk ? "bg-white ring-slate-200" : "bg-slate-100 ring-slate-200"}`}>
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-sm font-black text-slate-900">{groupKorean(line.group)}</p>
+        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-black text-slate-600">{line.pairs.length}조합</span>
+      </div>
+      {!hasRisk ? (
+        <p className="mt-2 rounded-xl bg-white px-3 py-2 text-xs font-semibold text-slate-400 ring-1 ring-slate-200">라인 내 과거 같은 편 표본이 부족합니다.</p>
+      ) : (
+        <div className="mt-2 space-y-2">
+          {line.weakestPlayer && (
+            <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2">
+              <p className="text-[11px] font-black text-rose-700">라인 내 최저 궁합 선수</p>
+              <p className="mt-0.5 text-sm font-black text-rose-950">{line.weakestPlayer} <span className="font-mono">{formatHistorySigned(line.weakestScore ?? 0)}</span></p>
+            </div>
+          )}
+          {worstPair && (
+            <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2">
+              <p className="text-[11px] font-black text-rose-700">가장 안 좋은 페어</p>
+              <p className="mt-0.5 text-sm font-black text-rose-950">{worstPair.players[0]} · {worstPair.players[1]}</p>
+              <p className="mt-0.5 text-[11px] font-semibold text-rose-800">
+                {worstPair.matches}경기 {worstPair.wins}승 {worstPair.draws}무 {worstPair.losses}패 · 평균득실 {formatHistorySigned(worstPair.avgGoalDiff)}
+              </p>
+            </div>
+          )}
+          <div className="space-y-1">
+            {sortBadPairs(line.pairs).slice(1, 4).map((pair) => (
+              <div key={`${line.group}-${pair.players[0]}-${pair.players[1]}`} className="flex items-center justify-between gap-2 rounded-xl bg-slate-50 px-3 py-2 text-xs ring-1 ring-slate-200">
+                <span className="truncate font-bold text-slate-700">{pair.players[0]} · {pair.players[1]}</span>
+                <span className={`font-mono font-black ${pair.avgGoalDiff < 0 ? "text-rose-600" : "text-slate-500"}`}>{formatHistorySigned(pair.avgGoalDiff)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function lineWeakness(insight: TeamHistoryInsight, groupMap: HistoryGroupMap, group: PositionGroup): LineWeakness {
+  const pairs = groupPairs(insight, groupMap, group);
+  const worstPair = sortBadPairs(pairs)[0];
+  const playerScores = new Map<string, { total: number; count: number }>();
+
+  pairs.forEach((pair) => {
+    pair.players.forEach((player) => {
+      const current = playerScores.get(player) ?? { total: 0, count: 0 };
+      playerScores.set(player, { total: current.total + pair.avgGoalDiff, count: current.count + 1 });
+    });
+  });
+
+  const weakest = Array.from(playerScores.entries())
+    .map(([player, score]) => ({ player, avg: score.count > 0 ? score.total / score.count : 0 }))
+    .sort((a, b) => a.avg - b.avg || a.player.localeCompare(b.player, "ko"))[0];
+
+  return {
+    group,
+    pairs,
+    worstPair,
+    weakestPlayer: weakest?.player,
+    weakestScore: weakest ? Math.round(weakest.avg * 10) / 10 : undefined,
+  };
 }
 
 function HistoryPairTable({ title, pairs, empty }: { title: string; pairs: HistoryPairInsight[]; empty: string }) {
