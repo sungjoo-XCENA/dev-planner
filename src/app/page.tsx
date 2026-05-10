@@ -1630,7 +1630,7 @@ function formatHistorySigned(value: number): string {
 function pairLabelText(label: HistoryPairInsight["label"]): string {
   if (label === "good") return "좋음";
   if (label === "caution") return "주의";
-  return "표본";
+  return "중립";
 }
 
 function pairLabelClass(label: HistoryPairInsight["label"]): string {
@@ -1643,7 +1643,7 @@ function trendLabel(trend: HistoryPlayerForm["trend"]): string {
   if (trend === "hot") return "상승";
   if (trend === "caution") return "주의";
   if (trend === "steady") return "안정";
-  return "표본";
+  return "기록";
 }
 
 function trendClass(trend: HistoryPlayerForm["trend"]): string {
@@ -1730,7 +1730,7 @@ function RecentFormBars({ forms }: { forms: HistoryPlayerForm[] }) {
   const maxPoints = Math.max(1, ...forms.map((form) => form.points));
 
   if (forms.length === 0) {
-    return <p className="mt-1 rounded-xl bg-white px-3 py-2 text-xs font-semibold text-slate-400 ring-1 ring-slate-200">최근 출전 표본 부족</p>;
+    return <p className="mt-1 rounded-xl bg-white px-3 py-2 text-xs font-semibold text-slate-400 ring-1 ring-slate-200">최근 출전 기록 부족</p>;
   }
 
   return (
@@ -1757,7 +1757,7 @@ function DefenseFormBars({ forms }: { forms: HistoryDefenseForm[] }) {
   const maxCleanSheets = Math.max(1, ...forms.map((form) => form.cleanSheets));
 
   if (forms.length === 0) {
-    return <p className="mt-1 rounded-xl bg-white px-3 py-2 text-xs font-semibold text-slate-400 ring-1 ring-slate-200">수비 표본 부족</p>;
+    return <p className="mt-1 rounded-xl bg-white px-3 py-2 text-xs font-semibold text-slate-400 ring-1 ring-slate-200">수비 기록 부족</p>;
   }
 
   return (
@@ -1787,7 +1787,7 @@ function GoalsAgainstBars({ forms }: { forms: HistoryDefenseForm[] }) {
   const maxAvgAgainst = Math.max(1, ...ranked.map((form) => form.avgGoalsAgainst));
 
   if (ranked.length === 0) {
-    return <p className="mt-1 rounded-xl bg-white px-3 py-2 text-xs font-semibold text-slate-400 ring-1 ring-slate-200">실점 표본 부족</p>;
+    return <p className="mt-1 rounded-xl bg-white px-3 py-2 text-xs font-semibold text-slate-400 ring-1 ring-slate-200">실점 기록 부족</p>;
   }
 
   return (
@@ -1867,6 +1867,7 @@ function HistoryInsightModal({
 }
 
 function HistoryOverallInsight({ insight, groupMap }: { insight: TeamHistoryInsight; groupMap: HistoryGroupMap }) {
+  const allPairs = allHistoryPairs(insight);
   const goodPairs = topGoodPairs(insight, 10);
   const badPairs = topBadPairs(insight, 10);
   const defenseMidPairs = betweenGroupPairs(insight, groupMap, "DEFENSE", "MID");
@@ -1884,23 +1885,24 @@ function HistoryOverallInsight({ insight, groupMap }: { insight: TeamHistoryInsi
         </span>
       </div>
 
-      <div className="mt-3 grid gap-2 sm:grid-cols-4">
-        <HistoryMiniStat label="전체 조합 표본" value={`${insight.coPlaySamples}경기`} />
+      <div className="mt-3 grid gap-2 sm:grid-cols-5">
+        <HistoryMiniStat label="조합 수" value={`${allPairs.length}개`} />
+        <HistoryMiniStat label="같이 뛴 기록" value={`${insight.coPlaySamples}건`} />
         <HistoryMiniStat label="평균 득실" value={formatHistorySigned(insight.avgGoalDiff)} />
         <HistoryMiniStat label="clean sheet" value={`${insight.cleanSheets}회`} />
         <HistoryMiniStat label="평균 실점" value={formatScore(insight.avgGoalsAgainst)} />
       </div>
 
       <div className="mt-3 grid gap-3 lg:grid-cols-2">
-        <HistoryPairTable title="전체 좋은 궁합 Top 10" pairs={goodPairs} empty="전체 인원 기준 좋은 궁합 표본이 아직 부족합니다." />
-        <HistoryPairTable title="전체 나쁜 궁합 Top 10" pairs={badPairs} empty="전체 인원 기준 나쁜 궁합 표본이 아직 부족합니다." />
+        <HistoryPairTable title="전체 좋은 궁합 Top 10" pairs={goodPairs} empty="전체 인원 기준 좋은 궁합 기록이 아직 부족합니다." />
+        <HistoryPairTable title="전체 낮은 궁합 Top 10" pairs={badPairs} empty="전체 인원 기준 낮은 궁합 기록이 아직 부족합니다." />
       </div>
 
       <div className="mt-4 grid gap-3 lg:grid-cols-2">
-        <HistoryPairTable title="수비-미드 좋은 궁합 Top 10" pairs={sortGoodPairs(defenseMidPairs).slice(0, 10)} empty="수비-미드 좋은 궁합 표본이 아직 부족합니다." />
-        <HistoryPairTable title="수비-미드 나쁜 궁합 Top 10" pairs={sortBadPairs(defenseMidPairs).slice(0, 10)} empty="수비-미드 나쁜 궁합 표본이 아직 부족합니다." />
-        <HistoryPairTable title="미드-공격 좋은 궁합 Top 10" pairs={sortGoodPairs(midAttackPairs).slice(0, 10)} empty="미드-공격 좋은 궁합 표본이 아직 부족합니다." />
-        <HistoryPairTable title="미드-공격 나쁜 궁합 Top 10" pairs={sortBadPairs(midAttackPairs).slice(0, 10)} empty="미드-공격 나쁜 궁합 표본이 아직 부족합니다." />
+        <HistoryPairTable title="수비-미드 좋은 궁합 Top 10" pairs={sortGoodPairs(defenseMidPairs).slice(0, 10)} empty="수비-미드 좋은 궁합 기록이 아직 부족합니다." />
+        <HistoryPairTable title="수비-미드 낮은 궁합 Top 10" pairs={sortBadPairs(defenseMidPairs).slice(0, 10)} empty="수비-미드 낮은 궁합 기록이 아직 부족합니다." />
+        <HistoryPairTable title="미드-공격 좋은 궁합 Top 10" pairs={sortGoodPairs(midAttackPairs).slice(0, 10)} empty="미드-공격 좋은 궁합 기록이 아직 부족합니다." />
+        <HistoryPairTable title="미드-공격 낮은 궁합 Top 10" pairs={sortBadPairs(midAttackPairs).slice(0, 10)} empty="미드-공격 낮은 궁합 기록이 아직 부족합니다." />
       </div>
 
       <div className="mt-4 grid gap-3 lg:grid-cols-3">
@@ -1922,6 +1924,7 @@ function HistoryOverallInsight({ insight, groupMap }: { insight: TeamHistoryInsi
 }
 
 function HistoryTeamDetail({ title, insight, groupMap }: { title: string; insight: TeamHistoryInsight; groupMap: HistoryGroupMap }) {
+  const allPairs = allHistoryPairs(insight);
   const goodPairs = topGoodPairs(insight, 5);
   const badPairs = topBadPairs(insight, 5);
 
@@ -1930,7 +1933,7 @@ function HistoryTeamDetail({ title, insight, groupMap }: { title: string; insigh
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-base font-black text-slate-900">{title}</p>
         <span className="rounded-full bg-white px-3 py-1 text-xs font-black text-slate-600 ring-1 ring-slate-200">
-          표본 {insight.coPlaySamples} · 평균득실 {formatHistorySigned(insight.avgGoalDiff)}
+          조합 {allPairs.length}개 · 기록 {insight.coPlaySamples}건 · 평균득실 {formatHistorySigned(insight.avgGoalDiff)}
         </span>
       </div>
 
@@ -1941,7 +1944,7 @@ function HistoryTeamDetail({ title, insight, groupMap }: { title: string; insigh
       <LineCompatibilityBreakdown insight={insight} groupMap={groupMap} />
 
       <HistoryPairTable title={`${title} 좋은 궁합 Top 5`} pairs={goodPairs} empty="좋은 궁합으로 볼 만큼 누적된 조합이 아직 없습니다." />
-      <HistoryPairTable title={`${title} 나쁜 궁합 Top 5`} pairs={badPairs} empty="성적이 눈에 띄게 나쁜 궁합 표본은 아직 없습니다." />
+      <HistoryPairTable title={`${title} 낮은 궁합 Top 5`} pairs={badPairs} empty="낮은 궁합으로 볼 만큼 누적된 조합이 아직 없습니다." />
 
       {insight.unmatchedNames.length > 0 && (
         <div className="mt-4 rounded-xl bg-white px-3 py-2 ring-1 ring-slate-200">
@@ -1953,12 +1956,15 @@ function HistoryTeamDetail({ title, insight, groupMap }: { title: string; insigh
   );
 }
 
+type LineRiskStatus = "risk" | "watch" | "good" | "empty";
+
 type LineWeakness = {
   group: PositionGroup;
   pairs: HistoryPairInsight[];
   worstPair?: HistoryPairInsight;
   weakestPlayer?: string;
   weakestScore?: number;
+  status: LineRiskStatus;
 };
 
 function LineCompatibilityBreakdown({ insight, groupMap }: { insight: TeamHistoryInsight; groupMap: HistoryGroupMap }) {
@@ -1968,8 +1974,8 @@ function LineCompatibilityBreakdown({ insight, groupMap }: { insight: TeamHistor
     <div className="mt-4">
       <div className="flex flex-wrap items-end justify-between gap-2">
         <div>
-          <p className="text-sm font-black text-slate-800">라인별 궁합 위험</p>
-          <p className="mt-0.5 text-xs font-semibold text-slate-500">공격/미드/수비 안에서 평균 득실이 가장 낮은 선수와 페어를 빨간색으로 표시합니다.</p>
+          <p className="text-sm font-black text-slate-800">라인별 궁합 체크</p>
+          <p className="mt-0.5 text-xs font-semibold text-slate-500">공격/미드/수비 안에서 같이 뛴 기록을 비교합니다. 평균득실이 음수일 때만 빨간색 주의로 표시합니다.</p>
         </div>
       </div>
       <div className="mt-2 grid gap-2 lg:grid-cols-3">
@@ -1983,30 +1989,65 @@ function LineCompatibilityBreakdown({ insight, groupMap }: { insight: TeamHistor
 
 function LineWeaknessCard({ line }: { line: LineWeakness }) {
   const worstPair = line.worstPair;
-  const hasRisk = Boolean(worstPair);
+  const hasData = Boolean(worstPair);
+  const isRisk = line.status === "risk";
+  const isWatch = line.status === "watch";
+  const statusLabel = line.status === "risk"
+    ? "주의"
+    : line.status === "watch"
+      ? "낮은 편"
+      : line.status === "good"
+        ? "양호"
+        : "기록 부족";
+  const cardClass = line.status === "risk"
+    ? "bg-rose-50 ring-rose-200"
+    : line.status === "watch"
+      ? "bg-amber-50 ring-amber-200"
+      : line.status === "good"
+        ? "bg-emerald-50 ring-emerald-200"
+        : "bg-slate-100 ring-slate-200";
+  const badgeClass = line.status === "risk"
+    ? "bg-rose-100 text-rose-700"
+    : line.status === "watch"
+      ? "bg-amber-100 text-amber-800"
+      : line.status === "good"
+        ? "bg-emerald-100 text-emerald-700"
+        : "bg-slate-200 text-slate-500";
+  const highlightClass = isRisk
+    ? "border-rose-200 bg-white text-rose-900"
+    : isWatch
+      ? "border-amber-200 bg-white text-amber-950"
+      : "border-emerald-200 bg-white text-emerald-950";
 
   return (
-    <div className={`rounded-2xl p-3 ring-1 ${hasRisk ? "bg-white ring-slate-200" : "bg-slate-100 ring-slate-200"}`}>
+    <div className={`rounded-2xl p-3 ring-1 ${cardClass}`}>
       <div className="flex items-center justify-between gap-2">
         <p className="text-sm font-black text-slate-900">{groupKorean(line.group)}</p>
-        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-black text-slate-600">{line.pairs.length}조합</span>
+        <div className="flex items-center gap-1.5">
+          <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-black text-slate-600 ring-1 ring-slate-200">{line.pairs.length}조합</span>
+          <span className={`rounded-full px-2 py-0.5 text-[10px] font-black ${badgeClass}`}>{statusLabel}</span>
+        </div>
       </div>
-      {!hasRisk ? (
-        <p className="mt-2 rounded-xl bg-white px-3 py-2 text-xs font-semibold text-slate-400 ring-1 ring-slate-200">라인 내 과거 같은 편 표본이 부족합니다.</p>
+      {!hasData ? (
+        <p className="mt-2 rounded-xl bg-white px-3 py-2 text-xs font-semibold text-slate-400 ring-1 ring-slate-200">라인 안에서 같이 뛴 기록이 부족합니다.</p>
       ) : (
         <div className="mt-2 space-y-2">
-          {line.weakestPlayer && (
-            <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2">
-              <p className="text-[11px] font-black text-rose-700">라인 내 최저 궁합 선수</p>
-              <p className="mt-0.5 text-sm font-black text-rose-950">{line.weakestPlayer} <span className="font-mono">{formatHistorySigned(line.weakestScore ?? 0)}</span></p>
+          {worstPair && (
+            <div className={`rounded-xl border px-3 py-2 ${highlightClass}`}>
+              <p className={`text-[11px] font-black ${isRisk ? "text-rose-700" : isWatch ? "text-amber-700" : "text-emerald-700"}`}>
+                {isRisk ? "주의 조합" : isWatch ? "상대적으로 낮은 조합" : "가장 낮은 조합도 양호"}
+              </p>
+              <p className="mt-0.5 text-sm font-black">{worstPair.players[0]} · {worstPair.players[1]}</p>
+              <p className={`mt-0.5 text-[11px] font-semibold ${isRisk ? "text-rose-800" : isWatch ? "text-amber-800" : "text-emerald-800"}`}>
+                {worstPair.matches}경기 {worstPair.wins}승 {worstPair.draws}무 {worstPair.losses}패 · 평균득실 {formatHistorySigned(worstPair.avgGoalDiff)}
+              </p>
             </div>
           )}
-          {worstPair && (
-            <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2">
-              <p className="text-[11px] font-black text-rose-700">가장 안 좋은 페어</p>
-              <p className="mt-0.5 text-sm font-black text-rose-950">{worstPair.players[0]} · {worstPair.players[1]}</p>
-              <p className="mt-0.5 text-[11px] font-semibold text-rose-800">
-                {worstPair.matches}경기 {worstPair.wins}승 {worstPair.draws}무 {worstPair.losses}패 · 평균득실 {formatHistorySigned(worstPair.avgGoalDiff)}
+          {line.weakestPlayer && (
+            <div className="rounded-xl bg-white px-3 py-2 ring-1 ring-slate-200">
+              <p className="text-[11px] font-black text-slate-500">{(line.weakestScore ?? 0) < 0 ? "주의 선수" : "상대적으로 낮은 선수"}</p>
+              <p className="mt-0.5 text-sm font-black text-slate-900">
+                {line.weakestPlayer} <span className={`font-mono ${(line.weakestScore ?? 0) < 0 ? "text-rose-600" : "text-slate-500"}`}>{formatHistorySigned(line.weakestScore ?? 0)}</span>
               </p>
             </div>
           )}
@@ -2046,7 +2087,16 @@ function lineWeakness(insight: TeamHistoryInsight, groupMap: HistoryGroupMap, gr
     worstPair,
     weakestPlayer: weakest?.player,
     weakestScore: weakest ? Math.round(weakest.avg * 10) / 10 : undefined,
+    status: lineRiskStatus(worstPair?.avgGoalDiff, weakest?.avg),
   };
+}
+
+function lineRiskStatus(worstPairScore?: number, weakestPlayerScore?: number): LineRiskStatus {
+  if (worstPairScore == null) return "empty";
+  const weakest = weakestPlayerScore ?? worstPairScore;
+  if (worstPairScore < 0 || weakest < 0) return "risk";
+  if (worstPairScore < 0.5 || weakest < 0.5) return "watch";
+  return "good";
 }
 
 function HistoryPairTable({ title, pairs, empty }: { title: string; pairs: HistoryPairInsight[]; empty: string }) {
