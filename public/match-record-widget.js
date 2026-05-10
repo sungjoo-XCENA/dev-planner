@@ -388,6 +388,10 @@
     return standaloneData().allowEdit !== false && !editOnlyMode();
   }
 
+  function canRefreshCurrentLineup() {
+    return standaloneData().canRefreshLineup === true && !editOnlyMode() && !state.editingRecordOnly && !state.recordLoading;
+  }
+
   function canEditPlayers() {
     return state.editingRecordOnly || standaloneData().allowPlayerEdit === true;
   }
@@ -629,6 +633,10 @@
 
   function summaryStatsArray() {
     return Object.keys(state.summaryStats).map(function (key) { return state.summaryStats[key]; });
+  }
+
+  function hasEnteredRecordItems() {
+    return teamScoresArray().length > 0 || summaryStatsArray().length > 0 || state.events.length > 0;
   }
 
   function teamScoreSummary() {
@@ -926,7 +934,7 @@
     var editOnly = editOnlyMode();
     var quarter = selectedQuarter();
     var score = teamScoreSummary();
-    var refreshAction = state.editingRecordOnly && !state.currentLineupOverride && !state.recordLoading
+    var refreshAction = canRefreshCurrentLineup()
       ? "<button type=\"button\" class=\"mrw-button mrw-secondary\" data-mrw-action=\"refresh-lineup\">라인업 갱신</button>"
       : "";
 
@@ -1317,25 +1325,26 @@
   }
 
   function refreshCurrentLineup() {
+    if (!canRefreshCurrentLineup()) {
+      state.status = "현재 라인업으로 입력할 때만 라인업 갱신을 사용할 수 있습니다.";
+      renderPanel();
+      return;
+    }
     var panel = document.getElementById(PANEL_ID);
     var currentForm = formState(panel);
     var records = parseQuarterCards();
-    var editingMatchId = state.editingMatchId;
-    if (editingMatchId) {
-      var ok = window.confirm("현재 라인업 기준으로 구성원을 다시 채울까요?\n기존 개인기록과 팀 스코어 입력값은 초기화됩니다.");
+    if (hasEnteredRecordItems()) {
+      var ok = window.confirm("현재 라인업 기준으로 구성원을 다시 채울까요?\n입력 중인 팀 스코어와 개인기록은 초기화됩니다.");
       if (!ok) return;
     }
     state.recordLoadSeq += 1;
     resetRecordEntryState();
-    state.loadedPlayers = loadedPlayersFromRecords(records);
-    state.editingRecordOnly = true;
-    state.editingMatchId = editingMatchId;
-    state.currentLineupOverride = false;
     state.loadedForm = currentForm;
     state.matchKind = currentForm.matchKind;
     state.editModalOpen = false;
     state.recordLoading = false;
-    state.status = (state.loadedPlayers.A.length || state.loadedPlayers.B.length)
+    var refreshedPlayers = loadedPlayersFromRecords(records);
+    state.status = (refreshedPlayers.A.length || refreshedPlayers.B.length)
       ? "현재 라인업 선수 기준으로 갱신했습니다."
       : "현재 라인업 선수를 찾지 못했습니다. 팀별 선수 추가로 구성원을 입력해주세요.";
     removeExistingPanel();
@@ -1426,7 +1435,7 @@
             "해당 날짜의 기존 기록이 없습니다.",
             "기록 키: " + matchId,
             "저장된 기록 기준으로 빈 상태를 보여줍니다.",
-            "현재 라인업 기준으로 입력하려면 라인업 갱신을 눌러주세요.",
+            "필요한 내용을 입력한 뒤 기록 저장을 눌러 새 기록으로 저장할 수 있습니다.",
           ].join("\n"), true);
           return;
         }
@@ -1503,7 +1512,7 @@
         data.message || "해당 날짜 기록을 삭제했습니다.",
         "기록 키: " + (data.matchId || matchId),
         "저장된 기록 기준으로 빈 상태를 보여줍니다.",
-        "현재 라인업 기준으로 입력하려면 라인업 갱신을 눌러주세요.",
+        "필요한 내용을 입력한 뒤 기록 저장을 눌러 새 기록으로 저장할 수 있습니다.",
       ].join("\n"), true);
     } catch (error) {
       state.status = error && error.message ? error.message : String(error);

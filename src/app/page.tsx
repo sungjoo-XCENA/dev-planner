@@ -2530,6 +2530,7 @@ function LineupResultView({
     playerOptions: uniqueRecordNames(result.playerSummaries.map((summary) => summary.playerName)),
     allowEdit: false,
     allowPlayerEdit: true,
+    canRefreshLineup: true,
   }), [recordEntryRecords, result]);
 
   useEffect(() => {
