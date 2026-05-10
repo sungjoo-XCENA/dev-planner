@@ -183,6 +183,7 @@ export default function Home() {
   const [swapSelection, setSwapSelection] = useState<SwapSelection>(null);
   const [hydrated, setHydrated] = useState(false);
   const [showRecordEntry, setShowRecordEntry] = useState(false);
+  const [showRecordEdit, setShowRecordEdit] = useState(false);
 
   useEffect(() => {
     if (new URLSearchParams(window.location.search).get("record") !== "1") return;
@@ -324,6 +325,10 @@ export default function Home() {
       .filter((player) => [player.name, player.primaryPosition, player.secondaryPositions.join(",")].join(" ").toLowerCase().includes(query))
       .slice(0, 20);
   }, [playerQuery, sortedSheetPlayers]);
+  const recordPlayerOptions = useMemo(
+    () => uniqueRecordNames([...players.map((player) => player.name), ...dedicatedGks.map((gk) => gk.name)]),
+    [players, dedicatedGks],
+  );
 
   const canGenerate = plannerMode === "BALANCE"
     ? activeFieldPlayers.length >= 22 && activeFieldPlayers.length <= 36
@@ -360,7 +365,21 @@ export default function Home() {
   function toggleRecordEntry() {
     setShowRecordEntry((value) => {
       const next = !value;
-      if (next) window.setTimeout(() => document.getElementById("lineup-result")?.scrollIntoView({ block: "start" }), 0);
+      if (next) {
+        setShowRecordEdit(false);
+        window.setTimeout(() => document.getElementById("lineup-result")?.scrollIntoView({ block: "start" }), 0);
+      }
+      return next;
+    });
+  }
+
+  function toggleRecordEdit() {
+    setShowRecordEdit((value) => {
+      const next = !value;
+      if (next) {
+        setShowRecordEntry(false);
+        window.setTimeout(() => document.querySelector("[data-mrw-active='true']")?.scrollIntoView({ block: "start" }), 0);
+      }
       return next;
     });
   }
@@ -739,8 +758,32 @@ export default function Home() {
   return (
     <main className="mx-auto max-w-7xl p-4 pb-28 sm:p-8">
       <section className="mb-6 rounded-3xl bg-white p-6 shadow-sm">
-        <h1 className="text-3xl font-bold tracking-tight">DEV FC Planner</h1>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h1 className="text-3xl font-bold tracking-tight">DEV FC Planner</h1>
+          <button
+            type="button"
+            className={`rounded-xl px-4 py-2 text-sm font-bold ${showRecordEdit ? "bg-slate-900 text-white" : "border border-slate-300 bg-white text-slate-700"}`}
+            onClick={toggleRecordEdit}
+          >
+            기록 수정
+          </button>
+        </div>
       </section>
+
+      {showRecordEdit && (
+        <RecordEntryAnchor
+          title="기록 수정"
+          description="저장된 경기 기록을 날짜로 불러와 스코어, 구성원, 개인 골/도움을 수정합니다."
+          matchKind={plannerMode === "MATCH" ? "MATCH" : "SELF"}
+          records={[]}
+          staffRoles={{}}
+          playerOptions={recordPlayerOptions}
+          editOnly
+          allowEdit={false}
+          allowPlayerEdit
+          onClose={() => setShowRecordEdit(false)}
+        />
+      )}
 
       <section className="mb-6 rounded-3xl bg-white p-6 shadow-sm">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -892,6 +935,8 @@ export default function Home() {
           records={balanceRecordEntryRecords(teamResult)}
           staffRoles={balanceRecordStaffRoles(teamResult)}
           playerOptions={fieldPlayers.map((player) => player.name)}
+          allowEdit={false}
+          allowPlayerEdit
           onClose={() => setShowRecordEntry(false)}
         />
       )}
@@ -904,6 +949,8 @@ export default function Home() {
           staffRoles={matchRecordStaffRoles(matchResult, matchFieldPlayers, dedicatedGks)}
           playerOptions={[...matchFieldPlayers.map((player) => player.name), ...dedicatedGks.map((gk) => gk.name)]}
           awayTeamName="상대팀"
+          allowEdit={false}
+          allowPlayerEdit
           onClose={() => setShowRecordEntry(false)}
         />
       )}
@@ -948,6 +995,9 @@ function RecordEntryAnchor({
   staffRoles,
   playerOptions,
   awayTeamName,
+  editOnly = false,
+  allowEdit = true,
+  allowPlayerEdit = false,
   onClose,
 }: {
   title: string;
@@ -957,18 +1007,24 @@ function RecordEntryAnchor({
   staffRoles: Partial<Record<string, StaffRole>>;
   playerOptions?: string[];
   awayTeamName?: string;
+  editOnly?: boolean;
+  allowEdit?: boolean;
+  allowPlayerEdit?: boolean;
   onClose: () => void;
 }) {
   const payload = {
-    key: recordEntryKey(matchKind, records),
+    key: editOnly ? `EDIT:${matchKind}` : recordEntryKey(matchKind, records),
     matchKind,
     awayTeamName,
     records,
     staffRoles,
     playerOptions,
+    editOnly,
+    allowEdit,
+    allowPlayerEdit,
   };
   return (
-    <section id="lineup-result" data-mrw-standalone="true" className="mb-6 rounded-3xl bg-white p-4 shadow-sm sm:p-6">
+    <section id="lineup-result" data-mrw-standalone="true" data-mrw-active="true" className="mb-6 rounded-3xl bg-white p-4 shadow-sm sm:p-6">
       <script
         type="application/json"
         data-mrw-records
