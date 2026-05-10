@@ -308,9 +308,18 @@
     return document.querySelector("[data-mrw-active='true']") || document.getElementById("lineup-result");
   }
 
+  function panelMount() {
+    var root = recordRoot();
+    return (root && root.querySelector("[data-mrw-panel-mount]")) || root;
+  }
+
   function parseQuarterCards() {
     var section = recordRoot();
     if (!section) return [];
+    if (hasStandaloneRecordAnchor()) {
+      var standaloneRecords = parseStandaloneRecords(section);
+      if (standaloneRecords.length > 0) return standaloneRecords;
+    }
     var records = [];
     var seen = Object.create(null);
     Array.prototype.forEach.call(section.querySelectorAll("p"), function (titleNode) {
@@ -935,7 +944,7 @@
         state.status ? "<div class=\"mrw-status\">" + escapeHtml(state.status) + "</div>" : "",
       ].join("");
       if (!existing) {
-        var editMount = recordRoot();
+        var editMount = panelMount();
         if (editMount) editMount.appendChild(panel);
       }
       bindPanel(panel);
@@ -961,7 +970,7 @@
     ].join("");
 
     if (!existing) {
-      var mount = recordRoot();
+      var mount = panelMount();
       if (mount) mount.appendChild(panel);
     }
     bindPanel(panel);

@@ -44,6 +44,27 @@ const emptyGuest: GuestForm = {
   memo: "",
 };
 
+function reassignPlayerGroup<T extends { primaryPosition: Player["primaryPosition"]; secondaryPositions: FieldPosition[] }>(
+  player: T,
+  newGroup: PositionGroup,
+): T & { assignedGroup: PositionGroup; assignmentReason: string; isPositionOverride: boolean } {
+  if (player.primaryPosition === "GK") {
+    return { ...player, assignedGroup: newGroup, assignmentReason: "주포지션 그룹 배정", isPositionOverride: false };
+  }
+  const primaryGroup = getPositionGroup(player.primaryPosition);
+  const reason = primaryGroup === newGroup
+    ? "주포지션 그룹 배정"
+    : hasGroup(player.secondaryPositions, newGroup)
+      ? "부포지션 그룹 배정"
+      : "인원 균형을 위한 포지션 변경";
+  return {
+    ...player,
+    assignedGroup: newGroup,
+    assignmentReason: reason,
+    isPositionOverride: primaryGroup !== newGroup,
+  };
+}
+
 function modeHelp(mode: PlannerMode): string {
   return mode === "BALANCE"
     ? "내부전은 24명 이상 권장, 22명부터 생성 가능합니다. 형광/주황팀 밸런스를 맞춥니다."
@@ -609,11 +630,27 @@ export default function Home() {
 
   function handleGroupTarget(targetTeam: "A" | "B", targetGroup: PositionGroup) {
     if (!teamResult || teamsConfirmed || !swapSelection) return;
-    if (swapSelection.team === targetTeam) return;
     const sourceTeamPlayers = swapSelection.team === "A" ? teamResult.teamA.players : teamResult.teamB.players;
     const targetTeamPlayers = targetTeam === "A" ? teamResult.teamA.players : teamResult.teamB.players;
     const sourcePlayer = sourceTeamPlayers.find((p) => p.id === swapSelection.playerId);
     if (!sourcePlayer) return;
+    if (swapSelection.team === targetTeam) {
+      if (sourcePlayer.assignedGroup === targetGroup) {
+        setSwapSelection(null);
+        return;
+      }
+      const updated = sourceTeamPlayers.map((p) => (p.id === sourcePlayer.id ? reassignPlayerGroup(p, targetGroup) : p));
+      try {
+        const next = targetTeam === "A"
+          ? summarizeTeams(updated, teamResult.teamB.players, relations)
+          : summarizeTeams(teamResult.teamA.players, updated, relations);
+        setTeamResult(next);
+        setSwapSelection(null);
+      } catch (error) {
+        setErrors([error instanceof Error ? error.message : String(error)]);
+      }
+      return;
+    }
     const candidates = targetTeamPlayers.filter((p) => p.assignedGroup === targetGroup);
     if (candidates.length === 0) return;
     const sourceComposite = sourcePlayer.attackScore + sourcePlayer.midScore + sourcePlayer.defenseScore + effectiveActivityScore(sourcePlayer);
@@ -923,8 +960,10 @@ export default function Home() {
         <LineupResultView
           result={lineupResult}
           copied={copied}
+          recordEntryOpen={showRecordEntry}
           onCopyShareUrl={copyLineupShareUrl}
           onQuartersChange={handleLineupQuartersChange}
+          onToggleRecordEntry={toggleRecordEntry}
         />
       )}
       {showRecordEntry && !lineupResult && plannerMode === "BALANCE" && teamResult && (
@@ -978,7 +1017,7 @@ export default function Home() {
 }
 
 type RecordEntryRecord = {
-  quarter: 1;
+  quarter: Quarter;
   team: TeamName;
   attack: string[];
   mid: string[];
@@ -1057,6 +1096,30 @@ function matchRecordEntryRecords(result: MatchPlanResult): RecordEntryRecord[] {
   ];
 }
 
+function lineupRecordEntryRecords(result: LineupResult): RecordEntryRecord[] {
+  return result.quarters.map((quarter) => ({
+    quarter: quarter.quarter,
+    team: quarter.team,
+    attack: quarter.attack,
+    mid: quarter.mid,
+    defense: quarter.defense,
+    gk: quarter.gk,
+    bench: quarter.bench,
+  }));
+}
+
+function lineupRecordStaffRoles(result: LineupResult): Partial<Record<string, StaffRole>> {
+  const roles: Partial<Record<string, StaffRole>> = { ...(result.staffRoles ?? {}) };
+
+  result.playerSummaries.forEach((summary) => {
+    if (summary.staffRole) {
+      roles[summary.playerName] = summary.staffRole;
+    }
+  });
+
+  return roles;
+}
+
 function recordEntryRecord(team: TeamName, names: string[]): RecordEntryRecord {
   return {
     quarter: 1,
@@ -1070,7 +1133,19 @@ function recordEntryRecord(team: TeamName, names: string[]): RecordEntryRecord {
 }
 
 function recordEntryKey(matchKind: "SELF" | "MATCH", records: RecordEntryRecord[]): string {
-  return `${matchKind}:${records.map((record) => `${record.team}:${record.attack.join("|")}`).join("::")}`;
+  return `${matchKind}:${records
+    .map((record) =>
+      [
+        record.quarter,
+        record.team,
+        record.attack.join("|"),
+        record.mid.join("|"),
+        record.defense.join("|"),
+        record.gk,
+        record.bench.join("|"),
+      ].join(":"),
+    )
+    .join("::")}`;
 }
 
 function balanceRecordStaffRoles(result: TeamBalanceResult): Partial<Record<string, StaffRole>> {
@@ -2071,6 +2146,7 @@ function TeamCard({
     ? selectedPlayer.attackScore + selectedPlayer.midScore + selectedPlayer.defenseScore + effectiveActivityScore(selectedPlayer)
     : null;
   const showSwapHints = selection != null && selection.team !== team;
+  const showGroupTargets = selection != null && interactive;
   return (
     <div className={`overflow-hidden rounded-2xl border bg-white shadow-sm ${teamBorderClass(team)}`}>
       <div className={`h-2 ${teamAccentClass(team)}`} />
@@ -2082,20 +2158,23 @@ function TeamCard({
         {(["ATTACK", "MID", "DEFENSE"] as PositionGroup[]).map((g) => {
           const score = groupScores[g];
           const groupPlayers = players.filter((p) => p.assignedGroup === g);
+          const selectedSameTeam = selection?.team === team;
+          const canTargetGroup = showGroupTargets && (!selectedSameTeam || selectedPlayer?.assignedGroup !== g);
           return (
             <div key={g} className="mt-3">
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
-                  <GroupBadge group={g} />
-                  {showSwapHints && interactive && (
+                  {canTargetGroup ? (
                     <button
                       type="button"
-                      className="rounded-full bg-amber-200 px-2 py-0.5 text-[10px] font-bold text-amber-900 hover:bg-amber-300"
+                      className={`rounded-full transition hover:brightness-95 focus:outline-none focus:ring-2 ${selectedSameTeam ? "focus:ring-sky-300 ring-2 ring-sky-200" : "focus:ring-amber-300 ring-2 ring-amber-200"}`}
                       onClick={() => onGroupTarget(team, g)}
-                      title="선택한 선수를 이 그룹으로 보내기"
+                      title={selectedSameTeam ? "선택한 선수를 이 그룹으로 이동" : "선택한 선수를 이 그룹 선수와 교체"}
                     >
-                      여기로
+                      <GroupBadge group={g} />
                     </button>
+                  ) : (
+                    <GroupBadge group={g} />
                   )}
                 </div>
                 <span className="text-xs font-bold text-slate-600">합계 {formatScore(score)}</span>
@@ -2423,13 +2502,17 @@ function swapInsideQuarter<T extends SwappableQuarter>(q: T, sec1: LineupSection
 function LineupResultView({
   result,
   copied,
+  recordEntryOpen,
   onCopyShareUrl,
   onQuartersChange,
+  onToggleRecordEntry,
 }: {
   result: LineupResult;
   copied: boolean;
+  recordEntryOpen: boolean;
   onCopyShareUrl: (result: LineupResult, prebuiltUrl?: string | null) => void;
   onQuartersChange: (quarters: LineupResult["quarters"]) => void;
+  onToggleRecordEntry: () => void;
 }) {
   const [quarters, setQuarters] = useState(result.quarters);
   const [selection, setSelection] = useState<{ key: string; section: LineupSection; name: string } | null>(null);
@@ -2438,6 +2521,16 @@ function LineupResultView({
   const [shareUrlError, setShareUrlError] = useState<string | null>(null);
   const refs = useRef<Map<string, HTMLDivElement | null>>(new Map());
   const currentLineup = useMemo(() => ({ ...result, quarters }), [result, quarters]);
+  const recordEntryRecords = useMemo(() => lineupRecordEntryRecords(currentLineup), [currentLineup]);
+  const recordPayload = useMemo(() => ({
+    key: recordEntryKey("SELF", recordEntryRecords),
+    matchKind: "SELF",
+    records: recordEntryRecords,
+    staffRoles: lineupRecordStaffRoles(result),
+    playerOptions: uniqueRecordNames(result.playerSummaries.map((summary) => summary.playerName)),
+    allowEdit: false,
+    allowPlayerEdit: true,
+  }), [recordEntryRecords, result]);
 
   useEffect(() => {
     setQuarters(result.quarters);
@@ -2644,10 +2737,28 @@ function LineupResultView({
   };
 
   return (
-    <section id="lineup-result" className="mb-6 rounded-3xl bg-white p-6 shadow-sm">
+    <section
+      id="lineup-result"
+      data-mrw-standalone={recordEntryOpen ? "true" : undefined}
+      data-mrw-active={recordEntryOpen ? "true" : undefined}
+      className="mb-6 rounded-3xl bg-white p-6 shadow-sm"
+    >
+      {recordEntryOpen && (
+        <script
+          type="application/json"
+          data-mrw-records
+          dangerouslySetInnerHTML={{ __html: safeJson(recordPayload) }}
+        />
+      )}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-xl font-bold">라인업 결과</h2>
         <div className="flex w-full flex-wrap gap-2 sm:w-auto">
+          <button
+            className="min-h-11 w-full rounded-xl bg-slate-900 px-4 py-2 text-sm font-bold text-white hover:bg-slate-800 sm:w-auto"
+            onClick={onToggleRecordEntry}
+          >
+            {recordEntryOpen ? "결과 입력 닫기" : "결과 입력"}
+          </button>
           <button
             className="min-h-11 w-full rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 disabled:cursor-wait disabled:opacity-60 sm:w-auto"
             onClick={() => onCopyShareUrl(currentLineup, shareUrl)}
@@ -2659,6 +2770,7 @@ function LineupResultView({
       </div>
       <p className="mt-2 text-xs text-slate-500">같은 쿼터 안에서는 <span className="font-bold">필드, GK, 대기</span> 어디든 서로 자리를 바꿀 수 있어요. 쿼터 순서는 각 피치 아래 <span className="font-bold">쿼터 순서 바꾸기</span> 버튼으로 조정하면 위에서부터 1~4Q로 다시 정렬됩니다. 코치별 미세조정은 <span className="font-bold">라인업 공유</span>로 현재 상태를 공유하세요.</p>
       {result.warnings.length > 0 && <div className="mt-4"><MessageBox title="라인업 경고" items={result.warnings} tone="warning" /></div>}
+      {recordEntryOpen && <div className="mt-4" data-mrw-panel-mount />}
 
       <div className="mt-4 rounded-2xl border-2 border-slate-300 bg-white p-2 sm:p-5">
         <div className="mb-2 flex items-baseline justify-center gap-2 sm:mb-3">
