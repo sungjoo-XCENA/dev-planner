@@ -603,7 +603,32 @@
     state.loadedRecord = null;
     state.loadedPlayers = null;
     state.loadedForm = null;
+    state.editingMatchId = "";
     state.selectedScope = "";
+  }
+
+  function emptyFormForMatch(matchId) {
+    var date = dateInputFromFirebase(matchId) || state.editDate || todayInputValue();
+    return {
+      date: date,
+      matchId: matchId || compactDate(date),
+      startTime: "20:00",
+      duration: "2",
+      matchKind: state.matchKind === "MATCH" ? "MATCH" : "SELF",
+      venueName: preferredVenue(),
+      awayTeamName: state.matchKind === "MATCH" ? firstAwayTeam() : "",
+      memo: "",
+    };
+  }
+
+  function resetToEmptyMatch(matchId, status) {
+    resetRecordEntryState();
+    state.loadedForm = emptyFormForMatch(matchId);
+    state.matchKind = state.loadedForm.matchKind;
+    state.editModalOpen = false;
+    state.status = status;
+    removeExistingPanel();
+    renderPanel();
   }
 
   function selectedQuarterValue(value) {
@@ -931,11 +956,7 @@
     var idInput = panel.querySelector("[data-mrw=matchId]");
     dateInput.addEventListener("change", function () {
       idInput.value = compactDate(dateInput.value);
-      state.loadedRecord = null;
-      state.loadedPlayers = null;
-      state.loadedForm = null;
-      state.editingMatchId = "";
-      state.conflict = null;
+      resetRecordEntryState();
       renderPanel();
     });
     ["startTime", "venueName", "awayTeam", "memo"].forEach(function (key) {
@@ -951,10 +972,7 @@
     Array.prototype.forEach.call(panel.querySelectorAll("[data-mrw-kind]"), function (button) {
       button.addEventListener("click", function () {
         state.matchKind = button.getAttribute("data-mrw-kind") === "MATCH" ? "MATCH" : "SELF";
-        state.loadedRecord = null;
-        state.loadedPlayers = null;
-        state.loadedForm = null;
-        state.editingMatchId = "";
+        resetRecordEntryState();
         panel.querySelector("[data-mrw=matchKind]").value = state.matchKind;
         renderPanel();
       });
@@ -1120,12 +1138,23 @@
         return;
       }
       resetRecordEntryState();
+      state.loadedForm = emptyFormForMatch(matchId);
       state.status = "기존 기록을 불러오는 중...";
       renderPanel();
 
       var response = await fetch("/api/match-record?matchId=" + encodeURIComponent(matchId), { method: "GET", headers: { accept: "application/json" } });
       var data = await response.json().catch(function () { return {}; });
-      if (!response.ok) throw new Error(data.detail || data.error || "경기 기록을 찾지 못했습니다.");
+      if (!response.ok) {
+        if (response.status === 404 || data.error === "MATCH_NOT_FOUND") {
+          resetToEmptyMatch(matchId, [
+            "해당 날짜의 기존 기록이 없습니다.",
+            "기록 키: " + matchId,
+            "새 기록 입력 상태로 초기화했습니다.",
+          ].join("\n"));
+          return;
+        }
+        throw new Error(data.detail || data.error || "경기 기록을 찾지 못했습니다.");
+      }
 
       applyStaffRoles(data.staffRoles);
       state.events = Array.isArray(data.events) ? data.events : [];
