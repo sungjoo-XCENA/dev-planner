@@ -39,7 +39,7 @@ type PairAccumulator = {
 };
 
 type TeamAnalysisInput = {
-  team: "A" | "B";
+  team: "A" | "B" | "ALL";
   players: string[];
   matches: HistoricalMatch[];
 };
@@ -94,6 +94,7 @@ export function buildHistoryInsightResponse({
     source,
     matchCount: matches.length,
     generatedAt: new Date().toISOString(),
+    overall: analyzeTeamHistory({ team: "ALL", players: uniqueHistoryDisplayNames([...teamA, ...teamB]), matches }),
     teamA: analyzeTeamHistory({ team: "A", players: teamA, matches }),
     teamB: analyzeTeamHistory({ team: "B", players: teamB, matches }),
     warnings: extraWarnings,
@@ -396,8 +397,8 @@ function buildSummary({
 
   if (defenseForms.length > 0) {
     const player = defenseForms[0];
-    summary.push(`수비 표본은 클린시트 ${cleanSheets}회, 선수별 평균 실점 ${avgGoalsAgainst}입니다.`);
-    summary.push(`클린시트가 많은 선수는 ${player.name} (${player.matches}경기 ${player.cleanSheets}회, 평균 실점 ${player.avgGoalsAgainst})입니다.`);
+    summary.push(`수비 표본은 clean sheet ${cleanSheets}회, 선수별 평균 실점 ${avgGoalsAgainst}입니다.`);
+    summary.push(`clean sheet가 많은 선수는 ${player.name} (${player.matches}경기 ${player.cleanSheets}회, 평균 실점 ${player.avgGoalsAgainst})입니다.`);
   }
 
   return summary;
@@ -483,6 +484,21 @@ function nameFromFirebaseItem(value: unknown): string {
   if (!record) return "";
 
   return stringFrom(record.Name ?? record.name ?? record.PlayerName ?? record.playerName).trim();
+}
+
+function uniqueHistoryDisplayNames(names: string[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+
+  names.forEach((name) => {
+    const trimmed = name.trim();
+    const normalized = normalizeHistoryName(trimmed);
+    if (!trimmed || !normalized || seen.has(normalized)) return;
+    seen.add(normalized);
+    result.push(trimmed);
+  });
+
+  return result;
 }
 
 function normalizeNameList(names: string[]): string[] {

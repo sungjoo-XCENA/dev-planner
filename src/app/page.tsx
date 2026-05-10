@@ -1669,7 +1669,7 @@ function TeamHistoryInsightCard({ teamName, insight, groupMap }: { teamName: str
       <div className="mt-3 grid gap-2 sm:grid-cols-5">
         <HistoryMiniStat label="조합 표본" value={`${insight.coPlaySamples}경기`} />
         <HistoryMiniStat label="평균 득실" value={formatHistorySigned(insight.avgGoalDiff)} />
-        <HistoryMiniStat label="클린시트" value={`${insight.cleanSheets}회`} />
+        <HistoryMiniStat label="clean sheet" value={`${insight.cleanSheets}회`} />
         <HistoryMiniStat label="총 실점" value={`${insight.goalsAgainst}점`} />
         <HistoryMiniStat label="평균 실점" value={formatScore(insight.avgGoalsAgainst)} />
       </div>
@@ -1779,7 +1779,7 @@ function HistorySignalGrid({ insight, groupMap, compact = false }: { insight: Te
     } : safePlayer ? {
       title: "수비 안정",
       main: safePlayer.name,
-      sub: `${safePlayer.matches}경기, CS ${safePlayer.cleanSheets}, 평균 실점 ${formatScore(safePlayer.avgGoalsAgainst)}`,
+      sub: `${safePlayer.matches}경기, clean sheet ${safePlayer.cleanSheets}회, 평균 실점 ${formatScore(safePlayer.avgGoalsAgainst)}`,
       tone: safePlayer.trend === "hot" ? "good" : "neutral",
     } : null,
     cautionPair ? {
@@ -1863,6 +1863,20 @@ function allHistoryPairs(insight: TeamHistoryInsight): HistoryPairInsight[] {
   });
 }
 
+function topGoodPairs(insight: TeamHistoryInsight, limit: number): HistoryPairInsight[] {
+  return allHistoryPairs(insight)
+    .filter((pair) => pair.matches > 0)
+    .sort((a, b) => b.avgGoalDiff - a.avgGoalDiff || b.wins - a.wins || b.points - a.points || b.matches - a.matches)
+    .slice(0, limit);
+}
+
+function topBadPairs(insight: TeamHistoryInsight, limit: number): HistoryPairInsight[] {
+  return allHistoryPairs(insight)
+    .filter((pair) => pair.matches > 0)
+    .sort((a, b) => a.avgGoalDiff - b.avgGoalDiff || b.losses - a.losses || b.goalsAgainst / b.matches - a.goalsAgainst / a.matches || b.matches - a.matches)
+    .slice(0, limit);
+}
+
 function groupPairs(insight: TeamHistoryInsight, groupMap: HistoryGroupMap, group: PositionGroup): HistoryPairInsight[] {
   return allHistoryPairs(insight).filter((pair) => (
     groupMap.get(normalizeHistoryName(pair.players[0])) === group
@@ -1939,7 +1953,7 @@ function DefenseFormBars({ forms }: { forms: HistoryDefenseForm[] }) {
         <div key={form.name} className="rounded-xl bg-white px-3 py-2 ring-1 ring-slate-200">
           <div className="flex items-center justify-between gap-2 text-xs">
             <span className="font-black text-slate-800">{form.name}</span>
-            <span className="font-mono font-bold text-slate-500">{form.matches}경기 CS {form.cleanSheets} · 실점 {formatScore(form.avgGoalsAgainst)}</span>
+            <span className="font-mono font-bold text-slate-500">{form.matches}경기 clean sheet {form.cleanSheets}회 · 평균 실점 {formatScore(form.avgGoalsAgainst)}</span>
           </div>
           <div className="mt-1 flex items-center gap-2">
             <div className="h-2 flex-1 rounded-full bg-slate-100">
@@ -1949,6 +1963,39 @@ function DefenseFormBars({ forms }: { forms: HistoryDefenseForm[] }) {
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+function GoalsAgainstBars({ forms }: { forms: HistoryDefenseForm[] }) {
+  const ranked = forms
+    .slice()
+    .sort((a, b) => a.avgGoalsAgainst - b.avgGoalsAgainst || b.cleanSheets - a.cleanSheets || b.avgGoalDiff - a.avgGoalDiff || b.matches - a.matches);
+  const maxAvgAgainst = Math.max(1, ...ranked.map((form) => form.avgGoalsAgainst));
+
+  if (ranked.length === 0) {
+    return <p className="mt-1 rounded-xl bg-white px-3 py-2 text-xs font-semibold text-slate-400 ring-1 ring-slate-200">실점 표본 부족</p>;
+  }
+
+  return (
+    <div className="mt-1 space-y-1.5">
+      {ranked.map((form) => {
+        const width = Math.max(8, 100 - (form.avgGoalsAgainst / maxAvgAgainst) * 82);
+        return (
+          <div key={form.name} className="rounded-xl bg-white px-3 py-2 ring-1 ring-slate-200">
+            <div className="flex items-center justify-between gap-2 text-xs">
+              <span className="font-black text-slate-800">{form.name}</span>
+              <span className="font-mono font-bold text-slate-500">{form.matches}경기 평균 실점 {formatScore(form.avgGoalsAgainst)} · 총 실점 {form.goalsAgainst}</span>
+            </div>
+            <div className="mt-1 flex items-center gap-2">
+              <div className="h-2 flex-1 rounded-full bg-slate-100">
+                <div className="h-2 rounded-full bg-cyan-500" style={{ width: `${width}%` }} />
+              </div>
+              <span className="w-14 text-right text-[10px] font-black text-slate-500">낮을수록 좋음</span>
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -1995,6 +2042,7 @@ function HistoryInsightModal({
               </div>
             </div>
           )}
+          <HistoryOverallInsight insight={history.overall} />
           <div className="grid gap-4 lg:grid-cols-2">
             <HistoryTeamDetail title={formatTeamName("A")} insight={history.teamA} groupMap={groupMaps.A} />
             <HistoryTeamDetail title={formatTeamName("B")} insight={history.teamB} groupMap={groupMaps.B} />
@@ -2005,11 +2053,67 @@ function HistoryInsightModal({
   );
 }
 
+function HistoryOverallInsight({ insight }: { insight: TeamHistoryInsight }) {
+  const goodPairs = topGoodPairs(insight, 5);
+  const badPairs = topBadPairs(insight, 5);
+  const impactPairs = allHistoryPairs(insight)
+    .filter((pair) => pair.matches >= 1)
+    .sort((a, b) => Math.abs(b.avgGoalDiff) - Math.abs(a.avgGoalDiff) || b.matches - a.matches)
+    .slice(0, 8);
+
+  return (
+    <div className="mb-4 rounded-2xl border border-indigo-100 bg-indigo-50/70 p-4">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <p className="text-base font-black text-slate-950">전체 인원 히스토리</p>
+          <p className="mt-1 text-xs font-semibold text-slate-600">형광/주황으로 나누기 전, 현재 선택된 전체 인원끼리 과거 같은 편으로 뛴 조합입니다.</p>
+        </div>
+        <span className="rounded-full bg-white px-3 py-1 text-xs font-black text-indigo-700 ring-1 ring-indigo-100">
+          {insight.matchedPlayerCount}/{insight.playerCount}명 매칭
+        </span>
+      </div>
+
+      <div className="mt-3 grid gap-2 sm:grid-cols-4">
+        <HistoryMiniStat label="전체 조합 표본" value={`${insight.coPlaySamples}경기`} />
+        <HistoryMiniStat label="평균 득실" value={formatHistorySigned(insight.avgGoalDiff)} />
+        <HistoryMiniStat label="clean sheet" value={`${insight.cleanSheets}회`} />
+        <HistoryMiniStat label="평균 실점" value={formatScore(insight.avgGoalsAgainst)} />
+      </div>
+
+      <div className="mt-3 grid gap-3 lg:grid-cols-2">
+        <HistoryPairTable title="전체 좋은 궁합 Top 5" pairs={goodPairs} empty="전체 인원 기준 좋은 궁합 표본이 아직 부족합니다." />
+        <HistoryPairTable title="전체 나쁜 궁합 Top 5" pairs={badPairs} empty="전체 인원 기준 나쁜 궁합 표본이 아직 부족합니다." />
+      </div>
+
+      <div className="mt-4">
+        <p className="text-sm font-black text-slate-800">전체 궁합 영향도 그래프</p>
+        <PairImpactBars pairs={impactPairs} />
+      </div>
+
+      <div className="mt-4 grid gap-3 lg:grid-cols-3">
+        <div>
+          <p className="text-sm font-black text-slate-800">공격 포인트 순위</p>
+          <RecentFormBars forms={insight.recentForms.slice(0, 8)} />
+        </div>
+        <div>
+          <p className="text-sm font-black text-slate-800">수비 clean sheet 순위</p>
+          <DefenseFormBars forms={insight.defenseForms.slice(0, 8)} />
+        </div>
+        <div>
+          <p className="text-sm font-black text-slate-800">평균 실점 낮은 순위</p>
+          <GoalsAgainstBars forms={insight.defenseForms.slice(0, 8)} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function HistoryTeamDetail({ title, insight, groupMap }: { title: string; insight: TeamHistoryInsight; groupMap: HistoryGroupMap }) {
   const attackPairs = groupPairs(insight, groupMap, "ATTACK").sort((a, b) => b.points - a.points || b.avgGoalDiff - a.avgGoalDiff || b.matches - a.matches);
   const midPairs = groupPairs(insight, groupMap, "MID").sort((a, b) => b.avgGoalDiff - a.avgGoalDiff || b.matches - a.matches);
   const defensePairs = groupPairs(insight, groupMap, "DEFENSE").sort((a, b) => b.avgGoalDiff - a.avgGoalDiff || b.matches - a.matches);
-  const badPairs = allHistoryPairs(insight).sort((a, b) => a.avgGoalDiff - b.avgGoalDiff || b.losses - a.losses || b.matches - a.matches);
+  const goodPairs = topGoodPairs(insight, 5);
+  const badPairs = topBadPairs(insight, 5);
   const impactPairs = allHistoryPairs(insight)
     .filter((pair) => pair.matches >= 1)
     .sort((a, b) => Math.abs(b.avgGoalDiff) - Math.abs(a.avgGoalDiff) || b.matches - a.matches)
@@ -2035,17 +2139,15 @@ function HistoryTeamDetail({ title, insight, groupMap }: { title: string; insigh
         <PairImpactBars pairs={impactPairs} />
       </div>
 
-      <HistoryPairTable title="좋은 궁합" pairs={insight.goodPairs} empty="좋은 궁합으로 볼 만큼 누적된 조합이 아직 없습니다." />
-      <HistoryPairTable title="주의 궁합" pairs={insight.cautionPairs} empty="현재 팀 안에서 크게 경계할 누적 조합은 없습니다." />
-      <HistoryPairTable title="표본 있는 조합" pairs={insight.samplePairs} empty="과거 같은 편 표본이 거의 없습니다." />
-      <HistoryPairTable title="공격끼리 좋은 조합" pairs={attackPairs.slice(0, 8)} empty="현재 공격 그룹끼리 같이 뛴 표본이 아직 부족합니다." />
-      <HistoryPairTable title="미드끼리 좋은 조합" pairs={midPairs.slice(0, 8)} empty="현재 미드 그룹끼리 같이 뛴 표본이 아직 부족합니다." />
-      <HistoryPairTable title="수비끼리 좋은 조합" pairs={defensePairs.slice(0, 8)} empty="현재 수비 그룹끼리 같이 뛴 표본이 아직 부족합니다." />
-      <HistoryPairTable title="성적 안 좋은 궁합" pairs={badPairs.slice(0, 8)} empty="성적이 눈에 띄게 나쁜 궁합 표본은 아직 없습니다." />
+      <HistoryPairTable title={`${title} 좋은 궁합 Top 5`} pairs={goodPairs} empty="좋은 궁합으로 볼 만큼 누적된 조합이 아직 없습니다." />
+      <HistoryPairTable title={`${title} 나쁜 궁합 Top 5`} pairs={badPairs} empty="성적이 눈에 띄게 나쁜 궁합 표본은 아직 없습니다." />
+      <HistoryPairTable title="공격끼리 좋은 조합" pairs={attackPairs.slice(0, 5)} empty="현재 공격 그룹끼리 같이 뛴 표본이 아직 부족합니다." />
+      <HistoryPairTable title="미드끼리 좋은 조합" pairs={midPairs.slice(0, 5)} empty="현재 미드 그룹끼리 같이 뛴 표본이 아직 부족합니다." />
+      <HistoryPairTable title="수비끼리 좋은 조합" pairs={defensePairs.slice(0, 5)} empty="현재 수비 그룹끼리 같이 뛴 표본이 아직 부족합니다." />
 
       <div className="mt-4">
         <div className="flex items-center justify-between gap-2">
-          <p className="text-sm font-black text-slate-800">선수 최근 폼</p>
+          <p className="text-sm font-black text-slate-800">공격 포인트 순위</p>
           <p className="text-xs font-semibold text-slate-500">최근 최대 5경기 기준</p>
         </div>
         <RecentFormBars forms={insight.recentForms.slice(0, 8)} />
@@ -2053,10 +2155,18 @@ function HistoryTeamDetail({ title, insight, groupMap }: { title: string; insigh
 
       <div className="mt-4">
         <div className="flex items-center justify-between gap-2">
-          <p className="text-sm font-black text-slate-800">수비 히스토리</p>
-          <p className="text-xs font-semibold text-slate-500">CS {insight.cleanSheets} · 평균 실점 {formatScore(insight.avgGoalsAgainst)}</p>
+          <p className="text-sm font-black text-slate-800">수비 clean sheet 순위</p>
+          <p className="text-xs font-semibold text-slate-500">clean sheet {insight.cleanSheets}회 · 평균 실점 {formatScore(insight.avgGoalsAgainst)}</p>
         </div>
         <DefenseFormBars forms={insight.defenseForms.slice(0, 8)} />
+      </div>
+
+      <div className="mt-4">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-sm font-black text-slate-800">평균 실점 낮은 순위</p>
+          <p className="text-xs font-semibold text-slate-500">clean sheet가 아니어도 실점 억제 기준으로 봅니다</p>
+        </div>
+        <GoalsAgainstBars forms={insight.defenseForms.slice(0, 8)} />
       </div>
 
       {insight.unmatchedNames.length > 0 && (

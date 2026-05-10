@@ -45,7 +45,7 @@ export type HistoryDefenseForm = {
 };
 
 export type TeamHistoryInsight = {
-  team: "A" | "B";
+  team: "A" | "B" | "ALL";
   playerCount: number;
   matchedPlayerCount: number;
   coPlaySamples: number;
@@ -68,6 +68,7 @@ export type HistoryInsightResponse = {
   source: HistorySource;
   matchCount: number;
   generatedAt: string;
+  overall: TeamHistoryInsight;
   teamA: TeamHistoryInsight;
   teamB: TeamHistoryInsight;
   warnings: string[];
