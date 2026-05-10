@@ -183,6 +183,7 @@ export default function Home() {
   const [swapSelection, setSwapSelection] = useState<SwapSelection>(null);
   const [hydrated, setHydrated] = useState(false);
   const [showRecordEntry, setShowRecordEntry] = useState(false);
+  const [showRecordEdit, setShowRecordEdit] = useState(false);
 
   useEffect(() => {
     if (new URLSearchParams(window.location.search).get("record") !== "1") return;
@@ -324,6 +325,10 @@ export default function Home() {
       .filter((player) => [player.name, player.primaryPosition, player.secondaryPositions.join(",")].join(" ").toLowerCase().includes(query))
       .slice(0, 20);
   }, [playerQuery, sortedSheetPlayers]);
+  const recordPlayerOptions = useMemo(
+    () => uniqueRecordNames([...players.map((player) => player.name), ...dedicatedGks.map((gk) => gk.name)]),
+    [players, dedicatedGks],
+  );
 
   const canGenerate = plannerMode === "BALANCE"
     ? activeFieldPlayers.length >= 22 && activeFieldPlayers.length <= 36
@@ -360,7 +365,21 @@ export default function Home() {
   function toggleRecordEntry() {
     setShowRecordEntry((value) => {
       const next = !value;
-      if (next) window.setTimeout(() => document.getElementById("lineup-result")?.scrollIntoView({ block: "start" }), 0);
+      if (next) {
+        setShowRecordEdit(false);
+        window.setTimeout(() => document.getElementById("lineup-result")?.scrollIntoView({ block: "start" }), 0);
+      }
+      return next;
+    });
+  }
+
+  function toggleRecordEdit() {
+    setShowRecordEdit((value) => {
+      const next = !value;
+      if (next) {
+        setShowRecordEntry(false);
+        window.setTimeout(() => document.querySelector("[data-mrw-active='true']")?.scrollIntoView({ block: "start" }), 0);
+      }
       return next;
     });
   }
@@ -739,8 +758,32 @@ export default function Home() {
   return (
     <main className="mx-auto max-w-7xl p-4 pb-28 sm:p-8">
       <section className="mb-6 rounded-3xl bg-white p-6 shadow-sm">
-        <h1 className="text-3xl font-bold tracking-tight">DEV FC Planner</h1>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h1 className="text-3xl font-bold tracking-tight">DEV FC Planner</h1>
+          <button
+            type="button"
+            className={`rounded-xl px-4 py-2 text-sm font-bold ${showRecordEdit ? "bg-slate-900 text-white" : "border border-slate-300 bg-white text-slate-700"}`}
+            onClick={toggleRecordEdit}
+          >
+            기록 수정
+          </button>
+        </div>
       </section>
+
+      {showRecordEdit && (
+        <RecordEntryAnchor
+          title="기록 수정"
+          description="저장된 경기 기록을 날짜로 불러와 스코어, 구성원, 개인 골/도움을 수정합니다."
+          matchKind={plannerMode === "MATCH" ? "MATCH" : "SELF"}
+          records={[]}
+          staffRoles={{}}
+          playerOptions={recordPlayerOptions}
+          editOnly
+          allowEdit={false}
+          allowPlayerEdit
+          onClose={() => setShowRecordEdit(false)}
+        />
+      )}
 
       <section className="mb-6 rounded-3xl bg-white p-6 shadow-sm">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -891,6 +934,9 @@ export default function Home() {
           matchKind="SELF"
           records={balanceRecordEntryRecords(teamResult)}
           staffRoles={balanceRecordStaffRoles(teamResult)}
+          playerOptions={fieldPlayers.map((player) => player.name)}
+          allowEdit={false}
+          allowPlayerEdit
           onClose={() => setShowRecordEntry(false)}
         />
       )}
@@ -901,7 +947,10 @@ export default function Home() {
           matchKind="MATCH"
           records={matchRecordEntryRecords(matchResult)}
           staffRoles={matchRecordStaffRoles(matchResult, matchFieldPlayers, dedicatedGks)}
+          playerOptions={[...matchFieldPlayers.map((player) => player.name), ...dedicatedGks.map((gk) => gk.name)]}
           awayTeamName="상대팀"
+          allowEdit={false}
+          allowPlayerEdit
           onClose={() => setShowRecordEntry(false)}
         />
       )}
@@ -944,7 +993,11 @@ function RecordEntryAnchor({
   matchKind,
   records,
   staffRoles,
+  playerOptions,
   awayTeamName,
+  editOnly = false,
+  allowEdit = true,
+  allowPlayerEdit = false,
   onClose,
 }: {
   title: string;
@@ -952,18 +1005,26 @@ function RecordEntryAnchor({
   matchKind: "SELF" | "MATCH";
   records: RecordEntryRecord[];
   staffRoles: Partial<Record<string, StaffRole>>;
+  playerOptions?: string[];
   awayTeamName?: string;
+  editOnly?: boolean;
+  allowEdit?: boolean;
+  allowPlayerEdit?: boolean;
   onClose: () => void;
 }) {
   const payload = {
-    key: recordEntryKey(matchKind, records),
+    key: editOnly ? `EDIT:${matchKind}` : recordEntryKey(matchKind, records),
     matchKind,
     awayTeamName,
     records,
     staffRoles,
+    playerOptions,
+    editOnly,
+    allowEdit,
+    allowPlayerEdit,
   };
   return (
-    <section id="lineup-result" data-mrw-standalone="true" className="mb-6 rounded-3xl bg-white p-4 shadow-sm sm:p-6">
+    <section id="lineup-result" data-mrw-standalone="true" data-mrw-active="true" className="mb-6 rounded-3xl bg-white p-4 shadow-sm sm:p-6">
       <script
         type="application/json"
         data-mrw-records
@@ -1420,23 +1481,6 @@ function TeamResultView({
           groupScores={{ ATTACK: s.attackScoreB, MID: s.midScoreB, DEFENSE: s.defenseScoreB }}
         />
       </div>
-      {history && (
-        <div className="mt-4">
-          {isHistoryStale && (
-            <div className="mb-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">
-              팀 구성이 바뀌었습니다. 현재 A/B 기준으로 보려면 히스토리 다시 읽기를 눌러주세요.
-            </div>
-          )}
-          <div className={`grid gap-4 md:grid-cols-2 ${isHistoryStale ? "opacity-70" : ""}`}>
-            <TeamHistoryInsightCard teamName={formatTeamName("A")} insight={history.teamA} groupMap={teamAHistoryGroups} />
-            <TeamHistoryInsightCard teamName={formatTeamName("B")} insight={history.teamB} groupMap={teamBHistoryGroups} />
-          </div>
-          <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
-            <span>{history.seasons.join(", ")} 시즌 {history.matchCount}경기 기준 · {historySourceLabel(history.source)}</span>
-            {history.warnings.length > 0 && <span className="font-semibold text-amber-700">주의 {history.warnings.length}개</span>}
-          </div>
-        </div>
-      )}
       <p className="mt-4 text-xs text-slate-500"><span className="font-bold">*</span> 부포지션으로 배정된 선수 · <span className="font-bold">**</span> 인원 균형을 위해 주·부와 무관한 포지션으로 강제 배정된 선수 · <span className="inline-flex rounded-md border border-fuchsia-200 bg-fuchsia-50 px-1 py-0 text-[10px] font-black leading-none text-fuchsia-700">멀티</span> 공격/미드/수비 중 7점 이상이 2개 이상인 선수</p>
       {variantCount > 1 && !confirmed && (
         <div className="mt-5 flex flex-wrap items-center gap-2 rounded-2xl bg-slate-50 px-3 py-3">

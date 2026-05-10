@@ -90,6 +90,7 @@
       ".mrw-add-player{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px;border-top:1px solid #eef2f7;padding:10px;background:#f8fafc}",
       ".mrw-add-player input{min-width:0;border:1px solid #cbd5e1;border-radius:12px;background:#fff;padding:8px 10px;color:#0f172a;font-size:12px;font-weight:850}",
       ".mrw-add-player button{border:0;border-radius:12px;background:#e2e8f0;color:#0f172a;padding:0 10px;font-size:12px;font-weight:950;cursor:pointer}",
+      ".mrw-edit-load-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:end;margin-top:12px}",
       ".mrw-role{display:inline-flex;align-items:center;border-radius:999px;padding:2px 6px;font-size:10px;font-weight:950;line-height:1.1}",
       ".mrw-role-coach{background:#dff9fb;color:#0e7490}",
       ".mrw-role-manager{background:#ede9fe;color:#6d28d9}",
@@ -125,7 +126,7 @@
       ".mrw-modal-foot{display:flex;gap:8px;justify-content:flex-end;background:#fff;border-top:1px solid #e2e8f0;padding:12px 14px}",
       ".mrw-icon-close{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;border:0;border-radius:999px;background:#e2e8f0;color:#334155;font-size:20px;font-weight:950;line-height:1;cursor:pointer}",
       ".mrw-empty{color:#94a3b8;font-size:12px;font-weight:800}",
-      "@media(max-width:760px){.mrw-card{padding:14px;border-radius:18px}.mrw-title{font-size:18px}.mrw-meta{grid-template-columns:1fr}.mrw-wide{grid-column:1/-1}.mrw-summary{grid-template-columns:1fr}.mrw-summary-item:last-child{grid-column:auto}.mrw-field{max-width:100%;overflow:hidden}.mrw-field input,.mrw-field select,.mrw-field textarea,.mrw-fixed{min-height:42px;width:100%;max-width:100%;min-width:0;min-inline-size:0}.mrw-field input[type=date],.mrw-field input[type=time]{appearance:none;-webkit-appearance:none;text-align:left}.mrw-mode-head{align-items:stretch}.mrw-scope{width:100%}.mrw-scope select{flex:1}.mrw-layout{grid-template-columns:1fr}.mrw-scoreboard{padding:10px}.mrw-score-num{font-size:40px}.mrw-score-row{grid-template-columns:1fr;gap:10px}.mrw-side{min-height:76px;padding:12px 38px}.mrw-team-name{font-size:12px}.mrw-score-minus{right:6px;top:6px;width:28px;height:28px;font-size:17px}.mrw-stats{grid-template-columns:1fr}.mrw-stat-list{gap:5px}.mrw-stat-row{grid-template-columns:minmax(68px,1fr) auto auto;gap:4px;padding:6px}.mrw-stat-name{font-size:12px;line-height:1.2}.mrw-name{white-space:normal}.mrw-role{padding:1px 5px;font-size:9px}.mrw-player-remove{padding:3px 6px;font-size:9px}.mrw-counter{grid-template-columns:18px 20px 14px 20px;gap:1px;padding:3px;min-width:76px}.mrw-counter-label{font-size:9px;line-height:1}.mrw-counter button{width:20px;height:20px;font-size:12px}.mrw-counter-value{font-size:12px}.mrw-add-team,.mrw-add-player{grid-template-columns:1fr}.mrw-add-team button,.mrw-add-player button{min-height:38px}.mrw-events{max-height:none}.mrw-actions .mrw-button{flex:1 1 100%}.mrw-modal-backdrop{align-items:flex-end;padding:0}.mrw-modal{width:100%;border-radius:22px 22px 0 0;max-height:84vh}}",
+      "@media(max-width:760px){.mrw-card{padding:14px;border-radius:18px}.mrw-title{font-size:18px}.mrw-meta{grid-template-columns:1fr}.mrw-wide{grid-column:1/-1}.mrw-summary{grid-template-columns:1fr}.mrw-summary-item:last-child{grid-column:auto}.mrw-field{max-width:100%;overflow:hidden}.mrw-field input,.mrw-field select,.mrw-field textarea,.mrw-fixed{min-height:42px;width:100%;max-width:100%;min-width:0;min-inline-size:0}.mrw-field input[type=date],.mrw-field input[type=time]{appearance:none;-webkit-appearance:none;text-align:left}.mrw-mode-head{align-items:stretch}.mrw-scope{width:100%}.mrw-scope select{flex:1}.mrw-layout{grid-template-columns:1fr}.mrw-scoreboard{padding:10px}.mrw-score-num{font-size:40px}.mrw-score-row{grid-template-columns:1fr;gap:10px}.mrw-side{min-height:76px;padding:12px 38px}.mrw-team-name{font-size:12px}.mrw-score-minus{right:6px;top:6px;width:28px;height:28px;font-size:17px}.mrw-stats{grid-template-columns:1fr}.mrw-stat-list{gap:5px}.mrw-stat-row{grid-template-columns:minmax(68px,1fr) auto auto;gap:4px;padding:6px}.mrw-stat-name{font-size:12px;line-height:1.2}.mrw-name{white-space:normal}.mrw-role{padding:1px 5px;font-size:9px}.mrw-player-remove{padding:3px 6px;font-size:9px}.mrw-counter{grid-template-columns:18px 20px 14px 20px;gap:1px;padding:3px;min-width:76px}.mrw-counter-label{font-size:9px;line-height:1}.mrw-counter button{width:20px;height:20px;font-size:12px}.mrw-counter-value{font-size:12px}.mrw-add-team,.mrw-add-player,.mrw-edit-load-row{grid-template-columns:1fr}.mrw-add-team button,.mrw-add-player button,.mrw-edit-load-row button{min-height:38px}.mrw-events{max-height:none}.mrw-actions .mrw-button{flex:1 1 100%}.mrw-modal-backdrop{align-items:flex-end;padding:0}.mrw-modal{width:100%;border-radius:22px 22px 0 0;max-height:84vh}}",
     ].join("\n");
     document.head.appendChild(style);
   }
@@ -303,8 +304,12 @@
     });
   }
 
+  function recordRoot() {
+    return document.querySelector("[data-mrw-active='true']") || document.getElementById("lineup-result");
+  }
+
   function parseQuarterCards() {
-    var section = document.getElementById("lineup-result");
+    var section = recordRoot();
     if (!section) return [];
     var records = [];
     var seen = Object.create(null);
@@ -351,12 +356,12 @@
   }
 
   function hasStandaloneRecordAnchor() {
-    var section = document.getElementById("lineup-result");
+    var section = recordRoot();
     return Boolean(section && section.getAttribute("data-mrw-standalone") === "true");
   }
 
   function standaloneData() {
-    var section = document.getElementById("lineup-result");
+    var section = recordRoot();
     var node = section && section.querySelector("[data-mrw-records]");
     if (!node) return {};
     try {
@@ -364,6 +369,18 @@
     } catch {
       return {};
     }
+  }
+
+  function editOnlyMode() {
+    return standaloneData().editOnly === true;
+  }
+
+  function allowRecordEdit() {
+    return standaloneData().allowEdit !== false && !editOnlyMode();
+  }
+
+  function canEditPlayers() {
+    return state.editingRecordOnly || standaloneData().allowPlayerEdit === true;
   }
 
   function syncStandaloneContext() {
@@ -429,6 +446,12 @@
       }, []));
   }
 
+  function recordPlayers(records) {
+    return uniqueNames(records.reduce(function (acc, record) {
+      return acc.concat(record.attack || [], record.mid || [], record.defense || [], record.gk || [], record.bench || []);
+    }, []));
+  }
+
   function normalizeLoadedPlayers(players) {
     var source = players && typeof players === "object" ? players : {};
     var loaded = {
@@ -452,6 +475,27 @@
       return rawName;
     }
     return "";
+  }
+
+  function playerSearchOptions(records, team) {
+    var data = standaloneData();
+    var loaded = state.loadedPlayers || emptyLoadedPlayers();
+    var currentTeamPlayers = teamPlayers(records, team);
+    var currentLookup = Object.create(null);
+    currentTeamPlayers.forEach(function (name) { currentLookup[name] = true; });
+    var candidates = []
+      .concat(Array.isArray(data.playerOptions) ? data.playerOptions : [])
+      .concat(recordPlayers(records))
+      .concat(loaded.A || [], loaded.B || [])
+      .concat(summaryStatsArray().map(function (stat) { return stat.player; }))
+      .concat(state.events.reduce(function (acc, event) {
+        return acc.concat(event.scorer || [], event.assist || []);
+      }, []))
+      .concat(Object.keys(state.roles))
+      .concat(Object.keys(KNOWN_STAFF_ROLES));
+    return uniqueNames(candidates).filter(function (name) { return !currentLookup[name]; }).sort(function (a, b) {
+      return a.localeCompare(b, "ko");
+    });
   }
 
   function displayRecords(fallbackRecords) {
@@ -649,10 +693,15 @@
     return state.loadedPlayers;
   }
 
+  function ensureLoadedPlayersFromCurrent() {
+    if (!state.loadedPlayers) state.loadedPlayers = loadedPlayersFromRecords(parseQuarterCards());
+    return ensureLoadedPlayers();
+  }
+
   function addLoadedPlayer(team, rawName) {
     var name = playerName(rawName);
     if (!name || (team !== "A" && team !== "B")) return;
-    var loaded = ensureLoadedPlayers();
+    var loaded = ensureLoadedPlayersFromCurrent();
     loaded[team] = uniqueNames((loaded[team] || []).concat(name));
     state.currentLineupOverride = false;
     state.status = name + " 선수를 " + teamLabel(team) + "에 추가했습니다.";
@@ -662,7 +711,7 @@
   function removeLoadedPlayer(team, rawName) {
     var name = playerName(rawName);
     if (!name || (team !== "A" && team !== "B")) return;
-    var loaded = ensureLoadedPlayers();
+    var loaded = ensureLoadedPlayersFromCurrent();
     loaded[team] = (loaded[team] || []).filter(function (player) { return playerName(player) !== name; });
     Object.keys(state.summaryStats).forEach(function (key) {
       var stat = state.summaryStats[key];
@@ -826,8 +875,27 @@
   }
 
   function scoreboardTeamLabel(team) {
-    if (state.matchKind === "SELF") return team === "A" ? "형광팀" : "주황팀";
     return teamLabel(team);
+  }
+
+  function renderPanelHead(editOnly) {
+    var action = allowRecordEdit()
+      ? "<button type=\"button\" class=\"mrw-button mrw-secondary\" data-mrw-action=\"open-edit-modal\">기록 수정</button>"
+      : "";
+    var title = editOnly ? "기록 수정" : "경기 기록";
+    var help = editOnly
+      ? "날짜로 저장된 기록을 불러와 스코어, 구성원, 개인 골/도움을 수정합니다."
+      : "팀 점수는 점수판을 눌러 올리고, 개인 골/도움은 선수별로 필요한 만큼만 입력합니다.";
+    return "<div class=\"mrw-head\"><div><h3 class=\"mrw-title\">" + title + "</h3><p class=\"mrw-help\">" + help + "</p></div>" + action + "</div>";
+  }
+
+  function renderEditOnlyLoader(form) {
+    var date = state.editDate || form.date || todayInputValue();
+    return [
+      "<div class=\"mrw-mode mrw-edit-load\"><div class=\"mrw-mode-head\"><div><div class=\"mrw-mode-title\">수정할 경기 불러오기</div><div class=\"mrw-mode-help\">경기일을 고른 뒤 저장된 기록을 불러오면 그 기록 기준으로만 수정합니다.</div></div></div>",
+      "<div class=\"mrw-edit-load-row\"><div class=\"mrw-field\"><label>경기일</label><input data-mrw=\"editDate\" type=\"date\" value=\"" + escapeHtml(date) + "\" /></div><button type=\"button\" class=\"mrw-button mrw-primary\" data-mrw-action=\"load-edit-date\">기록 불러오기</button></div>",
+      "</div>",
+    ].join("");
   }
 
   function renderPanel() {
@@ -842,6 +910,7 @@
     var existing = document.getElementById(PANEL_ID);
     var form = formState(existing);
     setTeamLabels(form);
+    var editOnly = editOnlyMode();
     var quarter = selectedQuarter();
     var score = teamScoreSummary();
     var refreshAction = state.editingRecordOnly && !state.currentLineupOverride && !state.recordLoading
@@ -851,8 +920,25 @@
     var panel = existing || document.createElement("div");
     panel.id = PANEL_ID;
     panel.className = "mrw-card";
+    if (editOnly && !state.editingRecordOnly && !state.recordLoading) {
+      panel.innerHTML = [
+        renderPanelHead(true),
+        "<input type=\"hidden\" data-mrw=\"date\" value=\"" + escapeHtml(form.date) + "\" />",
+        "<input type=\"hidden\" data-mrw=\"matchId\" value=\"" + escapeHtml(form.matchId || compactDate(form.date)) + "\" />",
+        "<input type=\"hidden\" data-mrw=\"duration\" value=\"" + escapeHtml(form.duration) + "\" />",
+        "<input type=\"hidden\" data-mrw=\"matchKind\" value=\"" + escapeHtml(form.matchKind) + "\" />",
+        renderEditOnlyLoader(form),
+        state.status ? "<div class=\"mrw-status\">" + escapeHtml(state.status) + "</div>" : "",
+      ].join("");
+      if (!existing) {
+        var editMount = recordRoot();
+        if (editMount) editMount.appendChild(panel);
+      }
+      bindPanel(panel);
+      return;
+    }
     panel.innerHTML = [
-      "<div class=\"mrw-head\"><div><h3 class=\"mrw-title\">경기 기록</h3><p class=\"mrw-help\">팀 점수는 점수판을 눌러 올리고, 개인 골/도움은 선수별로 필요한 만큼만 입력합니다.</p></div><button type=\"button\" class=\"mrw-button mrw-secondary\" data-mrw-action=\"open-edit-modal\">기록 수정</button></div>",
+      renderPanelHead(editOnly),
       "<input type=\"hidden\" data-mrw=\"matchId\" value=\"" + escapeHtml(form.matchId || compactDate(form.date)) + "\" />",
       "<input type=\"hidden\" data-mrw=\"duration\" value=\"" + escapeHtml(form.duration) + "\" />",
       "<input type=\"hidden\" data-mrw=\"matchKind\" value=\"" + escapeHtml(form.matchKind) + "\" />",
@@ -870,7 +956,7 @@
     ].join("");
 
     if (!existing) {
-      var mount = document.getElementById("lineup-result");
+      var mount = recordRoot();
       if (mount) mount.appendChild(panel);
     }
     bindPanel(panel);
@@ -975,7 +1061,7 @@
       "<div class=\"mrw-stat-list\">",
       players.length ? players.map(function (player) { return renderPlayerStat(team, player, quarter); }).join("") : "<div class=\"mrw-empty\">선수 정보 없음</div>",
       "</div>",
-      renderAddPlayer(team),
+      renderAddPlayer(team, playerSearchOptions(records, team)),
       "</div>",
     ].join("");
   }
@@ -983,7 +1069,7 @@
   function renderPlayerStat(team, player, quarter) {
     player = playerName(player);
     var stat = state.summaryStats[statKey(team, player, quarter)] || { goals: 0, assists: 0 };
-    var remove = state.editingRecordOnly
+    var remove = canEditPlayers()
       ? "<button type=\"button\" class=\"mrw-player-remove\" data-mrw-remove-player-team=\"" + team + "\" data-mrw-remove-player=\"" + escapeHtml(player) + "\">제외</button>"
       : "";
     return [
@@ -994,9 +1080,13 @@
     ].join("");
   }
 
-  function renderAddPlayer(team) {
-    if (!state.editingRecordOnly || state.recordLoading) return "";
-    return "<div class=\"mrw-add-player\"><input data-mrw-add-player-name=\"" + team + "\" type=\"text\" placeholder=\"" + teamLabel(team) + " 선수 추가\" /><button type=\"button\" data-mrw-add-player-team=\"" + team + "\">추가</button></div>";
+  function renderAddPlayer(team, options) {
+    if (!canEditPlayers() || state.recordLoading) return "";
+    var listId = "mrw-player-options-" + team;
+    var datalist = (options || []).length > 0
+      ? "<datalist id=\"" + listId + "\">" + options.map(function (name) { return "<option value=\"" + escapeHtml(name) + "\"></option>"; }).join("") + "</datalist>"
+      : "";
+    return "<div class=\"mrw-add-player\"><input data-mrw-add-player-name=\"" + team + "\" type=\"text\" list=\"" + listId + "\" autocomplete=\"off\" placeholder=\"" + teamLabel(team) + " 선수 검색/추가\" /><button type=\"button\" data-mrw-add-player-team=\"" + team + "\">추가</button>" + datalist + "</div>";
   }
 
   function renderRole(player) {
@@ -1060,18 +1150,21 @@
   function bindPanel(panel) {
     var dateInput = panel.querySelector("[data-mrw=date]");
     var idInput = panel.querySelector("[data-mrw=matchId]");
-    dateInput.addEventListener("change", function () {
-      idInput.value = compactDate(dateInput.value);
-      resetRecordEntryState();
-      renderPanel();
-    });
+    if (dateInput && idInput) {
+      dateInput.addEventListener("change", function () {
+        idInput.value = compactDate(dateInput.value);
+        resetRecordEntryState();
+        renderPanel();
+      });
+    }
     ["startTime", "venueName", "awayTeam", "memo"].forEach(function (key) {
       var element = panel.querySelector("[data-mrw=" + key + "]");
       if (element) element.addEventListener("change", renderPanel);
     });
     Array.prototype.forEach.call(panel.querySelectorAll("[data-mrw-duration]"), function (button) {
       button.addEventListener("click", function () {
-        panel.querySelector("[data-mrw=duration]").value = button.getAttribute("data-mrw-duration") || "2";
+        var durationInput = panel.querySelector("[data-mrw=duration]");
+        if (durationInput) durationInput.value = button.getAttribute("data-mrw-duration") || "2";
         renderPanel();
       });
     });
@@ -1079,7 +1172,8 @@
       button.addEventListener("click", function () {
         state.matchKind = button.getAttribute("data-mrw-kind") === "MATCH" ? "MATCH" : "SELF";
         resetRecordEntryState();
-        panel.querySelector("[data-mrw=matchKind]").value = state.matchKind;
+        var matchKindInput = panel.querySelector("[data-mrw=matchKind]");
+        if (matchKindInput) matchKindInput.value = state.matchKind;
         renderPanel();
       });
     });
@@ -1172,9 +1266,12 @@
     if (loadEditDate) loadEditDate.addEventListener("click", loadEditRecordByDate);
     var refreshLineup = panel.querySelector("[data-mrw-action=refresh-lineup]");
     if (refreshLineup) refreshLineup.addEventListener("click", refreshCurrentLineup);
-    panel.querySelector("[data-mrw-action=preview]").addEventListener("click", function () { saveRecord(true, false); });
-    panel.querySelector("[data-mrw-action=save]").addEventListener("click", function () { saveRecord(false, Boolean(state.editingMatchId)); });
-    panel.querySelector("[data-mrw-action=delete-record]").addEventListener("click", deleteRecord);
+    var preview = panel.querySelector("[data-mrw-action=preview]");
+    if (preview) preview.addEventListener("click", function () { saveRecord(true, false); });
+    var save = panel.querySelector("[data-mrw-action=save]");
+    if (save) save.addEventListener("click", function () { saveRecord(false, Boolean(state.editingMatchId)); });
+    var deleteButton = panel.querySelector("[data-mrw-action=delete-record]");
+    if (deleteButton) deleteButton.addEventListener("click", deleteRecord);
   }
 
   function openEditModal() {
@@ -1450,7 +1547,7 @@
     loadOptions();
     scheduleRender();
     var observer = new MutationObserver(function (mutations) {
-      if (document.getElementById("lineup-result") && mutations.some(shouldObserveMutation)) scheduleRender();
+      if (recordRoot() && mutations.some(shouldObserveMutation)) scheduleRender();
     });
     observer.observe(document.body, { childList: true, subtree: true });
   }
