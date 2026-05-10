@@ -38,7 +38,7 @@
       ".mrw-meta{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:14px}",
       ".mrw-field{display:flex;flex-direction:column;gap:4px;min-width:0}",
       ".mrw-field label{color:#64748b;font-size:11px;font-weight:900}",
-      ".mrw-field input,.mrw-field select,.mrw-field textarea{width:100%;min-width:0;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:12px;background:#fff;padding:9px 10px;color:#0f172a;font-size:13px;font-weight:800}",
+      ".mrw-field input,.mrw-field select,.mrw-field textarea{display:block;width:100%;max-width:100%;min-width:0;min-inline-size:0;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:12px;background:#fff;padding:9px 10px;color:#0f172a;font-size:13px;font-weight:800}",
       ".mrw-field input[readonly]{background:#f8fafc;color:#475569}",
       ".mrw-field textarea{min-height:38px;resize:vertical}",
       ".mrw-wide{grid-column:span 2}",
@@ -117,8 +117,7 @@
       ".mrw-modal-foot{display:flex;gap:8px;justify-content:flex-end;background:#fff;border-top:1px solid #e2e8f0;padding:12px 14px}",
       ".mrw-icon-close{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;border:0;border-radius:999px;background:#e2e8f0;color:#334155;font-size:20px;font-weight:950;line-height:1;cursor:pointer}",
       ".mrw-empty{color:#94a3b8;font-size:12px;font-weight:800}",
-      "@media(max-width:760px){.mrw-card{padding:14px;border-radius:18px}.mrw-title{font-size:18px}.mrw-meta{grid-template-columns:1fr}.mrw-wide{grid-column:1/-1}.mrw-summary{grid-template-columns:1fr}.mrw-summary-item:last-child{grid-column:auto}.mrw-field input,.mrw-field select,.mrw-field textarea,.mrw-fixed{min-height:42px}.mrw-mode-head{align-items:stretch}.mrw-scope{width:100%}.mrw-scope select{flex:1}.mrw-layout{grid-template-columns:1fr}.mrw-scoreboard{padding:10px}.mrw-score-num{font-size:40px}.mrw-score-row{gap:8px}.mrw-side{min-height:76px;padding:12px 30px}.mrw-team-name{font-size:12px}.mrw-score-minus{right:6px;top:6px;width:28px;height:28px;font-size:17px}.mrw-stats{grid-template-columns:1fr}.mrw-stat-list{gap:5px}.mrw-stat-row{grid-template-columns:minmax(68px,1fr) auto auto;gap:4px;padding:6px}.mrw-stat-name{font-size:12px;line-height:1.2}.mrw-name{white-space:normal}.mrw-role{padding:1px 5px;font-size:9px}.mrw-counter{grid-template-columns:18px 20px 14px 20px;gap:1px;padding:3px;min-width:76px}.mrw-counter-label{font-size:9px;line-height:1}.mrw-counter button{width:20px;height:20px;font-size:12px}.mrw-counter-value{font-size:12px}.mrw-events{max-height:none}.mrw-actions .mrw-button{flex:1 1 100%}.mrw-modal-backdrop{align-items:flex-end;padding:0}.mrw-modal{width:100%;border-radius:22px 22px 0 0;max-height:84vh}}",
-      "@media(max-width:480px){.mrw-score-row{grid-template-columns:1fr;gap:10px}.mrw-score-sep{display:none}.mrw-side{padding:12px 38px}.mrw-add-team{grid-template-columns:1fr}.mrw-add-team button{min-height:38px}}",
+      "@media(max-width:760px){.mrw-card{padding:14px;border-radius:18px}.mrw-title{font-size:18px}.mrw-meta{grid-template-columns:1fr}.mrw-wide{grid-column:1/-1}.mrw-summary{grid-template-columns:1fr}.mrw-summary-item:last-child{grid-column:auto}.mrw-field{max-width:100%;overflow:hidden}.mrw-field input,.mrw-field select,.mrw-field textarea,.mrw-fixed{min-height:42px;width:100%;max-width:100%;min-width:0;min-inline-size:0}.mrw-field input[type=date],.mrw-field input[type=time]{appearance:none;-webkit-appearance:none;text-align:left}.mrw-mode-head{align-items:stretch}.mrw-scope{width:100%}.mrw-scope select{flex:1}.mrw-layout{grid-template-columns:1fr}.mrw-scoreboard{padding:10px}.mrw-score-num{font-size:40px}.mrw-score-row{grid-template-columns:1fr;gap:10px}.mrw-score-sep{display:none}.mrw-side{min-height:76px;padding:12px 38px}.mrw-team-name{font-size:12px}.mrw-score-minus{right:6px;top:6px;width:28px;height:28px;font-size:17px}.mrw-stats{grid-template-columns:1fr}.mrw-stat-list{gap:5px}.mrw-stat-row{grid-template-columns:minmax(68px,1fr) auto auto;gap:4px;padding:6px}.mrw-stat-name{font-size:12px;line-height:1.2}.mrw-name{white-space:normal}.mrw-role{padding:1px 5px;font-size:9px}.mrw-counter{grid-template-columns:18px 20px 14px 20px;gap:1px;padding:3px;min-width:76px}.mrw-counter-label{font-size:9px;line-height:1}.mrw-counter button{width:20px;height:20px;font-size:12px}.mrw-counter-value{font-size:12px}.mrw-add-team{grid-template-columns:1fr}.mrw-add-team button{min-height:38px}.mrw-events{max-height:none}.mrw-actions .mrw-button{flex:1 1 100%}.mrw-modal-backdrop{align-items:flex-end;padding:0}.mrw-modal{width:100%;border-radius:22px 22px 0 0;max-height:84vh}}",
     ].join("\n");
     document.head.appendChild(style);
   }
@@ -716,6 +715,11 @@
     return (state.teamLabels && state.teamLabels[team]) || TEAM_LABELS[team];
   }
 
+  function scoreboardTeamLabel(team) {
+    if (state.matchKind === "SELF") return team === "A" ? "형광팀" : "주황팀";
+    return teamLabel(team);
+  }
+
   function renderPanel() {
     syncStandaloneContext();
     var lineupRecords = parseQuarterCards();
@@ -837,7 +841,7 @@
   }
 
   function scoreButton(team, goals, quarter) {
-    return "<div class=\"mrw-side-wrap\"><button type=\"button\" class=\"mrw-side mrw-side-" + team.toLowerCase() + "\" data-mrw-score-team=\"" + team + "\" data-mrw-score-adjust=\"1\"><span class=\"mrw-team-name\">" + teamLabel(team) + "</span><span class=\"mrw-score-num\">" + goals + "</span></button><button type=\"button\" class=\"mrw-score-minus\" data-mrw-score-team=\"" + team + "\" data-mrw-score-adjust=\"-1\" aria-label=\"" + teamLabel(team) + " 1점 빼기\">-</button></div>";
+    return "<div class=\"mrw-side-wrap\"><button type=\"button\" class=\"mrw-side mrw-side-" + team.toLowerCase() + "\" data-mrw-score-team=\"" + team + "\" data-mrw-score-adjust=\"1\"><span class=\"mrw-team-name\">" + scoreboardTeamLabel(team) + "</span><span class=\"mrw-score-num\">" + goals + "</span></button><button type=\"button\" class=\"mrw-score-minus\" data-mrw-score-team=\"" + team + "\" data-mrw-score-adjust=\"-1\" aria-label=\"" + scoreboardTeamLabel(team) + " 1점 빼기\">-</button></div>";
   }
 
   function renderStatTeams(records, quarter) {
@@ -880,7 +884,7 @@
   function renderRecentLog(score) {
     var items = [];
     teamScoresArray().forEach(function (entry) {
-      items.push({ type: "score", team: entry.team, quarter: entry.quarter, title: teamLabel(entry.team) + " 팀 스코어", sub: scopeLabel(entry.quarter) + " · 골 " + entry.goals });
+      items.push({ type: "score", team: entry.team, quarter: entry.quarter, title: scoreboardTeamLabel(entry.team) + " 스코어", sub: scopeLabel(entry.quarter) + " · 골 " + entry.goals });
     });
     summaryStatsArray().forEach(function (entry) {
       var parts = [];
