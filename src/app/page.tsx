@@ -1734,32 +1734,6 @@ function betweenGroupPairs(insight: TeamHistoryInsight, groupMap: HistoryGroupMa
   });
 }
 
-function compatibilityMapPairs(insight: TeamHistoryInsight, goodLimit: number, lowLimit: number, maxNodes: number): HistoryPairInsight[] {
-  const selected: HistoryPairInsight[] = [];
-  const seen = new Set<string>();
-
-  [...topGoodPairs(insight, goodLimit), ...topBadPairs(insight, lowLimit)].forEach((pair) => {
-    const key = pair.players.slice().sort().join("|");
-    if (!seen.has(key)) {
-      seen.add(key);
-      selected.push(pair);
-    }
-  });
-
-  const includedNames = new Set<string>();
-  const compact: HistoryPairInsight[] = [];
-  selected.forEach((pair) => {
-    const nextNames = new Set(includedNames);
-    pair.players.forEach((name) => nextNames.add(name));
-    if (nextNames.size <= maxNodes || compact.length === 0) {
-      compact.push(pair);
-      nextNames.forEach((name) => includedNames.add(name));
-    }
-  });
-
-  return compact;
-}
-
 type CompatibilityMapNode = {
   name: string;
   group?: PositionGroup;
@@ -1778,6 +1752,17 @@ function compatibilityStroke(pair: HistoryPairInsight): string {
   if (tone === "risk") return "#ef4444";
   if (tone === "good") return "#10b981";
   return "#f59e0b";
+}
+
+function compatibilityStrokeWidth(pair: HistoryPairInsight, maxMatches: number): number {
+  const ratio = maxMatches > 0 ? pair.matches / maxMatches : 0;
+  return 0.7 + Math.sqrt(ratio) * 3.6;
+}
+
+function compatibilityStrokeOpacity(pair: HistoryPairInsight, maxMatches: number): number {
+  const ratio = maxMatches > 0 ? pair.matches / maxMatches : 0;
+  const base = compatibilityPairTone(pair) === "watch" ? 0.22 : 0.34;
+  return Math.min(0.82, base + ratio * 0.36);
 }
 
 function compatibilityNodeClass(group?: PositionGroup): string {
@@ -1840,6 +1825,14 @@ function CompatibilityMapCard({
   const nodes = buildCompatibilityMapNodes(pairs, groupMap, nodeNames);
   const nodeByName = new Map(nodes.map((node) => [normalizeHistoryName(node.name), node]));
   const dense = nodes.length > 18;
+  const maxPairMatches = Math.max(1, ...pairs.map((pair) => pair.matches));
+  const mapLinePairs = pairs
+    .slice()
+    .sort((a, b) => a.matches - b.matches || Math.abs(a.avgGoalDiff) - Math.abs(b.avgGoalDiff));
+  const highlightPairs = [...sortGoodPairs(pairs).slice(0, 4), ...sortBadPairs(pairs).slice(0, 4)].filter((pair, index, array) => {
+    const key = pair.players.slice().sort().join("|");
+    return array.findIndex((item) => item.players.slice().sort().join("|") === key) === index;
+  });
   const [selectedName, setSelectedName] = useState<string | null>(null);
   const activeName = selectedName && nodes.some((node) => normalizeHistoryName(node.name) === normalizeHistoryName(selectedName))
     ? selectedName
@@ -1860,6 +1853,7 @@ function CompatibilityMapCard({
           <span className="inline-flex items-center gap-1 text-emerald-700"><span className="h-2 w-4 rounded-full bg-emerald-500" />좋음</span>
           <span className="inline-flex items-center gap-1 text-amber-700"><span className="h-2 w-4 rounded-full bg-amber-500" />보통</span>
           <span className="inline-flex items-center gap-1 text-rose-700"><span className="h-2 w-4 rounded-full bg-rose-500" />주의</span>
+          <span className="inline-flex items-center gap-1 text-slate-500"><span className="h-2 w-5 rounded-full bg-slate-300" />두께=경기 수</span>
         </div>
       </div>
 
@@ -1869,7 +1863,7 @@ function CompatibilityMapCard({
         <>
           <div className={`relative mt-3 overflow-hidden rounded-2xl bg-[radial-gradient(circle_at_center,_#ffffff_0,_#f8fafc_58%,_#eef2ff_100%)] ring-1 ring-slate-200 ${dense ? "h-96" : "h-72"}`}>
             <svg className="absolute inset-0 h-full w-full" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-              {pairs.map((pair) => {
+              {mapLinePairs.map((pair) => {
                 const from = nodeByName.get(normalizeHistoryName(pair.players[0]));
                 const to = nodeByName.get(normalizeHistoryName(pair.players[1]));
                 if (!from || !to) return null;
@@ -1881,9 +1875,9 @@ function CompatibilityMapCard({
                     x2={to.x}
                     y2={to.y}
                     stroke={compatibilityStroke(pair)}
-                    strokeWidth={Math.min(4.5, 1.4 + pair.matches * 0.18)}
+                    strokeWidth={compatibilityStrokeWidth(pair, maxPairMatches)}
                     strokeLinecap="round"
-                    opacity={compatibilityPairTone(pair) === "watch" ? 0.45 : 0.72}
+                    opacity={compatibilityStrokeOpacity(pair, maxPairMatches)}
                   />
                 );
               })}
@@ -1902,7 +1896,7 @@ function CompatibilityMapCard({
             ))}
           </div>
           <div className="mt-2 flex flex-wrap gap-1.5">
-            {pairs.slice(0, 8).map((pair) => (
+            {highlightPairs.map((pair) => (
               <span key={`${title}-${pair.players[0]}-${pair.players[1]}`} className={`rounded-full border px-2 py-1 text-[11px] font-black ${compatibilityChipClass(pair)}`}>
                 {pair.players[0]}-{pair.players[1]} {formatHistorySigned(pair.avgGoalDiff)}
               </span>
@@ -2168,7 +2162,6 @@ function HistoryOverallInsight({ insight, groupMap }: { insight: TeamHistoryInsi
   const allNames = historyInsightNames(insight);
   const goodPairs = topGoodPairs(insight, 10);
   const badPairs = topBadPairs(insight, 10);
-  const mapPairs = compatibilityMapPairs(insight, 6, 6, 16);
   const defenseMidPairs = betweenGroupPairs(insight, groupMap, "DEFENSE", "MID");
   const midAttackPairs = betweenGroupPairs(insight, groupMap, "MID", "ATTACK");
 
@@ -2194,9 +2187,8 @@ function HistoryOverallInsight({ insight, groupMap }: { insight: TeamHistoryInsi
 
       <CompatibilityMapCard
         title="전체 인원 궁합지도"
-        subtitle="현재 선택된 전체 인원에서 좋은 연결과 주의 연결만 핵심선으로 표시합니다."
-        pairs={mapPairs}
-        connectionPairs={allPairs}
+        subtitle="현재 선택된 전체 인원에서 같이 뛴 기록이 있는 모든 조합을 선으로 표시합니다."
+        pairs={allPairs}
         nodeNames={allNames}
         groupMap={groupMap}
       />
@@ -2219,7 +2211,6 @@ function HistoryOverallInsight({ insight, groupMap }: { insight: TeamHistoryInsi
 function HistoryTeamDetail({ title, insight, groupMap }: { title: string; insight: TeamHistoryInsight; groupMap: HistoryGroupMap }) {
   const allPairs = allHistoryPairs(insight);
   const allNames = historyInsightNames(insight);
-  const mapPairs = compatibilityMapPairs(insight, 5, 5, 14);
   const goodPairs = topGoodPairs(insight, 5);
   const badPairs = topBadPairs(insight, 5);
 
@@ -2238,9 +2229,8 @@ function HistoryTeamDetail({ title, insight, groupMap }: { title: string; insigh
 
       <CompatibilityMapCard
         title={`${title} 내부 궁합지도`}
-        subtitle={`현재 ${title} 선수끼리만 표시합니다.`}
-        pairs={mapPairs}
-        connectionPairs={allPairs}
+        subtitle={`현재 ${title} 선수끼리 같이 뛴 기록이 있는 모든 조합을 표시합니다.`}
+        pairs={allPairs}
         nodeNames={allNames}
         groupMap={groupMap}
       />
