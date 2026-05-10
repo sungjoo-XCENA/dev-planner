@@ -44,6 +44,27 @@ const emptyGuest: GuestForm = {
   memo: "",
 };
 
+function reassignPlayerGroup<T extends { primaryPosition: Player["primaryPosition"]; secondaryPositions: FieldPosition[] }>(
+  player: T,
+  newGroup: PositionGroup,
+): T & { assignedGroup: PositionGroup; assignmentReason: string; isPositionOverride: boolean } {
+  if (player.primaryPosition === "GK") {
+    return { ...player, assignedGroup: newGroup, assignmentReason: "주포지션 그룹 배정", isPositionOverride: false };
+  }
+  const primaryGroup = getPositionGroup(player.primaryPosition);
+  const reason = primaryGroup === newGroup
+    ? "주포지션 그룹 배정"
+    : hasGroup(player.secondaryPositions, newGroup)
+      ? "부포지션 그룹 배정"
+      : "인원 균형을 위한 포지션 변경";
+  return {
+    ...player,
+    assignedGroup: newGroup,
+    assignmentReason: reason,
+    isPositionOverride: primaryGroup !== newGroup,
+  };
+}
+
 function modeHelp(mode: PlannerMode): string {
   return mode === "BALANCE"
     ? "내부전은 24명 이상 권장, 22명부터 생성 가능합니다. 형광/주황팀 밸런스를 맞춥니다."
@@ -609,11 +630,27 @@ export default function Home() {
 
   function handleGroupTarget(targetTeam: "A" | "B", targetGroup: PositionGroup) {
     if (!teamResult || teamsConfirmed || !swapSelection) return;
-    if (swapSelection.team === targetTeam) return;
     const sourceTeamPlayers = swapSelection.team === "A" ? teamResult.teamA.players : teamResult.teamB.players;
     const targetTeamPlayers = targetTeam === "A" ? teamResult.teamA.players : teamResult.teamB.players;
     const sourcePlayer = sourceTeamPlayers.find((p) => p.id === swapSelection.playerId);
     if (!sourcePlayer) return;
+    if (swapSelection.team === targetTeam) {
+      if (sourcePlayer.assignedGroup === targetGroup) {
+        setSwapSelection(null);
+        return;
+      }
+      const updated = sourceTeamPlayers.map((p) => (p.id === sourcePlayer.id ? reassignPlayerGroup(p, targetGroup) : p));
+      try {
+        const next = targetTeam === "A"
+          ? summarizeTeams(updated, teamResult.teamB.players, relations)
+          : summarizeTeams(teamResult.teamA.players, updated, relations);
+        setTeamResult(next);
+        setSwapSelection(null);
+      } catch (error) {
+        setErrors([error instanceof Error ? error.message : String(error)]);
+      }
+      return;
+    }
     const candidates = targetTeamPlayers.filter((p) => p.assignedGroup === targetGroup);
     if (candidates.length === 0) return;
     const sourceComposite = sourcePlayer.attackScore + sourcePlayer.midScore + sourcePlayer.defenseScore + effectiveActivityScore(sourcePlayer);
@@ -2071,6 +2108,7 @@ function TeamCard({
     ? selectedPlayer.attackScore + selectedPlayer.midScore + selectedPlayer.defenseScore + effectiveActivityScore(selectedPlayer)
     : null;
   const showSwapHints = selection != null && selection.team !== team;
+  const showGroupTargets = selection != null && interactive;
   return (
     <div className={`overflow-hidden rounded-2xl border bg-white shadow-sm ${teamBorderClass(team)}`}>
       <div className={`h-2 ${teamAccentClass(team)}`} />
@@ -2082,20 +2120,23 @@ function TeamCard({
         {(["ATTACK", "MID", "DEFENSE"] as PositionGroup[]).map((g) => {
           const score = groupScores[g];
           const groupPlayers = players.filter((p) => p.assignedGroup === g);
+          const selectedSameTeam = selection?.team === team;
+          const canTargetGroup = showGroupTargets && (!selectedSameTeam || selectedPlayer?.assignedGroup !== g);
           return (
             <div key={g} className="mt-3">
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
-                  <GroupBadge group={g} />
-                  {showSwapHints && interactive && (
+                  {canTargetGroup ? (
                     <button
                       type="button"
-                      className="rounded-full bg-amber-200 px-2 py-0.5 text-[10px] font-bold text-amber-900 hover:bg-amber-300"
+                      className={`rounded-full transition hover:brightness-95 focus:outline-none focus:ring-2 ${selectedSameTeam ? "focus:ring-sky-300 ring-2 ring-sky-200" : "focus:ring-amber-300 ring-2 ring-amber-200"}`}
                       onClick={() => onGroupTarget(team, g)}
-                      title="선택한 선수를 이 그룹으로 보내기"
+                      title={selectedSameTeam ? "선택한 선수를 이 그룹으로 이동" : "선택한 선수를 이 그룹 선수와 교체"}
                     >
-                      여기로
+                      <GroupBadge group={g} />
                     </button>
+                  ) : (
+                    <GroupBadge group={g} />
                   )}
                 </div>
                 <span className="text-xs font-bold text-slate-600">합계 {formatScore(score)}</span>
