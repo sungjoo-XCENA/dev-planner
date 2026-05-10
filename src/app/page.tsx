@@ -1560,6 +1560,8 @@ function TeamHistoryInsightCard({ teamName, insight, groupMap }: { teamName: str
         <GoalDiffBar value={insight.avgGoalDiff} />
       </div>
 
+      <HistorySignalGrid insight={insight} groupMap={groupMap} compact />
+
       <div className="mt-3 grid gap-3 lg:grid-cols-2">
         <PairPillList title="좋은 궁합" pairs={insight.goodPairs.slice(0, 3)} empty="좋은 궁합 표본 부족" />
         <PairPillList title="주의 궁합" pairs={insight.cautionPairs.slice(0, 3)} empty="큰 주의 조합 없음" />
@@ -1627,6 +1629,85 @@ function GoalDiffBar({ value }: { value: number }) {
       <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-black text-emerald-600">+</span>
     </div>
   );
+}
+
+type HistorySignalTone = "good" | "caution" | "neutral";
+
+function HistorySignalGrid({ insight, groupMap, compact = false }: { insight: TeamHistoryInsight; groupMap: HistoryGroupMap; compact?: boolean }) {
+  const allPairs = allHistoryPairs(insight);
+  const attackPair = groupPairs(insight, groupMap, "ATTACK")
+    .sort((a, b) => b.points - a.points || b.goalsFor / b.matches - a.goalsFor / a.matches || b.avgGoalDiff - a.avgGoalDiff)[0];
+  const defensePair = groupPairs(insight, groupMap, "DEFENSE")
+    .sort((a, b) => a.goalsAgainst / a.matches - b.goalsAgainst / b.matches || b.avgGoalDiff - a.avgGoalDiff || b.matches - a.matches)[0];
+  const cautionPair = allPairs
+    .slice()
+    .sort((a, b) => a.avgGoalDiff - b.avgGoalDiff || b.goalsAgainst / b.matches - a.goalsAgainst / a.matches || b.losses - a.losses)[0];
+  const hotPlayer = insight.recentForms[0];
+  const safePlayer = insight.defenseForms[0];
+
+  const signals = [
+    attackPair ? {
+      title: "공격 연결",
+      main: `${attackPair.players[0]} · ${attackPair.players[1]}`,
+      sub: `${attackPair.matches}경기, 평균 득점 ${formatScore(attackPair.goalsFor / attackPair.matches)}, 관여 ${attackPair.points}`,
+      tone: attackPair.points > 0 || attackPair.avgGoalDiff > 0 ? "good" : "neutral",
+    } : null,
+    defensePair ? {
+      title: "수비 안정",
+      main: `${defensePair.players[0]} · ${defensePair.players[1]}`,
+      sub: `${defensePair.matches}경기, 평균 실점 ${formatScore(defensePair.goalsAgainst / defensePair.matches)}, 득실 ${formatHistorySigned(defensePair.avgGoalDiff)}`,
+      tone: defensePair.goalsAgainst / defensePair.matches <= 1.5 ? "good" : "neutral",
+    } : safePlayer ? {
+      title: "수비 안정",
+      main: safePlayer.name,
+      sub: `${safePlayer.matches}경기, CS ${safePlayer.cleanSheets}, 평균 실점 ${formatScore(safePlayer.avgGoalsAgainst)}`,
+      tone: safePlayer.trend === "hot" ? "good" : "neutral",
+    } : null,
+    cautionPair ? {
+      title: "주의 조합",
+      main: `${cautionPair.players[0]} · ${cautionPair.players[1]}`,
+      sub: `${cautionPair.matches}경기, 평균 실점 ${formatScore(cautionPair.goalsAgainst / cautionPair.matches)}, 득실 ${formatHistorySigned(cautionPair.avgGoalDiff)}`,
+      tone: cautionPair.avgGoalDiff < 0 ? "caution" : "neutral",
+    } : null,
+    hotPlayer ? {
+      title: "최근 폼",
+      main: hotPlayer.name,
+      sub: `최근 ${hotPlayer.matches}경기 ${hotPlayer.goals}골 ${hotPlayer.assists}도움, 득실 ${formatHistorySigned(hotPlayer.avgGoalDiff)}`,
+      tone: hotPlayer.trend === "caution" ? "caution" : hotPlayer.trend === "hot" ? "good" : "neutral",
+    } : null,
+  ].filter((signal): signal is { title: string; main: string; sub: string; tone: HistorySignalTone } => Boolean(signal));
+
+  if (signals.length === 0) {
+    return (
+      <div className="mt-3 rounded-xl bg-white px-3 py-2 text-xs font-semibold text-slate-500 ring-1 ring-slate-200">
+        아직 현재 구성원으로 뽑을 만한 조합 신호가 부족합니다.
+      </div>
+    );
+  }
+
+  return (
+    <div className={`mt-3 grid gap-2 ${compact ? "sm:grid-cols-2" : "sm:grid-cols-2 xl:grid-cols-4"}`}>
+      {signals.map((signal) => (
+        <HistorySignalCard key={`${signal.title}-${signal.main}`} signal={signal} />
+      ))}
+    </div>
+  );
+}
+
+function HistorySignalCard({ signal }: { signal: { title: string; main: string; sub: string; tone: HistorySignalTone } }) {
+  return (
+    <div className={`rounded-xl px-3 py-2 ring-1 ${historySignalClass(signal.tone)}`}>
+      <p className="text-[11px] font-black">{signal.title}</p>
+      <p className="mt-1 truncate text-sm font-black">{signal.main}</p>
+      <p className="mt-1 text-[11px] font-semibold leading-snug opacity-80">{signal.sub}</p>
+    </div>
+  );
+}
+
+function historySignalClass(tone: HistorySignalTone): string {
+  if (tone === "good") return "bg-emerald-50 text-emerald-950 ring-emerald-200";
+  if (tone === "caution") return "bg-rose-50 text-rose-950 ring-rose-200";
+  return "bg-white text-slate-800 ring-slate-200";
 }
 
 function PairPillList({ title, pairs, empty }: { title: string; pairs: HistoryPairInsight[]; empty: string }) {
@@ -1827,6 +1908,8 @@ function HistoryTeamDetail({ title, insight, groupMap }: { title: string; insigh
       <div className="mt-3">
         <GoalDiffBar value={insight.avgGoalDiff} />
       </div>
+
+      <HistorySignalGrid insight={insight} groupMap={groupMap} />
 
       <div className="mt-4">
         <p className="text-sm font-black text-slate-800">궁합 그래프</p>

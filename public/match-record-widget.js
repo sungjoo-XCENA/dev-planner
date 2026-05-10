@@ -86,6 +86,10 @@
       ".mrw-stat-row{display:grid;grid-template-columns:minmax(70px,1fr) auto auto;align-items:center;gap:6px;border:1px solid #e2e8f0;border-radius:14px;background:#fff;padding:7px}",
       ".mrw-stat-name{min-width:0;display:flex;align-items:center;gap:6px;flex-wrap:wrap;color:#0f172a;font-size:13px;font-weight:950}",
       ".mrw-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
+      ".mrw-player-remove{border:0;border-radius:999px;background:#fee2e2;color:#991b1b;padding:3px 7px;font-size:10px;font-weight:950;line-height:1;cursor:pointer}",
+      ".mrw-add-player{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px;border-top:1px solid #eef2f7;padding:10px;background:#f8fafc}",
+      ".mrw-add-player input{min-width:0;border:1px solid #cbd5e1;border-radius:12px;background:#fff;padding:8px 10px;color:#0f172a;font-size:12px;font-weight:850}",
+      ".mrw-add-player button{border:0;border-radius:12px;background:#e2e8f0;color:#0f172a;padding:0 10px;font-size:12px;font-weight:950;cursor:pointer}",
       ".mrw-role{display:inline-flex;align-items:center;border-radius:999px;padding:2px 6px;font-size:10px;font-weight:950;line-height:1.1}",
       ".mrw-role-coach{background:#dff9fb;color:#0e7490}",
       ".mrw-role-manager{background:#ede9fe;color:#6d28d9}",
@@ -121,7 +125,7 @@
       ".mrw-modal-foot{display:flex;gap:8px;justify-content:flex-end;background:#fff;border-top:1px solid #e2e8f0;padding:12px 14px}",
       ".mrw-icon-close{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;border:0;border-radius:999px;background:#e2e8f0;color:#334155;font-size:20px;font-weight:950;line-height:1;cursor:pointer}",
       ".mrw-empty{color:#94a3b8;font-size:12px;font-weight:800}",
-      "@media(max-width:760px){.mrw-card{padding:14px;border-radius:18px}.mrw-title{font-size:18px}.mrw-meta{grid-template-columns:1fr}.mrw-wide{grid-column:1/-1}.mrw-summary{grid-template-columns:1fr}.mrw-summary-item:last-child{grid-column:auto}.mrw-field{max-width:100%;overflow:hidden}.mrw-field input,.mrw-field select,.mrw-field textarea,.mrw-fixed{min-height:42px;width:100%;max-width:100%;min-width:0;min-inline-size:0}.mrw-field input[type=date],.mrw-field input[type=time]{appearance:none;-webkit-appearance:none;text-align:left}.mrw-mode-head{align-items:stretch}.mrw-scope{width:100%}.mrw-scope select{flex:1}.mrw-layout{grid-template-columns:1fr}.mrw-scoreboard{padding:10px}.mrw-score-num{font-size:40px}.mrw-score-row{grid-template-columns:1fr;gap:10px}.mrw-side{min-height:76px;padding:12px 38px}.mrw-team-name{font-size:12px}.mrw-score-minus{right:6px;top:6px;width:28px;height:28px;font-size:17px}.mrw-stats{grid-template-columns:1fr}.mrw-stat-list{gap:5px}.mrw-stat-row{grid-template-columns:minmax(68px,1fr) auto auto;gap:4px;padding:6px}.mrw-stat-name{font-size:12px;line-height:1.2}.mrw-name{white-space:normal}.mrw-role{padding:1px 5px;font-size:9px}.mrw-counter{grid-template-columns:18px 20px 14px 20px;gap:1px;padding:3px;min-width:76px}.mrw-counter-label{font-size:9px;line-height:1}.mrw-counter button{width:20px;height:20px;font-size:12px}.mrw-counter-value{font-size:12px}.mrw-add-team{grid-template-columns:1fr}.mrw-add-team button{min-height:38px}.mrw-events{max-height:none}.mrw-actions .mrw-button{flex:1 1 100%}.mrw-modal-backdrop{align-items:flex-end;padding:0}.mrw-modal{width:100%;border-radius:22px 22px 0 0;max-height:84vh}}",
+      "@media(max-width:760px){.mrw-card{padding:14px;border-radius:18px}.mrw-title{font-size:18px}.mrw-meta{grid-template-columns:1fr}.mrw-wide{grid-column:1/-1}.mrw-summary{grid-template-columns:1fr}.mrw-summary-item:last-child{grid-column:auto}.mrw-field{max-width:100%;overflow:hidden}.mrw-field input,.mrw-field select,.mrw-field textarea,.mrw-fixed{min-height:42px;width:100%;max-width:100%;min-width:0;min-inline-size:0}.mrw-field input[type=date],.mrw-field input[type=time]{appearance:none;-webkit-appearance:none;text-align:left}.mrw-mode-head{align-items:stretch}.mrw-scope{width:100%}.mrw-scope select{flex:1}.mrw-layout{grid-template-columns:1fr}.mrw-scoreboard{padding:10px}.mrw-score-num{font-size:40px}.mrw-score-row{grid-template-columns:1fr;gap:10px}.mrw-side{min-height:76px;padding:12px 38px}.mrw-team-name{font-size:12px}.mrw-score-minus{right:6px;top:6px;width:28px;height:28px;font-size:17px}.mrw-stats{grid-template-columns:1fr}.mrw-stat-list{gap:5px}.mrw-stat-row{grid-template-columns:minmax(68px,1fr) auto auto;gap:4px;padding:6px}.mrw-stat-name{font-size:12px;line-height:1.2}.mrw-name{white-space:normal}.mrw-role{padding:1px 5px;font-size:9px}.mrw-player-remove{padding:3px 6px;font-size:9px}.mrw-counter{grid-template-columns:18px 20px 14px 20px;gap:1px;padding:3px;min-width:76px}.mrw-counter-label{font-size:9px;line-height:1}.mrw-counter button{width:20px;height:20px;font-size:12px}.mrw-counter-value{font-size:12px}.mrw-add-team,.mrw-add-player{grid-template-columns:1fr}.mrw-add-team button,.mrw-add-player button{min-height:38px}.mrw-events{max-height:none}.mrw-actions .mrw-button{flex:1 1 100%}.mrw-modal-backdrop{align-items:flex-end;padding:0}.mrw-modal{width:100%;border-radius:22px 22px 0 0;max-height:84vh}}",
     ].join("\n");
     document.head.appendChild(style);
   }
@@ -631,6 +635,47 @@
     return { A: [], B: [] };
   }
 
+  function loadedPlayersFromRecords(records) {
+    return {
+      A: teamPlayers(records, "A"),
+      B: teamPlayers(records, "B"),
+    };
+  }
+
+  function ensureLoadedPlayers() {
+    if (!state.loadedPlayers) state.loadedPlayers = emptyLoadedPlayers();
+    if (!Array.isArray(state.loadedPlayers.A)) state.loadedPlayers.A = [];
+    if (!Array.isArray(state.loadedPlayers.B)) state.loadedPlayers.B = [];
+    return state.loadedPlayers;
+  }
+
+  function addLoadedPlayer(team, rawName) {
+    var name = playerName(rawName);
+    if (!name || (team !== "A" && team !== "B")) return;
+    var loaded = ensureLoadedPlayers();
+    loaded[team] = uniqueNames((loaded[team] || []).concat(name));
+    state.currentLineupOverride = false;
+    state.status = name + " 선수를 " + teamLabel(team) + "에 추가했습니다.";
+    renderPanel();
+  }
+
+  function removeLoadedPlayer(team, rawName) {
+    var name = playerName(rawName);
+    if (!name || (team !== "A" && team !== "B")) return;
+    var loaded = ensureLoadedPlayers();
+    loaded[team] = (loaded[team] || []).filter(function (player) { return playerName(player) !== name; });
+    Object.keys(state.summaryStats).forEach(function (key) {
+      var stat = state.summaryStats[key];
+      if (stat && stat.team === team && playerName(stat.player) === name) delete state.summaryStats[key];
+    });
+    state.events = state.events.filter(function (event) {
+      return !(event && event.team === team && (playerName(event.scorer) === name || playerName(event.assist) === name));
+    });
+    state.currentLineupOverride = false;
+    state.status = name + " 선수를 제외했습니다.";
+    renderPanel();
+  }
+
   function resetRecordEntryState() {
     state.events = [];
     state.summaryStats = Object.create(null);
@@ -836,8 +881,8 @@
     var away = form.matchKind === "SELF" ? "DevUtd 형광" : (form.awayTeamName || firstAwayTeam());
     return [
       "<div class=\"mrw-meta\">",
-      fieldInput("경기일", "date", "date", form.date),
-      "<div class=\"mrw-field\"><label>경기 구분</label><div class=\"mrw-segment\"><button type=\"button\" data-mrw-kind=\"SELF\" aria-pressed=\"" + (form.matchKind === "SELF") + "\">자체전</button><button type=\"button\" data-mrw-kind=\"MATCH\" aria-pressed=\"" + (form.matchKind === "MATCH") + "\">A매치</button></div></div>",
+      fieldInput("경기일", "date", "date", form.date, state.editingRecordOnly),
+      renderMatchKindControl(form.matchKind),
       fieldInput("시작 시간", "startTime", "time", form.startTime || "20:00"),
       "<div class=\"mrw-field\"><label>경기 시간</label><div class=\"mrw-duration\"><button type=\"button\" data-mrw-duration=\"2\" aria-pressed=\"" + (form.duration === "2") + "\">2시간</button><button type=\"button\" data-mrw-duration=\"3\" aria-pressed=\"" + (form.duration === "3") + "\">3시간</button></div></div>",
       renderVenueSelect(form.venueName),
@@ -848,8 +893,15 @@
     ].join("");
   }
 
-  function fieldInput(label, key, type, value) {
-    return "<div class=\"mrw-field\"><label>" + label + "</label><input data-mrw=\"" + key + "\" type=\"" + type + "\" value=\"" + escapeHtml(value) + "\" /></div>";
+  function renderMatchKindControl(matchKind) {
+    if (state.editingRecordOnly) {
+      return "<div class=\"mrw-field\"><label>경기 구분</label><div class=\"mrw-fixed\">" + (matchKind === "MATCH" ? "A매치" : "자체전") + "</div></div>";
+    }
+    return "<div class=\"mrw-field\"><label>경기 구분</label><div class=\"mrw-segment\"><button type=\"button\" data-mrw-kind=\"SELF\" aria-pressed=\"" + (matchKind === "SELF") + "\">자체전</button><button type=\"button\" data-mrw-kind=\"MATCH\" aria-pressed=\"" + (matchKind === "MATCH") + "\">A매치</button></div></div>";
+  }
+
+  function fieldInput(label, key, type, value, readonly) {
+    return "<div class=\"mrw-field\"><label>" + label + "</label><input data-mrw=\"" + key + "\" type=\"" + type + "\" value=\"" + escapeHtml(value) + "\"" + (readonly ? " readonly" : "") + " /></div>";
   }
 
   function renderVenueSelect(selected) {
@@ -922,19 +974,29 @@
       "<div class=\"mrw-stat-team\"><div class=\"mrw-stat-team-title\"><span>" + teamLabel(team) + "</span><span class=\"mrw-stat-total\">골 " + totals.goals + " · 도움 " + totals.assists + "</span></div>",
       "<div class=\"mrw-stat-list\">",
       players.length ? players.map(function (player) { return renderPlayerStat(team, player, quarter); }).join("") : "<div class=\"mrw-empty\">선수 정보 없음</div>",
-      "</div></div>",
+      "</div>",
+      renderAddPlayer(team),
+      "</div>",
     ].join("");
   }
 
   function renderPlayerStat(team, player, quarter) {
     player = playerName(player);
     var stat = state.summaryStats[statKey(team, player, quarter)] || { goals: 0, assists: 0 };
+    var remove = state.editingRecordOnly
+      ? "<button type=\"button\" class=\"mrw-player-remove\" data-mrw-remove-player-team=\"" + team + "\" data-mrw-remove-player=\"" + escapeHtml(player) + "\">제외</button>"
+      : "";
     return [
-      "<div class=\"mrw-stat-row\"><div class=\"mrw-stat-name\"><span class=\"mrw-name\">" + escapeHtml(player) + "</span>" + renderRole(player) + "</div>",
+      "<div class=\"mrw-stat-row\"><div class=\"mrw-stat-name\"><span class=\"mrw-name\">" + escapeHtml(player) + "</span>" + renderRole(player) + remove + "</div>",
       renderCounter(team, player, "goals", "골", stat.goals, quarter),
       renderCounter(team, player, "assists", "도움", stat.assists, quarter),
       "</div>",
     ].join("");
+  }
+
+  function renderAddPlayer(team) {
+    if (!state.editingRecordOnly || state.recordLoading) return "";
+    return "<div class=\"mrw-add-player\"><input data-mrw-add-player-name=\"" + team + "\" type=\"text\" placeholder=\"" + teamLabel(team) + " 선수 추가\" /><button type=\"button\" data-mrw-add-player-team=\"" + team + "\">추가</button></div>";
   }
 
   function renderRole(player) {
@@ -1044,6 +1106,29 @@
         );
       });
     });
+    Array.prototype.forEach.call(panel.querySelectorAll("[data-mrw-add-player-team]"), function (button) {
+      button.addEventListener("click", function () {
+        var team = button.getAttribute("data-mrw-add-player-team") === "B" ? "B" : "A";
+        var input = panel.querySelector("[data-mrw-add-player-name=\"" + team + "\"]");
+        addLoadedPlayer(team, input && input.value);
+      });
+    });
+    Array.prototype.forEach.call(panel.querySelectorAll("[data-mrw-add-player-name]"), function (input) {
+      input.addEventListener("keydown", function (event) {
+        if (event.key !== "Enter") return;
+        event.preventDefault();
+        var team = input.getAttribute("data-mrw-add-player-name") === "B" ? "B" : "A";
+        addLoadedPlayer(team, input.value);
+      });
+    });
+    Array.prototype.forEach.call(panel.querySelectorAll("[data-mrw-remove-player]"), function (button) {
+      button.addEventListener("click", function () {
+        removeLoadedPlayer(
+          button.getAttribute("data-mrw-remove-player-team") === "B" ? "B" : "A",
+          button.getAttribute("data-mrw-remove-player") || "",
+        );
+      });
+    });
     var addTeam = panel.querySelector("[data-mrw-action=add-team]");
     if (addTeam) addTeam.addEventListener("click", addAwayTeamFromPanel);
     var newAwayTeam = panel.querySelector("[data-mrw=newAwayTeam]");
@@ -1123,14 +1208,25 @@
   function refreshCurrentLineup() {
     var panel = document.getElementById(PANEL_ID);
     var currentForm = formState(panel);
+    var records = parseQuarterCards();
+    var editingMatchId = state.editingMatchId;
+    if (editingMatchId) {
+      var ok = window.confirm("현재 라인업 기준으로 구성원을 다시 채울까요?\n기존 개인기록과 팀 스코어 입력값은 초기화됩니다.");
+      if (!ok) return;
+    }
     state.recordLoadSeq += 1;
     resetRecordEntryState();
-    state.currentLineupOverride = true;
+    state.loadedPlayers = loadedPlayersFromRecords(records);
+    state.editingRecordOnly = true;
+    state.editingMatchId = editingMatchId;
+    state.currentLineupOverride = false;
     state.loadedForm = currentForm;
     state.matchKind = currentForm.matchKind;
     state.editModalOpen = false;
     state.recordLoading = false;
-    state.status = "현재 라인업 선수 기준으로 갱신했습니다.";
+    state.status = (state.loadedPlayers.A.length || state.loadedPlayers.B.length)
+      ? "현재 라인업 선수 기준으로 갱신했습니다."
+      : "현재 라인업 선수를 찾지 못했습니다. 팀별 선수 추가로 구성원을 입력해주세요.";
     removeExistingPanel();
     renderPanel();
   }
