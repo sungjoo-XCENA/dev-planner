@@ -891,6 +891,7 @@ export default function Home() {
           matchKind="SELF"
           records={balanceRecordEntryRecords(teamResult)}
           staffRoles={balanceRecordStaffRoles(teamResult)}
+          playerOptions={fieldPlayers.map((player) => player.name)}
           onClose={() => setShowRecordEntry(false)}
         />
       )}
@@ -901,6 +902,7 @@ export default function Home() {
           matchKind="MATCH"
           records={matchRecordEntryRecords(matchResult)}
           staffRoles={matchRecordStaffRoles(matchResult, matchFieldPlayers, dedicatedGks)}
+          playerOptions={[...matchFieldPlayers.map((player) => player.name), ...dedicatedGks.map((gk) => gk.name)]}
           awayTeamName="상대팀"
           onClose={() => setShowRecordEntry(false)}
         />
@@ -944,6 +946,7 @@ function RecordEntryAnchor({
   matchKind,
   records,
   staffRoles,
+  playerOptions,
   awayTeamName,
   onClose,
 }: {
@@ -952,6 +955,7 @@ function RecordEntryAnchor({
   matchKind: "SELF" | "MATCH";
   records: RecordEntryRecord[];
   staffRoles: Partial<Record<string, StaffRole>>;
+  playerOptions?: string[];
   awayTeamName?: string;
   onClose: () => void;
 }) {
@@ -961,6 +965,7 @@ function RecordEntryAnchor({
     awayTeamName,
     records,
     staffRoles,
+    playerOptions,
   };
   return (
     <section id="lineup-result" data-mrw-standalone="true" className="mb-6 rounded-3xl bg-white p-4 shadow-sm sm:p-6">
@@ -1420,23 +1425,6 @@ function TeamResultView({
           groupScores={{ ATTACK: s.attackScoreB, MID: s.midScoreB, DEFENSE: s.defenseScoreB }}
         />
       </div>
-      {history && (
-        <div className="mt-4">
-          {isHistoryStale && (
-            <div className="mb-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">
-              팀 구성이 바뀌었습니다. 현재 A/B 기준으로 보려면 히스토리 다시 읽기를 눌러주세요.
-            </div>
-          )}
-          <div className={`grid gap-4 md:grid-cols-2 ${isHistoryStale ? "opacity-70" : ""}`}>
-            <TeamHistoryInsightCard teamName={formatTeamName("A")} insight={history.teamA} groupMap={teamAHistoryGroups} />
-            <TeamHistoryInsightCard teamName={formatTeamName("B")} insight={history.teamB} groupMap={teamBHistoryGroups} />
-          </div>
-          <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
-            <span>{history.seasons.join(", ")} 시즌 {history.matchCount}경기 기준 · {historySourceLabel(history.source)}</span>
-            {history.warnings.length > 0 && <span className="font-semibold text-amber-700">주의 {history.warnings.length}개</span>}
-          </div>
-        </div>
-      )}
       <p className="mt-4 text-xs text-slate-500"><span className="font-bold">*</span> 부포지션으로 배정된 선수 · <span className="font-bold">**</span> 인원 균형을 위해 주·부와 무관한 포지션으로 강제 배정된 선수 · <span className="inline-flex rounded-md border border-fuchsia-200 bg-fuchsia-50 px-1 py-0 text-[10px] font-black leading-none text-fuchsia-700">멀티</span> 공격/미드/수비 중 7점 이상이 2개 이상인 선수</p>
       {variantCount > 1 && !confirmed && (
         <div className="mt-5 flex flex-wrap items-center gap-2 rounded-2xl bg-slate-50 px-3 py-3">

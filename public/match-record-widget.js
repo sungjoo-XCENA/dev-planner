@@ -429,6 +429,12 @@
       }, []));
   }
 
+  function recordPlayers(records) {
+    return uniqueNames(records.reduce(function (acc, record) {
+      return acc.concat(record.attack || [], record.mid || [], record.defense || [], record.gk || [], record.bench || []);
+    }, []));
+  }
+
   function normalizeLoadedPlayers(players) {
     var source = players && typeof players === "object" ? players : {};
     var loaded = {
@@ -452,6 +458,27 @@
       return rawName;
     }
     return "";
+  }
+
+  function playerSearchOptions(records, team) {
+    var data = standaloneData();
+    var loaded = state.loadedPlayers || emptyLoadedPlayers();
+    var currentTeamPlayers = teamPlayers(records, team);
+    var currentLookup = Object.create(null);
+    currentTeamPlayers.forEach(function (name) { currentLookup[name] = true; });
+    var candidates = []
+      .concat(Array.isArray(data.playerOptions) ? data.playerOptions : [])
+      .concat(recordPlayers(records))
+      .concat(loaded.A || [], loaded.B || [])
+      .concat(summaryStatsArray().map(function (stat) { return stat.player; }))
+      .concat(state.events.reduce(function (acc, event) {
+        return acc.concat(event.scorer || [], event.assist || []);
+      }, []))
+      .concat(Object.keys(state.roles))
+      .concat(Object.keys(KNOWN_STAFF_ROLES));
+    return uniqueNames(candidates).filter(function (name) { return !currentLookup[name]; }).sort(function (a, b) {
+      return a.localeCompare(b, "ko");
+    });
   }
 
   function displayRecords(fallbackRecords) {
@@ -975,7 +1002,7 @@
       "<div class=\"mrw-stat-list\">",
       players.length ? players.map(function (player) { return renderPlayerStat(team, player, quarter); }).join("") : "<div class=\"mrw-empty\">선수 정보 없음</div>",
       "</div>",
-      renderAddPlayer(team),
+      renderAddPlayer(team, playerSearchOptions(records, team)),
       "</div>",
     ].join("");
   }
@@ -994,9 +1021,13 @@
     ].join("");
   }
 
-  function renderAddPlayer(team) {
+  function renderAddPlayer(team, options) {
     if (!state.editingRecordOnly || state.recordLoading) return "";
-    return "<div class=\"mrw-add-player\"><input data-mrw-add-player-name=\"" + team + "\" type=\"text\" placeholder=\"" + teamLabel(team) + " 선수 추가\" /><button type=\"button\" data-mrw-add-player-team=\"" + team + "\">추가</button></div>";
+    var listId = "mrw-player-options-" + team;
+    var datalist = (options || []).length > 0
+      ? "<datalist id=\"" + listId + "\">" + options.map(function (name) { return "<option value=\"" + escapeHtml(name) + "\"></option>"; }).join("") + "</datalist>"
+      : "";
+    return "<div class=\"mrw-add-player\"><input data-mrw-add-player-name=\"" + team + "\" type=\"text\" list=\"" + listId + "\" autocomplete=\"off\" placeholder=\"" + teamLabel(team) + " 선수 검색/추가\" /><button type=\"button\" data-mrw-add-player-team=\"" + team + "\">추가</button>" + datalist + "</div>";
   }
 
   function renderRole(player) {
