@@ -17,7 +17,7 @@ import { formatTeamName } from "@/lib/teamLabels";
 import { extractStaffRole } from "@/lib/staffRoles";
 import { INJURY_ACTIVITY_RATE, effectiveActivityScore, formatScore, hasInjury } from "@/lib/injury";
 import { isMultiPositionPlayer, multiPositionGroups } from "@/lib/multiPosition";
-import { makeHistoryInsightKey } from "@/lib/historyInsights";
+import { makeHistoryInsightKey, normalizeHistoryName } from "@/lib/historyInsights";
 
 const SCORE_OPTIONS = Array.from({ length: 10 }, (_, index) => index + 1);
 type PlannerMode = "BALANCE" | "MATCH";
@@ -1276,6 +1276,8 @@ function TeamResultView({
   const [historyError, setHistoryError] = useState<string | null>(null);
   const teamAHistoryNames = useMemo(() => historyNames(result.teamA.players), [result.teamA.players]);
   const teamBHistoryNames = useMemo(() => historyNames(result.teamB.players), [result.teamB.players]);
+  const teamAHistoryGroups = useMemo(() => historyGroupMap(result.teamA.players), [result.teamA.players]);
+  const teamBHistoryGroups = useMemo(() => historyGroupMap(result.teamB.players), [result.teamB.players]);
   const historyKey = useMemo(
     () => makeHistoryInsightKey(teamAHistoryNames, teamBHistoryNames, [2025, 2026]),
     [teamAHistoryNames, teamBHistoryNames],
@@ -1426,8 +1428,8 @@ function TeamResultView({
             </div>
           )}
           <div className={`grid gap-4 md:grid-cols-2 ${isHistoryStale ? "opacity-70" : ""}`}>
-            <TeamHistoryInsightCard teamName={formatTeamName("A")} insight={history.teamA} />
-            <TeamHistoryInsightCard teamName={formatTeamName("B")} insight={history.teamB} />
+            <TeamHistoryInsightCard teamName={formatTeamName("A")} insight={history.teamA} groupMap={teamAHistoryGroups} />
+            <TeamHistoryInsightCard teamName={formatTeamName("B")} insight={history.teamB} groupMap={teamBHistoryGroups} />
           </div>
           <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
             <span>{history.seasons.join(", ")} 시즌 {history.matchCount}경기 기준 · {historySourceLabel(history.source)}</span>
@@ -1462,7 +1464,12 @@ function TeamResultView({
         )}
       </div>
       {historyOpen && history && (
-        <HistoryInsightModal history={history} onClose={() => setHistoryOpen(false)} stale={isHistoryStale} />
+        <HistoryInsightModal
+          history={history}
+          onClose={() => setHistoryOpen(false)}
+          stale={isHistoryStale}
+          groupMaps={{ A: teamAHistoryGroups, B: teamBHistoryGroups }}
+        />
       )}
     </section>
   );
@@ -1470,6 +1477,17 @@ function TeamResultView({
 
 function historyNames(players: TeamBalanceResult["teamA"]["players"]): string[] {
   return players.map((player) => player.name.trim()).filter(Boolean);
+}
+
+type HistoryGroupMap = Map<string, PositionGroup>;
+
+function historyGroupMap(players: TeamBalanceResult["teamA"]["players"]): HistoryGroupMap {
+  const map: HistoryGroupMap = new Map();
+  players.forEach((player) => {
+    const key = normalizeHistoryName(player.name);
+    if (key) map.set(key, player.assignedGroup);
+  });
+  return map;
 }
 
 function historySourceLabel(source: HistoryInsightResponse["source"]): string {
@@ -1507,8 +1525,14 @@ function trendClass(trend: HistoryPlayerForm["trend"]): string {
   return "bg-slate-400";
 }
 
-function TeamHistoryInsightCard({ teamName, insight }: { teamName: string; insight: TeamHistoryInsight }) {
+function TeamHistoryInsightCard({ teamName, insight, groupMap }: { teamName: string; insight: TeamHistoryInsight; groupMap: HistoryGroupMap }) {
   const hasPairs = insight.goodPairs.length > 0 || insight.cautionPairs.length > 0 || insight.samplePairs.length > 0;
+  const attackPairs = groupPairs(insight, groupMap, "ATTACK").sort((a, b) => b.points - a.points || b.avgGoalDiff - a.avgGoalDiff || b.matches - a.matches);
+  const badPairs = allHistoryPairs(insight).sort((a, b) => a.avgGoalDiff - b.avgGoalDiff || b.losses - a.losses || b.matches - a.matches);
+  const impactPairs = allHistoryPairs(insight)
+    .filter((pair) => pair.matches >= 1)
+    .sort((a, b) => Math.abs(b.avgGoalDiff) - Math.abs(a.avgGoalDiff) || b.matches - a.matches)
+    .slice(0, 5);
 
   return (
     <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
@@ -1537,6 +1561,16 @@ function TeamHistoryInsightCard({ teamName, insight }: { teamName: string; insig
       <div className="mt-3 grid gap-3 lg:grid-cols-2">
         <PairPillList title="좋은 궁합" pairs={insight.goodPairs.slice(0, 3)} empty="좋은 궁합 표본 부족" />
         <PairPillList title="주의 궁합" pairs={insight.cautionPairs.slice(0, 3)} empty="큰 주의 조합 없음" />
+      </div>
+
+      <div className="mt-3">
+        <p className="text-xs font-black text-slate-600">궁합 그래프</p>
+        <PairImpactBars pairs={impactPairs} />
+      </div>
+
+      <div className="mt-3 grid gap-3 lg:grid-cols-2">
+        <PairPillList title="공격 조합" pairs={attackPairs.slice(0, 3)} empty="공격끼리 표본 부족" />
+        <PairPillList title="성적 안 좋은 궁합" pairs={badPairs.slice(0, 3)} empty="나쁜 궁합 표본 없음" />
       </div>
 
       <div className="mt-3">
@@ -1616,6 +1650,52 @@ function PairPillList({ title, pairs, empty }: { title: string; pairs: HistoryPa
   );
 }
 
+function allHistoryPairs(insight: TeamHistoryInsight): HistoryPairInsight[] {
+  const seen = new Set<string>();
+  return [...insight.goodPairs, ...insight.cautionPairs, ...insight.samplePairs].filter((pair) => {
+    const key = pair.players.slice().sort().join("|");
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function groupPairs(insight: TeamHistoryInsight, groupMap: HistoryGroupMap, group: PositionGroup): HistoryPairInsight[] {
+  return allHistoryPairs(insight).filter((pair) => (
+    groupMap.get(normalizeHistoryName(pair.players[0])) === group
+    && groupMap.get(normalizeHistoryName(pair.players[1])) === group
+  ));
+}
+
+function PairImpactBars({ pairs }: { pairs: HistoryPairInsight[] }) {
+  if (pairs.length === 0) {
+    return <p className="mt-1 rounded-xl bg-white px-3 py-2 text-xs font-semibold text-slate-400 ring-1 ring-slate-200">궁합 표본 부족</p>;
+  }
+
+  return (
+    <div className="mt-1 space-y-1.5">
+      {pairs.map((pair) => {
+        const positive = pair.avgGoalDiff >= 0;
+        const width = Math.min(100, Math.max(10, Math.abs(pair.avgGoalDiff) * 34));
+        return (
+          <div key={`${pair.players[0]}-${pair.players[1]}-${pair.matches}`} className="rounded-xl bg-white px-3 py-2 ring-1 ring-slate-200">
+            <div className="flex items-center justify-between gap-2 text-xs">
+              <span className="truncate font-black text-slate-800">{pair.players[0]}-{pair.players[1]}</span>
+              <span className={`font-mono font-black ${positive ? "text-emerald-600" : "text-rose-600"}`}>{formatHistorySigned(pair.avgGoalDiff)}</span>
+            </div>
+            <div className="mt-1 flex items-center gap-2">
+              <div className="h-2 flex-1 rounded-full bg-slate-100">
+                <div className={`h-2 rounded-full ${positive ? "bg-emerald-500" : "bg-rose-500"}`} style={{ width: `${width}%` }} />
+              </div>
+              <span className="w-16 text-right text-[10px] font-bold text-slate-500">{pair.matches}경기</span>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function RecentFormBars({ forms }: { forms: HistoryPlayerForm[] }) {
   const maxPoints = Math.max(1, ...forms.map((form) => form.points));
 
@@ -1674,10 +1754,12 @@ function HistoryInsightModal({
   history,
   onClose,
   stale,
+  groupMaps,
 }: {
   history: HistoryInsightResponse;
   onClose: () => void;
   stale: boolean;
+  groupMaps: Record<"A" | "B", HistoryGroupMap>;
 }) {
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-950/50 px-3 py-6 backdrop-blur-sm">
@@ -1711,8 +1793,8 @@ function HistoryInsightModal({
             </div>
           )}
           <div className="grid gap-4 lg:grid-cols-2">
-            <HistoryTeamDetail title={formatTeamName("A")} insight={history.teamA} />
-            <HistoryTeamDetail title={formatTeamName("B")} insight={history.teamB} />
+            <HistoryTeamDetail title={formatTeamName("A")} insight={history.teamA} groupMap={groupMaps.A} />
+            <HistoryTeamDetail title={formatTeamName("B")} insight={history.teamB} groupMap={groupMaps.B} />
           </div>
         </div>
       </div>
@@ -1720,7 +1802,16 @@ function HistoryInsightModal({
   );
 }
 
-function HistoryTeamDetail({ title, insight }: { title: string; insight: TeamHistoryInsight }) {
+function HistoryTeamDetail({ title, insight, groupMap }: { title: string; insight: TeamHistoryInsight; groupMap: HistoryGroupMap }) {
+  const attackPairs = groupPairs(insight, groupMap, "ATTACK").sort((a, b) => b.points - a.points || b.avgGoalDiff - a.avgGoalDiff || b.matches - a.matches);
+  const midPairs = groupPairs(insight, groupMap, "MID").sort((a, b) => b.avgGoalDiff - a.avgGoalDiff || b.matches - a.matches);
+  const defensePairs = groupPairs(insight, groupMap, "DEFENSE").sort((a, b) => b.avgGoalDiff - a.avgGoalDiff || b.matches - a.matches);
+  const badPairs = allHistoryPairs(insight).sort((a, b) => a.avgGoalDiff - b.avgGoalDiff || b.losses - a.losses || b.matches - a.matches);
+  const impactPairs = allHistoryPairs(insight)
+    .filter((pair) => pair.matches >= 1)
+    .sort((a, b) => Math.abs(b.avgGoalDiff) - Math.abs(a.avgGoalDiff) || b.matches - a.matches)
+    .slice(0, 8);
+
   return (
     <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1734,9 +1825,18 @@ function HistoryTeamDetail({ title, insight }: { title: string; insight: TeamHis
         <GoalDiffBar value={insight.avgGoalDiff} />
       </div>
 
+      <div className="mt-4">
+        <p className="text-sm font-black text-slate-800">궁합 그래프</p>
+        <PairImpactBars pairs={impactPairs} />
+      </div>
+
       <HistoryPairTable title="좋은 궁합" pairs={insight.goodPairs} empty="좋은 궁합으로 볼 만큼 누적된 조합이 아직 없습니다." />
       <HistoryPairTable title="주의 궁합" pairs={insight.cautionPairs} empty="현재 팀 안에서 크게 경계할 누적 조합은 없습니다." />
       <HistoryPairTable title="표본 있는 조합" pairs={insight.samplePairs} empty="과거 같은 편 표본이 거의 없습니다." />
+      <HistoryPairTable title="공격끼리 좋은 조합" pairs={attackPairs.slice(0, 8)} empty="현재 공격 그룹끼리 같이 뛴 표본이 아직 부족합니다." />
+      <HistoryPairTable title="미드끼리 좋은 조합" pairs={midPairs.slice(0, 8)} empty="현재 미드 그룹끼리 같이 뛴 표본이 아직 부족합니다." />
+      <HistoryPairTable title="수비끼리 좋은 조합" pairs={defensePairs.slice(0, 8)} empty="현재 수비 그룹끼리 같이 뛴 표본이 아직 부족합니다." />
+      <HistoryPairTable title="성적 안 좋은 궁합" pairs={badPairs.slice(0, 8)} empty="성적이 눈에 띄게 나쁜 궁합 표본은 아직 없습니다." />
 
       <div className="mt-4">
         <div className="flex items-center justify-between gap-2">
