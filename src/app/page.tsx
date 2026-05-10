@@ -5,7 +5,7 @@ import type { DedicatedGoalkeeper, FieldPosition, Player, PositionGroup, StaffRo
 import type { PlayerRelation } from "@/types/relation";
 import type { LineupResult, LineupRole, Quarter } from "@/types/lineup";
 import type { TeamBalanceResult, TeamName } from "@/types/team";
-import type { HistoryInsightResponse, HistoryPairInsight, HistoryPlayerForm, TeamHistoryInsight } from "@/types/history";
+import type { HistoryDefenseForm, HistoryInsightResponse, HistoryPairInsight, HistoryPlayerForm, TeamHistoryInsight } from "@/types/history";
 import { appConfig } from "@/config/appConfig";
 import { loadPlayersFromCsv } from "@/lib/loadPlayersFromCsv";
 import { POSITIONS, getPositionGroup, hasGroup } from "@/lib/positions";
@@ -52,6 +52,7 @@ function modeHelp(mode: PlannerMode): string {
 
 const LINEUP_SHARE_HASH_KEY = "lineup";
 const COMPRESSED_LINEUP_PREFIX = "gz.";
+const RAW_LINEUP_PREFIX = "raw.";
 
 type SharedLineupPayload = {
   version: 1;
@@ -106,10 +107,22 @@ async function gunzip(bytes: Uint8Array): Promise<Uint8Array> {
 async function encodeSharedLineup(lineup: LineupResult): Promise<string> {
   const payload: SharedLineupPayload = { version: 1, lineup };
   const bytes = new TextEncoder().encode(JSON.stringify(payload));
+  if (typeof CompressionStream === "undefined") {
+    return `${RAW_LINEUP_PREFIX}${bytesToBase64Url(bytes)}`;
+  }
   return `${COMPRESSED_LINEUP_PREFIX}${bytesToBase64Url(await gzip(bytes))}`;
 }
 
 async function decodeSharedLineup(value: string): Promise<LineupResult> {
+  if (value.startsWith(RAW_LINEUP_PREFIX)) {
+    const json = new TextDecoder().decode(base64UrlToBytes(value.slice(RAW_LINEUP_PREFIX.length)));
+    const payload = JSON.parse(json) as Partial<SharedLineupPayload>;
+    if (payload.version !== 1 || !payload.lineup || !Array.isArray(payload.lineup.quarters)) {
+      throw new Error("라인업 공유 데이터 형식이 올바르지 않습니다.");
+    }
+    return payload.lineup;
+  }
+
   if (!value.startsWith(COMPRESSED_LINEUP_PREFIX)) {
     throw new Error("라인업 공유 URL 형식이 올바르지 않습니다.");
   }
@@ -695,11 +708,27 @@ export default function Home() {
     });
   }, []);
 
-  async function copyLineupShareUrl(lineup: LineupResult) {
+  async function copyLineupShareUrl(lineup: LineupResult, prebuiltUrl?: string | null) {
     try {
-      const url = await buildLineupShareUrl(lineup);
+      const url = prebuiltUrl ?? await buildLineupShareUrl(lineup);
       if (!url) return;
-      await navigator.clipboard.writeText(url);
+      const shareData = { title: "DEV FC 라인업", text: "DEV FC 라인업 공유", url };
+      if (prebuiltUrl && typeof navigator.share === "function" && (!navigator.canShare || navigator.canShare(shareData))) {
+        try {
+          await navigator.share(shareData);
+        } catch (shareError) {
+          if (shareError instanceof DOMException && shareError.name === "AbortError") return;
+          if (navigator.clipboard?.writeText) {
+            await navigator.clipboard.writeText(url);
+          } else {
+            window.prompt("공유 URL을 복사하세요.", url);
+          }
+        }
+      } else if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(url);
+      } else {
+        window.prompt("공유 URL을 복사하세요.", url);
+      }
       window.history.replaceState(null, "", url);
       setCopied(true);
     } catch (error) {
@@ -1493,10 +1522,11 @@ function TeamHistoryInsightCard({ teamName, insight }: { teamName: string; insig
         </div>
       </div>
 
-      <div className="mt-3 grid gap-2 sm:grid-cols-3">
+      <div className="mt-3 grid gap-2 sm:grid-cols-4">
         <HistoryMiniStat label="조합 표본" value={`${insight.coPlaySamples}경기`} />
         <HistoryMiniStat label="평균 득실" value={formatHistorySigned(insight.avgGoalDiff)} />
-        <HistoryMiniStat label="주의 조합" value={`${insight.cautionPairs.length}개`} />
+        <HistoryMiniStat label="클린시트" value={`${insight.cleanSheets}회`} />
+        <HistoryMiniStat label="평균 실점" value={formatScore(insight.avgGoalsAgainst)} />
       </div>
 
       <div className="mt-3">
@@ -1512,6 +1542,11 @@ function TeamHistoryInsightCard({ teamName, insight }: { teamName: string; insig
       <div className="mt-3">
         <p className="text-xs font-black text-slate-600">최근 폼</p>
         <RecentFormBars forms={insight.recentForms.slice(0, 4)} />
+      </div>
+
+      <div className="mt-3">
+        <p className="text-xs font-black text-slate-600">수비 히스토리</p>
+        <DefenseFormBars forms={insight.defenseForms.slice(0, 4)} />
       </div>
 
       {!hasPairs && (
@@ -1608,6 +1643,33 @@ function RecentFormBars({ forms }: { forms: HistoryPlayerForm[] }) {
   );
 }
 
+function DefenseFormBars({ forms }: { forms: HistoryDefenseForm[] }) {
+  const maxCleanSheets = Math.max(1, ...forms.map((form) => form.cleanSheets));
+
+  if (forms.length === 0) {
+    return <p className="mt-1 rounded-xl bg-white px-3 py-2 text-xs font-semibold text-slate-400 ring-1 ring-slate-200">수비 표본 부족</p>;
+  }
+
+  return (
+    <div className="mt-1 space-y-1.5">
+      {forms.map((form) => (
+        <div key={form.name} className="rounded-xl bg-white px-3 py-2 ring-1 ring-slate-200">
+          <div className="flex items-center justify-between gap-2 text-xs">
+            <span className="font-black text-slate-800">{form.name}</span>
+            <span className="font-mono font-bold text-slate-500">{form.matches}경기 CS {form.cleanSheets} · 실점 {formatScore(form.avgGoalsAgainst)}</span>
+          </div>
+          <div className="mt-1 flex items-center gap-2">
+            <div className="h-2 flex-1 rounded-full bg-slate-100">
+              <div className={`h-2 rounded-full ${trendClass(form.trend)}`} style={{ width: `${Math.max(8, (form.cleanSheets / maxCleanSheets) * 100)}%` }} />
+            </div>
+            <span className="w-14 text-right text-[10px] font-black text-slate-500">평균실점</span>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function HistoryInsightModal({
   history,
   onClose,
@@ -1682,6 +1744,14 @@ function HistoryTeamDetail({ title, insight }: { title: string; insight: TeamHis
           <p className="text-xs font-semibold text-slate-500">최근 최대 5경기 기준</p>
         </div>
         <RecentFormBars forms={insight.recentForms.slice(0, 8)} />
+      </div>
+
+      <div className="mt-4">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-sm font-black text-slate-800">수비 히스토리</p>
+          <p className="text-xs font-semibold text-slate-500">CS {insight.cleanSheets} · 평균 실점 {formatScore(insight.avgGoalsAgainst)}</p>
+        </div>
+        <DefenseFormBars forms={insight.defenseForms.slice(0, 8)} />
       </div>
 
       {insight.unmatchedNames.length > 0 && (
@@ -2128,19 +2198,38 @@ function LineupResultView({
 }: {
   result: LineupResult;
   copied: boolean;
-  onCopyShareUrl: (result: LineupResult) => void;
+  onCopyShareUrl: (result: LineupResult, prebuiltUrl?: string | null) => void;
   onQuartersChange: (quarters: LineupResult["quarters"]) => void;
 }) {
   const [quarters, setQuarters] = useState(result.quarters);
   const [selection, setSelection] = useState<{ key: string; section: LineupSection; name: string } | null>(null);
   const [quarterSwapKey, setQuarterSwapKey] = useState<string | null>(null);
+  const [shareUrl, setShareUrl] = useState<string | null>(null);
+  const [shareUrlError, setShareUrlError] = useState<string | null>(null);
   const refs = useRef<Map<string, HTMLDivElement | null>>(new Map());
+  const currentLineup = useMemo(() => ({ ...result, quarters }), [result, quarters]);
 
   useEffect(() => {
     setQuarters(result.quarters);
     setSelection(null);
     setQuarterSwapKey(null);
   }, [result]);
+
+  useEffect(() => {
+    let active = true;
+    setShareUrl(null);
+    setShareUrlError(null);
+    void buildLineupShareUrl(currentLineup)
+      .then((url) => {
+        if (active) setShareUrl(url);
+      })
+      .catch((error) => {
+        if (active) setShareUrlError(error instanceof Error ? error.message : String(error));
+      });
+    return () => {
+      active = false;
+    };
+  }, [currentLineup]);
 
   function handleQuarterSwap(key: string) {
     if (!quarterSwapKey) {
@@ -2328,8 +2417,14 @@ function LineupResultView({
     <section id="lineup-result" className="mb-6 rounded-3xl bg-white p-6 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-xl font-bold">라인업 결과</h2>
-        <div className="flex flex-wrap gap-2">
-          <button className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700" onClick={() => onCopyShareUrl({ ...result, quarters })}>{copied ? "공유 링크 복사됨" : "라인업 공유"}</button>
+        <div className="flex w-full flex-wrap gap-2 sm:w-auto">
+          <button
+            className="min-h-11 w-full rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 disabled:cursor-wait disabled:opacity-60 sm:w-auto"
+            onClick={() => onCopyShareUrl(currentLineup, shareUrl)}
+            disabled={!shareUrl && !shareUrlError}
+          >
+            {copied ? "공유 링크 복사됨" : !shareUrl && !shareUrlError ? "공유 링크 준비 중" : "라인업 공유"}
+          </button>
         </div>
       </div>
       <p className="mt-2 text-xs text-slate-500">같은 쿼터 안에서는 <span className="font-bold">필드, GK, 대기</span> 어디든 서로 자리를 바꿀 수 있어요. 쿼터 순서는 각 피치 아래 <span className="font-bold">쿼터 순서 바꾸기</span> 버튼으로 조정하면 위에서부터 1~4Q로 다시 정렬됩니다. 코치별 미세조정은 <span className="font-bold">라인업 공유</span>로 현재 상태를 공유하세요.</p>

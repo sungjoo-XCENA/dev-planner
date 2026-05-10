@@ -27,6 +27,19 @@ export type HistoryPlayerForm = {
   goals: number;
   assists: number;
   points: number;
+  goalsAgainst: number;
+  cleanSheets: number;
+  avgGoalsAgainst: number;
+  avgGoalDiff: number;
+  trend: HistoryPlayerTrend;
+};
+
+export type HistoryDefenseForm = {
+  name: string;
+  matches: number;
+  cleanSheets: number;
+  goalsAgainst: number;
+  avgGoalsAgainst: number;
   avgGoalDiff: number;
   trend: HistoryPlayerTrend;
 };
@@ -37,10 +50,14 @@ export type TeamHistoryInsight = {
   matchedPlayerCount: number;
   coPlaySamples: number;
   avgGoalDiff: number;
+  cleanSheets: number;
+  goalsAgainst: number;
+  avgGoalsAgainst: number;
   goodPairs: HistoryPairInsight[];
   cautionPairs: HistoryPairInsight[];
   samplePairs: HistoryPairInsight[];
   recentForms: HistoryPlayerForm[];
+  defenseForms: HistoryDefenseForm[];
   unmatchedNames: string[];
   summary: string[];
 };
