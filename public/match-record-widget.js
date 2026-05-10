@@ -13,6 +13,7 @@
     loadedPlayers: null,
     loadedForm: null,
     editingRecordOnly: false,
+    currentLineupOverride: false,
     editingMatchId: "",
     selectedScope: "",
     matchKind: "SELF",
@@ -22,6 +23,8 @@
     events: [],
     roles: Object.create(null),
     standaloneKey: "",
+    recordLoadSeq: 0,
+    recordLoading: false,
     editModalOpen: false,
     editDate: todayInputValue(),
     options: { loaded: false, stadiums: [], teams: [], error: "" },
@@ -448,6 +451,7 @@
   }
 
   function displayRecords(fallbackRecords) {
+    if (state.currentLineupOverride) return fallbackRecords;
     if (state.editingRecordOnly) {
       var loaded = state.loadedPlayers || emptyLoadedPlayers();
       return ["A", "B"].map(function (team) {
@@ -477,6 +481,7 @@
   }
 
   function payloadRecords(fallbackRecords) {
+    if (state.currentLineupOverride) return fallbackRecords;
     if (state.editingRecordOnly) {
       var loaded = state.loadedPlayers || emptyLoadedPlayers();
       return ["A", "B"].map(function (team) {
@@ -635,6 +640,8 @@
     state.loadedPlayers = null;
     state.loadedForm = null;
     state.editingRecordOnly = false;
+    state.currentLineupOverride = false;
+    state.recordLoading = false;
     state.editingMatchId = "";
     state.selectedScope = "";
   }
@@ -792,6 +799,9 @@
     setTeamLabels(form);
     var quarter = selectedQuarter();
     var score = teamScoreSummary();
+    var refreshAction = state.editingRecordOnly && !state.currentLineupOverride && !state.recordLoading
+      ? "<button type=\"button\" class=\"mrw-button mrw-secondary\" data-mrw-action=\"refresh-lineup\">라인업 갱신</button>"
+      : "";
 
     var panel = existing || document.createElement("div");
     panel.id = PANEL_ID;
@@ -809,7 +819,7 @@
       "</div>",
       renderRecentLog(score),
       "</div>",
-      "<div class=\"mrw-actions\"><button type=\"button\" class=\"mrw-button mrw-secondary\" data-mrw-action=\"preview\">기록 확인</button><button type=\"button\" class=\"mrw-button mrw-primary\" data-mrw-action=\"save\">기록 저장</button><button type=\"button\" class=\"mrw-button mrw-danger\" data-mrw-action=\"delete-record\">삭제</button></div>",
+      "<div class=\"mrw-actions\"><button type=\"button\" class=\"mrw-button mrw-secondary\" data-mrw-action=\"preview\">기록 확인</button><button type=\"button\" class=\"mrw-button mrw-primary\" data-mrw-action=\"save\">기록 저장</button>" + refreshAction + "<button type=\"button\" class=\"mrw-button mrw-danger\" data-mrw-action=\"delete-record\">삭제</button></div>",
       state.status ? "<div class=\"mrw-status\">" + escapeHtml(state.status) + "</div>" : "",
       state.editModalOpen ? renderEditModal(form) : "",
     ].join("");
@@ -1075,6 +1085,8 @@
     if (editDate) editDate.addEventListener("change", function () { state.editDate = editDate.value || todayInputValue(); renderPanel(); });
     var loadEditDate = panel.querySelector("[data-mrw-action=load-edit-date]");
     if (loadEditDate) loadEditDate.addEventListener("click", loadEditRecordByDate);
+    var refreshLineup = panel.querySelector("[data-mrw-action=refresh-lineup]");
+    if (refreshLineup) refreshLineup.addEventListener("click", refreshCurrentLineup);
     panel.querySelector("[data-mrw-action=preview]").addEventListener("click", function () { saveRecord(true, false); });
     panel.querySelector("[data-mrw-action=save]").addEventListener("click", function () { saveRecord(false, Boolean(state.editingMatchId)); });
     panel.querySelector("[data-mrw-action=delete-record]").addEventListener("click", deleteRecord);
@@ -1106,6 +1118,21 @@
       return;
     }
     loadRecord(matchId);
+  }
+
+  function refreshCurrentLineup() {
+    var panel = document.getElementById(PANEL_ID);
+    var currentForm = formState(panel);
+    state.recordLoadSeq += 1;
+    resetRecordEntryState();
+    state.currentLineupOverride = true;
+    state.loadedForm = currentForm;
+    state.matchKind = currentForm.matchKind;
+    state.editModalOpen = false;
+    state.recordLoading = false;
+    state.status = "현재 라인업 선수 기준으로 갱신했습니다.";
+    removeExistingPanel();
+    renderPanel();
   }
 
   function payloadFromPanel(dryRun, overwriteExisting) {
@@ -1165,6 +1192,8 @@
 
   async function loadRecord(matchIdOverride) {
     try {
+      var loadSeq = state.recordLoadSeq + 1;
+      state.recordLoadSeq = loadSeq;
       var panel = document.getElementById(PANEL_ID);
       var matchId = matchIdOverride || panel.querySelector("[data-mrw=matchId]").value.trim() || compactDate(panel.querySelector("[data-mrw=date]").value);
       if (!matchId) {
@@ -1174,19 +1203,23 @@
       }
       resetRecordEntryState();
       state.editingRecordOnly = true;
+      state.recordLoading = true;
+      state.editModalOpen = false;
       state.loadedForm = emptyFormForMatch(matchId);
       state.status = "기존 기록을 불러오는 중...";
       renderPanel();
 
       var response = await fetch("/api/match-record?matchId=" + encodeURIComponent(matchId), { method: "GET", headers: { accept: "application/json" } });
       var data = await response.json().catch(function () { return {}; });
+      if (loadSeq !== state.recordLoadSeq) return;
+      state.recordLoading = false;
       if (!response.ok) {
         if (response.status === 404 || data.error === "MATCH_NOT_FOUND") {
           resetToEmptyMatch(matchId, [
             "해당 날짜의 기존 기록이 없습니다.",
             "기록 키: " + matchId,
             "저장된 기록 기준으로 빈 상태를 보여줍니다.",
-            "현재 라인업 기준으로 입력하려면 기록 입력을 닫았다가 다시 열어주세요.",
+            "현재 라인업 기준으로 입력하려면 라인업 갱신을 눌러주세요.",
           ].join("\n"), true);
           return;
         }
@@ -1229,6 +1262,7 @@
       renderPanel();
     } catch (error) {
       state.status = error && error.message ? error.message : String(error);
+      state.recordLoading = false;
       renderPanel();
     }
   }
@@ -1262,7 +1296,7 @@
         data.message || "해당 날짜 기록을 삭제했습니다.",
         "기록 키: " + (data.matchId || matchId),
         "저장된 기록 기준으로 빈 상태를 보여줍니다.",
-        "현재 라인업 기준으로 입력하려면 기록 입력을 닫았다가 다시 열어주세요.",
+        "현재 라인업 기준으로 입력하려면 라인업 갱신을 눌러주세요.",
       ].join("\n"), true);
     } catch (error) {
       state.status = error && error.message ? error.message : String(error);
