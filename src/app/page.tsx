@@ -713,7 +713,7 @@ export default function Home() {
       const url = prebuiltUrl ?? await buildLineupShareUrl(lineup);
       if (!url) return;
       const shareData = { title: "DEV FC 라인업", text: "DEV FC 라인업 공유", url };
-      if (prebuiltUrl && typeof navigator.share === "function" && (!navigator.canShare || navigator.canShare(shareData))) {
+      if (typeof navigator.share === "function" && (!navigator.canShare || navigator.canShare(shareData))) {
         try {
           await navigator.share(shareData);
         } catch (shareError) {
@@ -1528,6 +1528,7 @@ function trendClass(trend: HistoryPlayerForm["trend"]): string {
 function TeamHistoryInsightCard({ teamName, insight, groupMap }: { teamName: string; insight: TeamHistoryInsight; groupMap: HistoryGroupMap }) {
   const hasPairs = insight.goodPairs.length > 0 || insight.cautionPairs.length > 0 || insight.samplePairs.length > 0;
   const attackPairs = groupPairs(insight, groupMap, "ATTACK").sort((a, b) => b.points - a.points || b.avgGoalDiff - a.avgGoalDiff || b.matches - a.matches);
+  const defensePairs = groupPairs(insight, groupMap, "DEFENSE").sort((a, b) => a.goalsAgainst / a.matches - b.goalsAgainst / b.matches || b.avgGoalDiff - a.avgGoalDiff || b.matches - a.matches);
   const badPairs = allHistoryPairs(insight).sort((a, b) => a.avgGoalDiff - b.avgGoalDiff || b.losses - a.losses || b.matches - a.matches);
   const impactPairs = allHistoryPairs(insight)
     .filter((pair) => pair.matches >= 1)
@@ -1546,10 +1547,11 @@ function TeamHistoryInsightCard({ teamName, insight, groupMap }: { teamName: str
         </div>
       </div>
 
-      <div className="mt-3 grid gap-2 sm:grid-cols-4">
+      <div className="mt-3 grid gap-2 sm:grid-cols-5">
         <HistoryMiniStat label="조합 표본" value={`${insight.coPlaySamples}경기`} />
         <HistoryMiniStat label="평균 득실" value={formatHistorySigned(insight.avgGoalDiff)} />
         <HistoryMiniStat label="클린시트" value={`${insight.cleanSheets}회`} />
+        <HistoryMiniStat label="총 실점" value={`${insight.goalsAgainst}점`} />
         <HistoryMiniStat label="평균 실점" value={formatScore(insight.avgGoalsAgainst)} />
       </div>
 
@@ -1570,6 +1572,7 @@ function TeamHistoryInsightCard({ teamName, insight, groupMap }: { teamName: str
 
       <div className="mt-3 grid gap-3 lg:grid-cols-2">
         <PairPillList title="공격 조합" pairs={attackPairs.slice(0, 3)} empty="공격끼리 표본 부족" />
+        <PairPillList title="수비 조합" pairs={defensePairs.slice(0, 3)} empty="수비끼리 표본 부족" />
         <PairPillList title="성적 안 좋은 궁합" pairs={badPairs.slice(0, 3)} empty="나쁜 궁합 표본 없음" />
       </div>
 
@@ -1880,7 +1883,7 @@ function HistoryPairTable({ title, pairs, empty }: { title: string; pairs: Histo
                   <span className={`rounded-full border px-2 py-0.5 text-[10px] font-black ${pairLabelClass(pair.label)}`}>{pairLabelText(pair.label)}</span>
                 </div>
                 <p className="mt-0.5 text-[11px] font-semibold text-slate-500">
-                  {pair.matches}경기 {pair.wins}승 {pair.draws}무 {pair.losses}패 · 득점관여 {pair.points}
+                  {pair.matches}경기 {pair.wins}승 {pair.draws}무 {pair.losses}패 · 평균득점 {formatScore(pair.goalsFor / pair.matches)} · 평균실점 {formatScore(pair.goalsAgainst / pair.matches)} · 득점관여 {pair.points}
                 </p>
               </div>
               <div className="text-right">

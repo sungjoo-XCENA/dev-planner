@@ -28,6 +28,11 @@ export async function firebasePatchJson(pathParts: string[], payload: unknown): 
   return response.json();
 }
 
+export async function firebaseDeleteJson(pathParts: string[]): Promise<unknown> {
+  const response = await firebaseRequest(pathParts, { method: "DELETE" });
+  return response.json();
+}
+
 export async function firebaseRequest(pathParts: string[], init: RequestInit): Promise<Response> {
   const serviceAccount = await readServiceAccount();
   const databaseUrl = getDatabaseUrl(serviceAccount);

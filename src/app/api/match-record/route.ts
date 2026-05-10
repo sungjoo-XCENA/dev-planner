@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { firebaseGetJson, firebasePatchJson } from "@/lib/firebaseRealtime";
+import { firebaseDeleteJson, firebaseGetJson, firebasePatchJson } from "@/lib/firebaseRealtime";
 import { buildMatchInfoPayload, validateMatchRecordRequest } from "@/lib/matchRecordPayload";
 import type {
   MatchRecordConflictResponse,
@@ -38,6 +38,41 @@ export async function GET(request: Request) {
     return NextResponse.json(
       {
         error: "Failed to load match record",
+        detail: error instanceof Error ? error.message : String(error),
+      },
+      { status: 502 },
+    );
+  }
+}
+
+export async function DELETE(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const matchId = searchParams.get("matchId")?.trim() ?? "";
+
+  if (!matchId || !/^[A-Za-z0-9_-]{6,40}$/.test(matchId)) {
+    return NextResponse.json({ error: "Invalid matchId" }, { status: 400 });
+  }
+
+  const path = `MatchInfo/${matchId}`;
+
+  try {
+    const existing = await firebaseGetJson(["MatchInfo", matchId]);
+    await firebaseDeleteJson(["MatchInfo", matchId]);
+
+    return NextResponse.json(
+      {
+        ok: true,
+        matchId,
+        path,
+        deleted: Boolean(existing),
+        message: existing ? "해당 날짜 기록을 삭제했습니다." : "해당 날짜에 삭제할 기록이 없습니다.",
+      },
+      { headers: { "cache-control": "no-store" } },
+    );
+  } catch (error) {
+    return NextResponse.json(
+      {
+        error: "Failed to delete match record",
         detail: error instanceof Error ? error.message : String(error),
       },
       { status: 502 },
