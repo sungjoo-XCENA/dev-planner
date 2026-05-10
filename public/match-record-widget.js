@@ -891,8 +891,12 @@
 
   function renderEditOnlyLoader(form) {
     var date = state.editDate || form.date || todayInputValue();
+    var title = state.editingRecordOnly ? "다른 경기 불러오기" : "수정할 경기 불러오기";
+    var help = state.editingRecordOnly
+      ? "다른 날짜를 고르면 현재 화면을 버리고 그 날짜의 저장 기록을 다시 불러옵니다."
+      : "경기일을 고른 뒤 저장된 기록을 불러오면 그 기록 기준으로만 수정합니다.";
     return [
-      "<div class=\"mrw-mode mrw-edit-load\"><div class=\"mrw-mode-head\"><div><div class=\"mrw-mode-title\">수정할 경기 불러오기</div><div class=\"mrw-mode-help\">경기일을 고른 뒤 저장된 기록을 불러오면 그 기록 기준으로만 수정합니다.</div></div></div>",
+      "<div class=\"mrw-mode mrw-edit-load\"><div class=\"mrw-mode-head\"><div><div class=\"mrw-mode-title\">" + title + "</div><div class=\"mrw-mode-help\">" + help + "</div></div></div>",
       "<div class=\"mrw-edit-load-row\"><div class=\"mrw-field\"><label>경기일</label><input data-mrw=\"editDate\" type=\"date\" value=\"" + escapeHtml(date) + "\" /></div><button type=\"button\" class=\"mrw-button mrw-primary\" data-mrw-action=\"load-edit-date\">기록 불러오기</button></div>",
       "</div>",
     ].join("");
@@ -942,6 +946,7 @@
       "<input type=\"hidden\" data-mrw=\"matchId\" value=\"" + escapeHtml(form.matchId || compactDate(form.date)) + "\" />",
       "<input type=\"hidden\" data-mrw=\"duration\" value=\"" + escapeHtml(form.duration) + "\" />",
       "<input type=\"hidden\" data-mrw=\"matchKind\" value=\"" + escapeHtml(form.matchKind) + "\" />",
+      editOnly ? renderEditOnlyLoader(form) : "",
       renderMeta(form),
       "<div class=\"mrw-mode\"><div class=\"mrw-mode-head\"><div><div class=\"mrw-mode-title\">기록 입력</div><div class=\"mrw-mode-help\">경기 전체로 입력해도 되고, 기억나는 경우만 1Q~4Q를 골라 쿼터 기록으로 남기면 됩니다.</div></div><label class=\"mrw-scope\">기록 기준 " + renderScopeSelect(quarter) + "</label></div></div>",
       "<div class=\"mrw-layout\"><div class=\"mrw-main\">",
