@@ -12,6 +12,7 @@
     loadedRecord: null,
     loadedPlayers: null,
     loadedForm: null,
+    editingRecordOnly: false,
     editingMatchId: "",
     selectedScope: "",
     matchKind: "SELF",
@@ -106,6 +107,7 @@
       ".mrw-button{border:0;border-radius:13px;padding:11px 14px;font-size:13px;font-weight:950;cursor:pointer}",
       ".mrw-primary{background:#0f172a;color:#fff}",
       ".mrw-secondary{background:#e2e8f0;color:#0f172a}",
+      ".mrw-danger{background:#fee2e2;color:#991b1b}",
       ".mrw-status{margin-top:10px;border-radius:14px;background:#f8fafc;padding:10px;color:#334155;font-size:12px;font-weight:800;line-height:1.5;white-space:pre-wrap}",
       ".mrw-modal-backdrop{position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(15,23,42,.45);padding:16px}",
       ".mrw-modal{width:min(440px,100%);max-height:min(78vh,640px);overflow:auto;border-radius:22px;background:#fff;box-shadow:0 24px 72px rgba(15,23,42,.3)}",
@@ -446,6 +448,20 @@
   }
 
   function displayRecords(fallbackRecords) {
+    if (state.editingRecordOnly) {
+      var loaded = state.loadedPlayers || emptyLoadedPlayers();
+      return ["A", "B"].map(function (team) {
+        return {
+          team: team,
+          attack: loaded[team] || [],
+          mid: [],
+          defense: [],
+          gk: "",
+          bench: [],
+          warnings: [],
+        };
+      });
+    }
     if (!state.loadedPlayers) return fallbackRecords;
     return ["A", "B"].map(function (team) {
       return {
@@ -461,6 +477,21 @@
   }
 
   function payloadRecords(fallbackRecords) {
+    if (state.editingRecordOnly) {
+      var loaded = state.loadedPlayers || emptyLoadedPlayers();
+      return ["A", "B"].map(function (team) {
+        return {
+          quarter: 1,
+          team: team,
+          attack: loaded[team] || [],
+          mid: [],
+          defense: [],
+          gk: "없음",
+          bench: [],
+          warnings: [],
+        };
+      });
+    }
     if (!state.loadedPlayers) return fallbackRecords;
     return ["A", "B"].map(function (team) {
       return {
@@ -603,6 +634,7 @@
     state.loadedRecord = null;
     state.loadedPlayers = null;
     state.loadedForm = null;
+    state.editingRecordOnly = false;
     state.editingMatchId = "";
     state.selectedScope = "";
   }
@@ -621,8 +653,10 @@
     };
   }
 
-  function resetToEmptyMatch(matchId, status) {
+  function resetToEmptyMatch(matchId, status, editingRecordOnly) {
     resetRecordEntryState();
+    state.editingRecordOnly = Boolean(editingRecordOnly);
+    if (state.editingRecordOnly) state.loadedPlayers = emptyLoadedPlayers();
     state.loadedForm = emptyFormForMatch(matchId);
     state.matchKind = state.loadedForm.matchKind;
     state.editModalOpen = false;
@@ -775,7 +809,7 @@
       "</div>",
       renderRecentLog(score),
       "</div>",
-      "<div class=\"mrw-actions\"><button type=\"button\" class=\"mrw-button mrw-secondary\" data-mrw-action=\"preview\">기록 확인</button><button type=\"button\" class=\"mrw-button mrw-primary\" data-mrw-action=\"save\">기록 저장</button></div>",
+      "<div class=\"mrw-actions\"><button type=\"button\" class=\"mrw-button mrw-secondary\" data-mrw-action=\"preview\">기록 확인</button><button type=\"button\" class=\"mrw-button mrw-primary\" data-mrw-action=\"save\">기록 저장</button><button type=\"button\" class=\"mrw-button mrw-danger\" data-mrw-action=\"delete-record\">삭제</button></div>",
       state.status ? "<div class=\"mrw-status\">" + escapeHtml(state.status) + "</div>" : "",
       state.editModalOpen ? renderEditModal(form) : "",
     ].join("");
@@ -1043,6 +1077,7 @@
     if (loadEditDate) loadEditDate.addEventListener("click", loadEditRecordByDate);
     panel.querySelector("[data-mrw-action=preview]").addEventListener("click", function () { saveRecord(true, false); });
     panel.querySelector("[data-mrw-action=save]").addEventListener("click", function () { saveRecord(false, Boolean(state.editingMatchId)); });
+    panel.querySelector("[data-mrw-action=delete-record]").addEventListener("click", deleteRecord);
   }
 
   function openEditModal() {
@@ -1138,6 +1173,7 @@
         return;
       }
       resetRecordEntryState();
+      state.editingRecordOnly = true;
       state.loadedForm = emptyFormForMatch(matchId);
       state.status = "기존 기록을 불러오는 중...";
       renderPanel();
@@ -1149,8 +1185,9 @@
           resetToEmptyMatch(matchId, [
             "해당 날짜의 기존 기록이 없습니다.",
             "기록 키: " + matchId,
-            "새 기록 입력 상태로 초기화했습니다.",
-          ].join("\n"));
+            "저장된 기록 기준으로 빈 상태를 보여줍니다.",
+            "현재 라인업 기준으로 입력하려면 기록 입력을 닫았다가 다시 열어주세요.",
+          ].join("\n"), true);
           return;
         }
         throw new Error(data.detail || data.error || "경기 기록을 찾지 못했습니다.");
@@ -1163,12 +1200,13 @@
       state.loadedPlayers = normalizeLoadedPlayers(data.players) || emptyLoadedPlayers();
       state.conflict = null;
       state.loadedRecord = data;
+      state.editingRecordOnly = true;
       state.editingMatchId = data.matchId || matchId;
       state.matchKind = data.matchKind === "MATCH" ? "MATCH" : "SELF";
       state.editModalOpen = false;
       state.selectedScope = "";
 
-      var matchDate = dateInputFromFirebase(data.matchDate);
+      var matchDate = dateInputFromFirebase(data.matchDate) || dateInputFromFirebase(data.matchId || matchId);
       state.loadedForm = {
         date: matchDate || todayInputValue(),
         matchId: data.matchId || matchId,
@@ -1189,6 +1227,43 @@
       panel = document.getElementById(PANEL_ID);
       if (panel) panel.remove();
       renderPanel();
+    } catch (error) {
+      state.status = error && error.message ? error.message : String(error);
+      renderPanel();
+    }
+  }
+
+  async function deleteRecord() {
+    try {
+      var panel = document.getElementById(PANEL_ID);
+      var dateInput = panel && panel.querySelector("[data-mrw=date]");
+      var matchIdInput = panel && panel.querySelector("[data-mrw=matchId]");
+      var matchId = state.editingMatchId || (matchIdInput && matchIdInput.value.trim()) || compactDate(dateInput && dateInput.value);
+      if (!matchId) {
+        state.status = "삭제할 기록 날짜를 선택해주세요.";
+        renderPanel();
+        return;
+      }
+
+      var ok = window.confirm("해당 날짜의 저장 기록을 삭제할까요?\n기록 키: " + matchId);
+      if (!ok) return;
+
+      state.status = "해당 날짜 기록을 삭제하는 중...";
+      renderPanel();
+
+      var response = await fetch("/api/match-record?matchId=" + encodeURIComponent(matchId), {
+        method: "DELETE",
+        headers: { accept: "application/json" },
+      });
+      var data = await response.json().catch(function () { return {}; });
+      if (!response.ok) throw new Error(data.detail || data.error || "경기 기록 삭제에 실패했습니다.");
+
+      resetToEmptyMatch(matchId, [
+        data.message || "해당 날짜 기록을 삭제했습니다.",
+        "기록 키: " + (data.matchId || matchId),
+        "저장된 기록 기준으로 빈 상태를 보여줍니다.",
+        "현재 라인업 기준으로 입력하려면 기록 입력을 닫았다가 다시 열어주세요.",
+      ].join("\n"), true);
     } catch (error) {
       state.status = error && error.message ? error.message : String(error);
       renderPanel();
