@@ -142,16 +142,13 @@ function analyzeTeamHistory({ team, players, matches }: TeamAnalysisInput): Team
   const pairInsights = buildPairInsights(normalizedPlayers, displayByName, matches);
   const goodPairs = pairInsights
     .filter((pair) => pair.label === "good")
-    .sort((a, b) => b.avgGoalDiff - a.avgGoalDiff || b.matches - a.matches || b.points - a.points)
-    .slice(0, 8);
+    .sort((a, b) => b.avgGoalDiff - a.avgGoalDiff || b.matches - a.matches || b.points - a.points);
   const cautionPairs = pairInsights
     .filter((pair) => pair.label === "caution")
-    .sort((a, b) => a.avgGoalDiff - b.avgGoalDiff || b.matches - a.matches || a.points - b.points)
-    .slice(0, 8);
+    .sort((a, b) => a.avgGoalDiff - b.avgGoalDiff || b.matches - a.matches || a.points - b.points);
   const samplePairs = pairInsights
     .filter((pair) => pair.label === "sample")
-    .sort((a, b) => b.matches - a.matches || Math.abs(b.avgGoalDiff) - Math.abs(a.avgGoalDiff))
-    .slice(0, 8);
+    .sort((a, b) => b.matches - a.matches || Math.abs(b.avgGoalDiff) - Math.abs(a.avgGoalDiff));
 
   const coPlaySamples = pairInsights.reduce((sum, pair) => sum + pair.matches, 0);
   const goalDiffSum = pairInsights.reduce((sum, pair) => sum + pair.goalDiff, 0);
