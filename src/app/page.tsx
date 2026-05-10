@@ -1726,6 +1726,237 @@ function betweenGroupPairs(insight: TeamHistoryInsight, groupMap: HistoryGroupMa
   });
 }
 
+function compatibilityMapPairs(insight: TeamHistoryInsight, goodLimit: number, lowLimit: number, maxNodes: number): HistoryPairInsight[] {
+  const selected: HistoryPairInsight[] = [];
+  const seen = new Set<string>();
+
+  [...topGoodPairs(insight, goodLimit), ...topBadPairs(insight, lowLimit)].forEach((pair) => {
+    const key = pair.players.slice().sort().join("|");
+    if (!seen.has(key)) {
+      seen.add(key);
+      selected.push(pair);
+    }
+  });
+
+  const includedNames = new Set<string>();
+  const compact: HistoryPairInsight[] = [];
+  selected.forEach((pair) => {
+    const nextNames = new Set(includedNames);
+    pair.players.forEach((name) => nextNames.add(name));
+    if (nextNames.size <= maxNodes || compact.length === 0) {
+      compact.push(pair);
+      nextNames.forEach((name) => includedNames.add(name));
+    }
+  });
+
+  return compact;
+}
+
+type CompatibilityMapNode = {
+  name: string;
+  group?: PositionGroup;
+  x: number;
+  y: number;
+};
+
+function compatibilityPairTone(pair: HistoryPairInsight): "good" | "risk" | "watch" {
+  if (pair.avgGoalDiff < 0) return "risk";
+  if (pair.avgGoalDiff >= 0.5) return "good";
+  return "watch";
+}
+
+function compatibilityStroke(pair: HistoryPairInsight): string {
+  const tone = compatibilityPairTone(pair);
+  if (tone === "risk") return "#ef4444";
+  if (tone === "good") return "#10b981";
+  return "#f59e0b";
+}
+
+function compatibilityNodeClass(group?: PositionGroup): string {
+  if (group === "ATTACK") return "bg-rose-50 text-rose-950 ring-rose-200";
+  if (group === "MID") return "bg-sky-50 text-sky-950 ring-sky-200";
+  if (group === "DEFENSE") return "bg-emerald-50 text-emerald-950 ring-emerald-200";
+  return "bg-white text-slate-900 ring-slate-200";
+}
+
+function compatibilityChipClass(pair: HistoryPairInsight): string {
+  const tone = compatibilityPairTone(pair);
+  if (tone === "risk") return "border-rose-200 bg-rose-50 text-rose-800";
+  if (tone === "good") return "border-emerald-200 bg-emerald-50 text-emerald-800";
+  return "border-amber-200 bg-amber-50 text-amber-800";
+}
+
+function buildCompatibilityMapNodes(pairs: HistoryPairInsight[], groupMap: HistoryGroupMap): CompatibilityMapNode[] {
+  const names = Array.from(new Set(pairs.flatMap((pair) => pair.players)));
+  const groupRank: Record<PositionGroup, number> = { ATTACK: 0, MID: 1, DEFENSE: 2 };
+  names.sort((a, b) => {
+    const groupA = groupMap.get(normalizeHistoryName(a));
+    const groupB = groupMap.get(normalizeHistoryName(b));
+    const rankA = groupA ? groupRank[groupA] : 9;
+    const rankB = groupB ? groupRank[groupB] : 9;
+    return rankA - rankB || a.localeCompare(b, "ko");
+  });
+
+  if (names.length === 1) {
+    return [{ name: names[0], group: groupMap.get(normalizeHistoryName(names[0])), x: 50, y: 50 }];
+  }
+
+  return names.map((name, index) => {
+    const angle = -Math.PI / 2 + (Math.PI * 2 * index) / names.length;
+    return {
+      name,
+      group: groupMap.get(normalizeHistoryName(name)),
+      x: 50 + Math.cos(angle) * 38,
+      y: 50 + Math.sin(angle) * 34,
+    };
+  });
+}
+
+function CompatibilityMapCard({
+  title,
+  subtitle,
+  pairs,
+  connectionPairs,
+  groupMap,
+}: {
+  title: string;
+  subtitle: string;
+  pairs: HistoryPairInsight[];
+  connectionPairs?: HistoryPairInsight[];
+  groupMap: HistoryGroupMap;
+}) {
+  const nodes = buildCompatibilityMapNodes(pairs, groupMap);
+  const nodeByName = new Map(nodes.map((node) => [normalizeHistoryName(node.name), node]));
+  const [selectedName, setSelectedName] = useState<string | null>(null);
+  const activeName = selectedName && nodes.some((node) => normalizeHistoryName(node.name) === normalizeHistoryName(selectedName))
+    ? selectedName
+    : nodes[0]?.name ?? null;
+  const activeKey = activeName ? normalizeHistoryName(activeName) : "";
+  const activeConnections = (connectionPairs ?? pairs).filter((pair) => pair.players.some((name) => normalizeHistoryName(name) === activeKey));
+  const activeGoodConnections = sortGoodPairs(activeConnections).slice(0, 5);
+  const activeLowConnections = sortBadPairs(activeConnections).slice(0, 5);
+
+  return (
+    <div className="mt-4 rounded-2xl bg-white p-3 ring-1 ring-slate-200">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <p className="text-sm font-black text-slate-900">{title}</p>
+          <p className="mt-0.5 text-xs font-semibold text-slate-500">{subtitle}</p>
+        </div>
+        <div className="flex items-center gap-2 text-[10px] font-black">
+          <span className="inline-flex items-center gap-1 text-emerald-700"><span className="h-2 w-4 rounded-full bg-emerald-500" />좋음</span>
+          <span className="inline-flex items-center gap-1 text-amber-700"><span className="h-2 w-4 rounded-full bg-amber-500" />보통</span>
+          <span className="inline-flex items-center gap-1 text-rose-700"><span className="h-2 w-4 rounded-full bg-rose-500" />주의</span>
+        </div>
+      </div>
+
+      {pairs.length === 0 ? (
+        <p className="mt-3 rounded-xl bg-slate-50 px-3 py-4 text-center text-xs font-bold text-slate-400 ring-1 ring-slate-200">궁합 지도로 볼 기록이 아직 부족합니다.</p>
+      ) : (
+        <>
+          <div className="relative mt-3 h-72 overflow-hidden rounded-2xl bg-[radial-gradient(circle_at_center,_#ffffff_0,_#f8fafc_58%,_#eef2ff_100%)] ring-1 ring-slate-200">
+            <svg className="absolute inset-0 h-full w-full" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+              {pairs.map((pair) => {
+                const from = nodeByName.get(normalizeHistoryName(pair.players[0]));
+                const to = nodeByName.get(normalizeHistoryName(pair.players[1]));
+                if (!from || !to) return null;
+                return (
+                  <line
+                    key={`${pair.players[0]}-${pair.players[1]}`}
+                    x1={from.x}
+                    y1={from.y}
+                    x2={to.x}
+                    y2={to.y}
+                    stroke={compatibilityStroke(pair)}
+                    strokeWidth={Math.min(4.5, 1.4 + pair.matches * 0.18)}
+                    strokeLinecap="round"
+                    opacity={compatibilityPairTone(pair) === "watch" ? 0.45 : 0.72}
+                  />
+                );
+              })}
+            </svg>
+            {nodes.map((node) => (
+              <button
+                key={node.name}
+                type="button"
+                className={`absolute max-w-[5.75rem] -translate-x-1/2 -translate-y-1/2 truncate rounded-full px-2.5 py-1 text-center text-[11px] font-black shadow-sm ring-1 transition hover:scale-105 focus:outline-none focus:ring-2 focus:ring-slate-900 ${compatibilityNodeClass(node.group)} ${activeKey === normalizeHistoryName(node.name) ? "ring-2 ring-slate-900" : ""}`}
+                style={{ left: `${node.x}%`, top: `${node.y}%` }}
+                title={node.group ? `${node.name} · ${groupKorean(node.group)}` : node.name}
+                onClick={() => setSelectedName(node.name)}
+              >
+                {node.name}
+              </button>
+            ))}
+          </div>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {pairs.slice(0, 8).map((pair) => (
+              <span key={`${title}-${pair.players[0]}-${pair.players[1]}`} className={`rounded-full border px-2 py-1 text-[11px] font-black ${compatibilityChipClass(pair)}`}>
+                {pair.players[0]}-{pair.players[1]} {formatHistorySigned(pair.avgGoalDiff)}
+              </span>
+            ))}
+          </div>
+          {activeName && (
+            <div className="mt-3 rounded-2xl bg-slate-50 p-3 ring-1 ring-slate-200">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-sm font-black text-slate-900">{activeName} 연결 궁합</p>
+                <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-black text-slate-500 ring-1 ring-slate-200">
+                  연결 {activeConnections.length}개
+                </span>
+              </div>
+              <div className="mt-2 grid gap-2 md:grid-cols-2">
+                <CompatibilityConnectionList title="좋은 연결 Top 5" pairs={activeGoodConnections} activeName={activeName} empty="좋은 연결 기록이 아직 부족합니다." />
+                <CompatibilityConnectionList title="낮은 연결 Worst 5" pairs={activeLowConnections} activeName={activeName} empty="낮은 연결 기록이 아직 부족합니다." />
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+function CompatibilityConnectionList({
+  title,
+  pairs,
+  activeName,
+  empty,
+}: {
+  title: string;
+  pairs: HistoryPairInsight[];
+  activeName: string;
+  empty: string;
+}) {
+  const activeKey = normalizeHistoryName(activeName);
+
+  return (
+    <div className="rounded-xl bg-white p-2 ring-1 ring-slate-200">
+      <p className="px-1 text-xs font-black text-slate-700">{title}</p>
+      {pairs.length === 0 ? (
+        <p className="mt-1 rounded-lg bg-slate-50 px-2 py-2 text-[11px] font-bold text-slate-400">{empty}</p>
+      ) : (
+        <div className="mt-1 space-y-1">
+          {pairs.map((pair) => {
+            const partner = pair.players.find((name) => normalizeHistoryName(name) !== activeKey) ?? pair.players[0];
+            return (
+              <div key={`${title}-${activeName}-${partner}`} className="flex items-center justify-between gap-2 rounded-lg bg-slate-50 px-2 py-1.5">
+                <div className="min-w-0">
+                  <p className="truncate text-xs font-black text-slate-800">{partner}</p>
+                  <p className="mt-0.5 text-[10px] font-bold text-slate-500">
+                    {pair.matches}경기 {pair.wins}승 {pair.draws}무 {pair.losses}패
+                  </p>
+                </div>
+                <span className={`font-mono text-xs font-black ${pair.avgGoalDiff < 0 ? "text-rose-600" : pair.avgGoalDiff >= 0.5 ? "text-emerald-600" : "text-amber-600"}`}>
+                  {formatHistorySigned(pair.avgGoalDiff)}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function RecentFormBars({ forms }: { forms: HistoryPlayerForm[] }) {
   const maxPoints = Math.max(1, ...forms.map((form) => form.points));
 
@@ -1870,6 +2101,7 @@ function HistoryOverallInsight({ insight, groupMap }: { insight: TeamHistoryInsi
   const allPairs = allHistoryPairs(insight);
   const goodPairs = topGoodPairs(insight, 10);
   const badPairs = topBadPairs(insight, 10);
+  const mapPairs = compatibilityMapPairs(insight, 6, 6, 16);
   const defenseMidPairs = betweenGroupPairs(insight, groupMap, "DEFENSE", "MID");
   const midAttackPairs = betweenGroupPairs(insight, groupMap, "MID", "ATTACK");
 
@@ -1893,16 +2125,24 @@ function HistoryOverallInsight({ insight, groupMap }: { insight: TeamHistoryInsi
         <HistoryMiniStat label="평균 실점" value={formatScore(insight.avgGoalsAgainst)} />
       </div>
 
+      <CompatibilityMapCard
+        title="전체 인원 궁합지도"
+        subtitle="현재 선택된 전체 인원에서 좋은 연결과 주의 연결만 핵심선으로 표시합니다."
+        pairs={mapPairs}
+        connectionPairs={allPairs}
+        groupMap={groupMap}
+      />
+
       <div className="mt-3 grid gap-3 lg:grid-cols-2">
         <HistoryPairTable title="전체 좋은 궁합 Top 10" pairs={goodPairs} empty="전체 인원 기준 좋은 궁합 기록이 아직 부족합니다." />
         <HistoryPairTable title="전체 낮은 궁합 Top 10" pairs={badPairs} empty="전체 인원 기준 낮은 궁합 기록이 아직 부족합니다." />
       </div>
 
       <div className="mt-4 grid gap-3 lg:grid-cols-2">
-        <HistoryPairTable title="수비-미드 좋은 궁합 Top 10" pairs={sortGoodPairs(defenseMidPairs).slice(0, 10)} empty="수비-미드 좋은 궁합 기록이 아직 부족합니다." />
-        <HistoryPairTable title="수비-미드 낮은 궁합 Top 10" pairs={sortBadPairs(defenseMidPairs).slice(0, 10)} empty="수비-미드 낮은 궁합 기록이 아직 부족합니다." />
-        <HistoryPairTable title="미드-공격 좋은 궁합 Top 10" pairs={sortGoodPairs(midAttackPairs).slice(0, 10)} empty="미드-공격 좋은 궁합 기록이 아직 부족합니다." />
-        <HistoryPairTable title="미드-공격 낮은 궁합 Top 10" pairs={sortBadPairs(midAttackPairs).slice(0, 10)} empty="미드-공격 낮은 궁합 기록이 아직 부족합니다." />
+        <HistoryPairTable title="수비-미드 좋은 궁합 Top 5" pairs={sortGoodPairs(defenseMidPairs).slice(0, 5)} empty="수비-미드 좋은 궁합 기록이 아직 부족합니다." />
+        <HistoryPairTable title="수비-미드 낮은 궁합 Worst 5" pairs={sortBadPairs(defenseMidPairs).slice(0, 5)} empty="수비-미드 낮은 궁합 기록이 아직 부족합니다." />
+        <HistoryPairTable title="미드-공격 좋은 궁합 Top 5" pairs={sortGoodPairs(midAttackPairs).slice(0, 5)} empty="미드-공격 좋은 궁합 기록이 아직 부족합니다." />
+        <HistoryPairTable title="미드-공격 낮은 궁합 Worst 5" pairs={sortBadPairs(midAttackPairs).slice(0, 5)} empty="미드-공격 낮은 궁합 기록이 아직 부족합니다." />
       </div>
 
       <div className="mt-4 grid gap-3 lg:grid-cols-3">
