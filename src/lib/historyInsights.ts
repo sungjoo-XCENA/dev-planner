@@ -1,4 +1,5 @@
 import type {
+  HistoryDefenseForm,
   HistoryInsightResponse,
   HistoryPairInsight,
   HistoryPairLabel,
@@ -155,6 +156,11 @@ function analyzeTeamHistory({ team, players, matches }: TeamAnalysisInput): Team
   const goalDiffSum = pairInsights.reduce((sum, pair) => sum + pair.goalDiff, 0);
   const avgGoalDiff = coPlaySamples > 0 ? roundOne(goalDiffSum / coPlaySamples) : 0;
   const recentForms = buildRecentForms(normalizedPlayers, displayByName, matches);
+  const defenseForms = buildDefenseForms(normalizedPlayers, displayByName, matches);
+  const defenseSamples = defenseForms.reduce((sum, form) => sum + form.matches, 0);
+  const cleanSheets = defenseForms.reduce((sum, form) => sum + form.cleanSheets, 0);
+  const goalsAgainst = defenseForms.reduce((sum, form) => sum + form.goalsAgainst, 0);
+  const avgGoalsAgainst = defenseSamples > 0 ? roundOne(goalsAgainst / defenseSamples) : 0;
 
   return {
     team,
@@ -162,19 +168,26 @@ function analyzeTeamHistory({ team, players, matches }: TeamAnalysisInput): Team
     matchedPlayerCount,
     coPlaySamples,
     avgGoalDiff,
+    cleanSheets,
+    goalsAgainst,
+    avgGoalsAgainst,
     goodPairs,
     cautionPairs,
     samplePairs,
     recentForms,
+    defenseForms,
     unmatchedNames,
     summary: buildSummary({
       matchedPlayerCount,
       playerCount: normalizedPlayers.length,
       coPlaySamples,
       avgGoalDiff,
+      cleanSheets,
+      avgGoalsAgainst,
       goodPairs,
       cautionPairs,
       recentForms,
+      defenseForms,
     }),
   };
 }
@@ -255,6 +268,9 @@ function buildRecentForms(
         goals: 0,
         assists: 0,
         points: 0,
+        goalsAgainst: 0,
+        cleanSheets: 0,
+        avgGoalsAgainst: 0,
         avgGoalDiff: 0,
         trend: "sample",
       };
@@ -274,6 +290,8 @@ function buildRecentForms(
         form.goals += goals;
         form.assists += assists;
         form.points += goals + assists;
+        form.goalsAgainst += sideStats.goalsAgainst;
+        if (sideStats.goalsAgainst === 0) form.cleanSheets += 1;
         goalDiffSum += diff;
 
         if (diff > 0) form.wins += 1;
@@ -282,6 +300,7 @@ function buildRecentForms(
       }
 
       form.avgGoalDiff = form.matches > 0 ? roundOne(goalDiffSum / form.matches) : 0;
+      form.avgGoalsAgainst = form.matches > 0 ? roundOne(form.goalsAgainst / form.matches) : 0;
       form.trend = labelForm(form);
       return form;
     })
@@ -289,22 +308,66 @@ function buildRecentForms(
     .sort((a, b) => b.points - a.points || b.avgGoalDiff - a.avgGoalDiff || b.matches - a.matches || a.name.localeCompare(b.name, "ko"));
 }
 
+function buildDefenseForms(
+  normalizedPlayers: string[],
+  displayByName: Map<string, string>,
+  matches: HistoricalMatch[],
+): HistoryDefenseForm[] {
+  return normalizedPlayers
+    .map((name) => {
+      const form: HistoryDefenseForm = {
+        name: displayByName.get(name) ?? name,
+        matches: 0,
+        cleanSheets: 0,
+        goalsAgainst: 0,
+        avgGoalsAgainst: 0,
+        avgGoalDiff: 0,
+        trend: "sample",
+      };
+      let goalDiffSum = 0;
+
+      matches.forEach((match) => {
+        const side = sideForPlayer(match, name);
+        if (!side) return;
+
+        const sideStats = statsForSide(match, side);
+        form.matches += 1;
+        form.goalsAgainst += sideStats.goalsAgainst;
+        if (sideStats.goalsAgainst === 0) form.cleanSheets += 1;
+        goalDiffSum += sideStats.goalsFor - sideStats.goalsAgainst;
+      });
+
+      form.avgGoalsAgainst = form.matches > 0 ? roundOne(form.goalsAgainst / form.matches) : 0;
+      form.avgGoalDiff = form.matches > 0 ? roundOne(goalDiffSum / form.matches) : 0;
+      form.trend = labelDefenseForm(form);
+      return form;
+    })
+    .filter((form) => form.matches > 0)
+    .sort((a, b) => b.cleanSheets - a.cleanSheets || a.avgGoalsAgainst - b.avgGoalsAgainst || b.matches - a.matches || b.avgGoalDiff - a.avgGoalDiff || a.name.localeCompare(b.name, "ko"));
+}
+
 function buildSummary({
   matchedPlayerCount,
   playerCount,
   coPlaySamples,
   avgGoalDiff,
+  cleanSheets,
+  avgGoalsAgainst,
   goodPairs,
   cautionPairs,
   recentForms,
+  defenseForms,
 }: {
   matchedPlayerCount: number;
   playerCount: number;
   coPlaySamples: number;
   avgGoalDiff: number;
+  cleanSheets: number;
+  avgGoalsAgainst: number;
   goodPairs: HistoryPairInsight[];
   cautionPairs: HistoryPairInsight[];
   recentForms: HistoryPlayerForm[];
+  defenseForms: HistoryDefenseForm[];
 }): string[] {
   const summary: string[] = [];
 
@@ -331,6 +394,12 @@ function buildSummary({
     summary.push(`최근 폼은 ${player.name}이 ${player.matches}경기 ${player.points}포인트로 가장 눈에 띕니다.`);
   }
 
+  if (defenseForms.length > 0) {
+    const player = defenseForms[0];
+    summary.push(`수비 표본은 클린시트 ${cleanSheets}회, 선수별 평균 실점 ${avgGoalsAgainst}입니다.`);
+    summary.push(`클린시트가 많은 선수는 ${player.name} (${player.matches}경기 ${player.cleanSheets}회, 평균 실점 ${player.avgGoalsAgainst})입니다.`);
+  }
+
   return summary;
 }
 
@@ -345,6 +414,13 @@ function labelForm(form: HistoryPlayerForm): HistoryPlayerTrend {
   if (form.matches < 2) return "sample";
   if (form.points >= 2 || form.avgGoalDiff >= 0.5) return "hot";
   if (form.avgGoalDiff <= -0.5) return "caution";
+  return "steady";
+}
+
+function labelDefenseForm(form: HistoryDefenseForm): HistoryPlayerTrend {
+  if (form.matches < 2) return "sample";
+  if (form.avgGoalsAgainst <= 1 || form.cleanSheets >= 2) return "hot";
+  if (form.avgGoalsAgainst >= 3) return "caution";
   return "steady";
 }
 
