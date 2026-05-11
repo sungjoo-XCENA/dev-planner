@@ -1712,18 +1712,24 @@ function topBadPairs(insight: TeamHistoryInsight, limit: number): HistoryPairIns
   return sortBadPairs(allHistoryPairs(insight)).slice(0, limit);
 }
 
+const PAIR_CONFIDENCE_MATCHES = 8;
+
+function pairConfidenceGoalDiff(pair: HistoryPairInsight): number {
+  return pair.avgGoalDiff * (pair.matches / (pair.matches + PAIR_CONFIDENCE_MATCHES));
+}
+
 function sortGoodPairs(pairs: HistoryPairInsight[]): HistoryPairInsight[] {
   return pairs
     .filter((pair) => pair.matches > 0)
     .slice()
-    .sort((a, b) => b.avgGoalDiff - a.avgGoalDiff || b.wins - a.wins || b.points - a.points || b.matches - a.matches);
+    .sort((a, b) => pairConfidenceGoalDiff(b) - pairConfidenceGoalDiff(a) || b.avgGoalDiff - a.avgGoalDiff || b.wins - a.wins || b.points - a.points || b.matches - a.matches);
 }
 
 function sortBadPairs(pairs: HistoryPairInsight[]): HistoryPairInsight[] {
   return pairs
     .filter((pair) => pair.matches > 0)
     .slice()
-    .sort((a, b) => a.avgGoalDiff - b.avgGoalDiff || b.losses - a.losses || b.goalsAgainst / b.matches - a.goalsAgainst / a.matches || b.matches - a.matches);
+    .sort((a, b) => pairConfidenceGoalDiff(a) - pairConfidenceGoalDiff(b) || a.avgGoalDiff - b.avgGoalDiff || b.losses - a.losses || b.goalsAgainst / b.matches - a.goalsAgainst / a.matches || b.matches - a.matches);
 }
 
 function betweenGroupPairs(insight: TeamHistoryInsight, groupMap: HistoryGroupMap, groupA: PositionGroup, groupB: PositionGroup): HistoryPairInsight[] {
@@ -2270,7 +2276,10 @@ function HistoryTeamDetail({ title, insight, groupMap }: { title: string; insigh
 function HistoryPairTable({ title, pairs, empty }: { title: string; pairs: HistoryPairInsight[]; empty: string }) {
   return (
     <div className="mt-4">
-      <p className="text-sm font-black text-slate-800">{title}</p>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm font-black text-slate-800">{title}</p>
+        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-black text-slate-500">신뢰보정 순</span>
+      </div>
       {pairs.length === 0 ? (
         <p className="mt-1 rounded-xl bg-white px-3 py-2 text-xs font-semibold text-slate-400 ring-1 ring-slate-200">{empty}</p>
       ) : (
@@ -2289,6 +2298,7 @@ function HistoryPairTable({ title, pairs, empty }: { title: string; pairs: Histo
               <div className="text-right">
                 <p className="font-mono text-sm font-black text-slate-900">{formatHistorySigned(pair.avgGoalDiff)}</p>
                 <p className="text-[10px] font-bold text-slate-400">평균득실</p>
+                <p className="text-[10px] font-bold text-slate-400">보정 {formatHistorySigned(pairConfidenceGoalDiff(pair))}</p>
               </div>
             </div>
           ))}
