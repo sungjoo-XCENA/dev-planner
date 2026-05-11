@@ -12,7 +12,6 @@ const FORMATION_OUTFIELD: Record<PositionGroup, number> = {
   DEFENSE: 4,
 };
 const OUTFIELD_DEPLOYED = FORMATION_OUTFIELD.ATTACK + FORMATION_OUTFIELD.MID + FORMATION_OUTFIELD.DEFENSE;
-const POSITION_GROUPS: PositionGroup[] = ["ATTACK", "MID", "DEFENSE"];
 
 function dedicatedGkFor(team: TeamName, quarter: Quarter, dedicatedGks: DedicatedGoalkeeper[]): DedicatedGoalkeeper | null {
   if (dedicatedGks.length === 0) return null;
@@ -61,52 +60,6 @@ function countByAssignedGroup(players: AssignedPlayer[]): Record<PositionGroup, 
   }, emptyGroupCounts());
 }
 
-function absenceTargetsForQuarter(
-  players: AssignedPlayer[],
-  availablePlayers: AssignedPlayer[],
-  absentTotal: number,
-): Record<PositionGroup, number> {
-  const teamCounts = countByAssignedGroup(players);
-  const availableCounts = countByAssignedGroup(availablePlayers);
-  const targets = emptyGroupCounts();
-  const preferred = emptyGroupCounts();
-  let remaining = absentTotal;
-
-  for (const group of POSITION_GROUPS) {
-    preferred[group] = Math.max(0, teamCounts[group] - FORMATION_OUTFIELD[group]);
-  }
-
-  while (remaining > 0) {
-    const group = POSITION_GROUPS
-      .filter((item) => targets[item] < Math.min(preferred[item], availableCounts[item]))
-      .sort((a, b) => {
-        const aNeed = Math.min(preferred[a], availableCounts[a]) - targets[a];
-        const bNeed = Math.min(preferred[b], availableCounts[b]) - targets[b];
-        if (bNeed !== aNeed) return bNeed - aNeed;
-        return POSITION_GROUPS.indexOf(a) - POSITION_GROUPS.indexOf(b);
-      })[0];
-    if (!group) break;
-    targets[group] += 1;
-    remaining -= 1;
-  }
-
-  while (remaining > 0) {
-    const group = POSITION_GROUPS
-      .filter((item) => targets[item] < availableCounts[item])
-      .sort((a, b) => {
-        const aAvailable = availableCounts[a] - targets[a];
-        const bAvailable = availableCounts[b] - targets[b];
-        if (bAvailable !== aAvailable) return bAvailable - aAvailable;
-        return POSITION_GROUPS.indexOf(a) - POSITION_GROUPS.indexOf(b);
-      })[0];
-    if (!group) break;
-    targets[group] += 1;
-    remaining -= 1;
-  }
-
-  return targets;
-}
-
 function planRotation(
   players: AssignedPlayer[],
   nonIronmen: AssignedPlayer[],
@@ -117,12 +70,22 @@ function planRotation(
   const eventCount = new Map<string, number>();
   const slots: PerQuarterRotation[] = [];
 
-  const pickLowest = (pool: AssignedPlayer[], excluded: Set<string>): AssignedPlayer | null => {
+  const groupSize = countByAssignedGroup(players);
+
+  const positionShortagePenalty = (player: AssignedPlayer, currentAbsences: AssignedPlayer[]): number => {
+    const currentGroupAbsences = currentAbsences.filter((item) => item.assignedGroup === player.assignedGroup).length;
+    const remainingGroupPlayers = groupSize[player.assignedGroup] - currentGroupAbsences - 1;
+    return remainingGroupPlayers < FORMATION_OUTFIELD[player.assignedGroup] ? 1 : 0;
+  };
+
+  const pickLowest = (pool: AssignedPlayer[], excluded: Set<string>, currentAbsences: AssignedPlayer[]): AssignedPlayer | null => {
     const filtered = pool.filter((p) => !excluded.has(p.id));
     if (filtered.length === 0) return null;
     return [...filtered].sort((a, b) => {
       const diff = (eventCount.get(a.id) ?? 0) - (eventCount.get(b.id) ?? 0);
       if (diff !== 0) return diff;
+      const shortageDiff = positionShortagePenalty(a, currentAbsences) - positionShortagePenalty(b, currentAbsences);
+      if (shortageDiff !== 0) return shortageDiff;
       const compDiff = compositeScore(a) - compositeScore(b);
       if (compDiff !== 0) return compDiff;
       return a.name.localeCompare(b.name, "ko");
@@ -136,7 +99,6 @@ function planRotation(
     const benchTarget = Math.min(benchPerQuarter[qIdx] ?? 0, nonIronmen.length);
     const gkTarget = hasDedicatedGk[qIdx] ? 0 : 1;
     const absenceTarget = Math.min(benchTarget + gkTarget, nonIronmen.length);
-    const groupTargets = absenceTargetsForQuarter(players, nonIronmen, absenceTarget);
 
     const addAbsence = (player: AssignedPlayer | null) => {
       if (!player) return;
@@ -145,14 +107,8 @@ function planRotation(
       eventCount.set(player.id, (eventCount.get(player.id) ?? 0) + 1);
     };
 
-    for (const group of POSITION_GROUPS) {
-      for (let index = 0; index < groupTargets[group]; index += 1) {
-        addAbsence(pickLowest(nonIronmen.filter((player) => player.assignedGroup === group), usedThisQ));
-      }
-    }
-
     while (absences.length < absenceTarget) {
-      const fallback = pickLowest(nonIronmen, usedThisQ);
+      const fallback = pickLowest(nonIronmen, usedThisQ, absences);
       if (!fallback) break;
       addAbsence(fallback);
     }
