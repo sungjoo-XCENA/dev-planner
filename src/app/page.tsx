@@ -1333,6 +1333,19 @@ function MultiPositionBadge({ player, compact = false }: { player: Pick<Player, 
   );
 }
 
+function GuestBadge({ player, compact = false }: { player: Pick<Player, "memberType">; compact?: boolean }) {
+  if (player.memberType !== "GUEST") return null;
+  const sizeClass = compact ? "px-1 py-0 text-[8px]" : "px-1.5 py-0.5 text-[10px]";
+  return (
+    <span
+      className={`inline-flex shrink-0 items-center rounded-md border border-violet-200 bg-violet-50 font-black leading-none text-violet-700 ${sizeClass}`}
+      title="용병"
+    >
+      용병
+    </span>
+  );
+}
+
 function injuryBadgeClass(level: 1 | 2 | 3): string {
   if (level === 1) return "border-amber-200 bg-amber-50 text-amber-700";
   if (level === 2) return "border-orange-200 bg-orange-50 text-orange-700";
@@ -1522,6 +1535,7 @@ function TeamResultView({
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                 <div className="flex items-center gap-1.5">
                   <p className="text-sm font-bold text-blue-900">선택: {formatTeamName(selection.team)} · {sel.name}</p>
+                  <GuestBadge player={sel} />
                   <StaffRoleBadge role={staffRole} />
                   <InjuryBadge player={sel} />
                   <MultiPositionBadge player={sel} />
@@ -2393,7 +2407,7 @@ function TeamCard({
                   const composite = p.attackScore + p.midScore + p.defenseScore + effectiveActivityScore(p);
                   const isSwapHint = showSwapHints && selectedComposite != null && Math.abs(composite - selectedComposite) <= 3;
                   const staffRole = extractStaffRole(p.memo);
-                  const hasBadge = staffRole != null || hasInjury(p) || isMultiPositionPlayer(p);
+                  const hasBadge = p.memberType === "GUEST" || staffRole != null || hasInjury(p) || isMultiPositionPlayer(p);
                   const baseClass = "min-h-[3.9rem] min-w-0 rounded-lg border px-1 py-1.5 text-center transition";
                   const stateClass = isSelected
                     ? teamSelectedPlayerClass(team)
@@ -2416,6 +2430,7 @@ function TeamCard({
                         <span className="max-w-full truncate text-[11px] font-bold leading-tight">{p.name}{overrideMark(p.assignmentReason)}</span>
                         {hasBadge && (
                           <span className="flex min-h-[0.9rem] max-w-full flex-wrap items-center justify-center gap-0.5">
+                            <GuestBadge player={p} compact />
                             <StaffRoleBadge role={staffRole} compact />
                             <InjuryBadge player={p} compact />
                             <MultiPositionBadge player={p} compact />
