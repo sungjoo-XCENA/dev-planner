@@ -1772,9 +1772,9 @@ function compatibilityStrokeOpacity(pair: HistoryPairInsight, maxMatches: number
 }
 
 function compatibilityNodeClass(group?: PositionGroup): string {
-  if (group === "ATTACK") return "bg-rose-50 text-rose-950 ring-rose-200";
-  if (group === "MID") return "bg-sky-50 text-sky-950 ring-sky-200";
-  if (group === "DEFENSE") return "bg-emerald-50 text-emerald-950 ring-emerald-200";
+  if (group === "ATTACK") return "bg-violet-50 text-violet-950 ring-violet-200";
+  if (group === "MID") return "bg-cyan-50 text-cyan-950 ring-cyan-200";
+  if (group === "DEFENSE") return "bg-slate-100 text-slate-800 ring-slate-300";
   return "bg-white text-slate-900 ring-slate-200";
 }
 
@@ -1863,7 +1863,10 @@ function CompatibilityMapCard({
           <span className="inline-flex items-center gap-1 text-amber-700"><span className="h-2 w-4 rounded-full bg-amber-500" />보통</span>
           <span className="inline-flex items-center gap-1 text-rose-700"><span className="h-2 w-4 rounded-full bg-rose-500" />주의</span>
           <span className="inline-flex items-center gap-1 text-slate-500"><span className="h-2 w-5 rounded-full bg-slate-300" />두께=경기 수</span>
-          <span className="text-slate-400">선수 클릭=강조</span>
+          <span className="inline-flex items-center gap-1 text-violet-700"><span className="h-2 w-2 rounded-full bg-violet-300" />공격</span>
+          <span className="inline-flex items-center gap-1 text-cyan-700"><span className="h-2 w-2 rounded-full bg-cyan-300" />미드</span>
+          <span className="inline-flex items-center gap-1 text-slate-600"><span className="h-2 w-2 rounded-full bg-slate-300" />수비</span>
+          <span className="text-slate-400">선수 클릭=강조/해제</span>
         </div>
       </div>
 
@@ -1900,7 +1903,7 @@ function CompatibilityMapCard({
                 className={`absolute -translate-x-1/2 -translate-y-1/2 truncate rounded-full text-center font-black shadow-sm ring-1 transition hover:scale-105 focus:outline-none focus:ring-2 focus:ring-slate-900 ${dense ? "max-w-[4.5rem] px-1.5 py-0.5 text-[10px]" : "max-w-[5.75rem] px-2.5 py-1 text-[11px]"} ${compatibilityNodeClass(node.group)} ${activeKey === normalizeHistoryName(node.name) ? "ring-2 ring-slate-900" : ""}`}
                 style={{ left: `${node.x}%`, top: `${node.y}%` }}
                 title={node.group ? `${node.name} · ${groupKorean(node.group)}` : node.name}
-                onClick={() => setSelectedName(node.name)}
+                onClick={() => setSelectedName((current) => current && normalizeHistoryName(current) === normalizeHistoryName(node.name) ? null : node.name)}
               >
                 {node.name}
               </button>
@@ -1915,7 +1918,7 @@ function CompatibilityMapCard({
           </div>
           {!activeName && (
             <p className="mt-3 rounded-xl bg-slate-50 px-3 py-2 text-xs font-bold text-slate-500 ring-1 ring-slate-200">
-              전체 조합은 흐린 선으로 모두 깔려 있습니다. 선수 이름을 누르면 그 선수의 연결만 진하게 표시됩니다.
+              전체 조합은 흐린 선으로 모두 깔려 있습니다. 선수 이름을 누르면 그 선수의 연결만 진하게 표시되고, 다시 누르면 해제됩니다.
             </p>
           )}
           {activeName && (
