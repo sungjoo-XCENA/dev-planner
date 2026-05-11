@@ -78,6 +78,12 @@ const RAW_LINEUP_PREFIX = "raw.";
 type SharedLineupPayload = {
   version: 1;
   lineup: LineupResult;
+  teamResult?: TeamBalanceResult | null;
+};
+
+type SharedLineupData = {
+  lineup: LineupResult;
+  teamResult?: TeamBalanceResult | null;
 };
 
 function bytesToBase64Url(bytes: Uint8Array): string {
@@ -125,8 +131,8 @@ async function gunzip(bytes: Uint8Array): Promise<Uint8Array> {
   return new Uint8Array(await new Response(stream).arrayBuffer());
 }
 
-async function encodeSharedLineup(lineup: LineupResult): Promise<string> {
-  const payload: SharedLineupPayload = { version: 1, lineup };
+async function encodeSharedLineup(lineup: LineupResult, teamResult?: TeamBalanceResult | null): Promise<string> {
+  const payload: SharedLineupPayload = teamResult ? { version: 1, lineup, teamResult } : { version: 1, lineup };
   const bytes = new TextEncoder().encode(JSON.stringify(payload));
   if (typeof CompressionStream === "undefined") {
     return `${RAW_LINEUP_PREFIX}${bytesToBase64Url(bytes)}`;
@@ -134,14 +140,14 @@ async function encodeSharedLineup(lineup: LineupResult): Promise<string> {
   return `${COMPRESSED_LINEUP_PREFIX}${bytesToBase64Url(await gzip(bytes))}`;
 }
 
-async function decodeSharedLineup(value: string): Promise<LineupResult> {
+async function decodeSharedLineup(value: string): Promise<SharedLineupData> {
   if (value.startsWith(RAW_LINEUP_PREFIX)) {
     const json = new TextDecoder().decode(base64UrlToBytes(value.slice(RAW_LINEUP_PREFIX.length)));
     const payload = JSON.parse(json) as Partial<SharedLineupPayload>;
     if (payload.version !== 1 || !payload.lineup || !Array.isArray(payload.lineup.quarters)) {
       throw new Error("라인업 공유 데이터 형식이 올바르지 않습니다.");
     }
-    return payload.lineup;
+    return { lineup: payload.lineup, teamResult: payload.teamResult ?? null };
   }
 
   if (!value.startsWith(COMPRESSED_LINEUP_PREFIX)) {
@@ -153,15 +159,15 @@ async function decodeSharedLineup(value: string): Promise<LineupResult> {
   if (payload.version !== 1 || !payload.lineup || !Array.isArray(payload.lineup.quarters)) {
     throw new Error("라인업 공유 데이터 형식이 올바르지 않습니다.");
   }
-  return payload.lineup;
+  return { lineup: payload.lineup, teamResult: payload.teamResult ?? null };
 }
 
-async function buildLineupShareUrl(lineup: LineupResult): Promise<string | null> {
+async function buildLineupShareUrl(lineup: LineupResult, teamResult?: TeamBalanceResult | null): Promise<string | null> {
   if (typeof window === "undefined") return null;
   const url = new URL(window.location.href);
   url.search = "";
   const params = new URLSearchParams();
-  params.set(LINEUP_SHARE_HASH_KEY, await encodeSharedLineup(lineup));
+  params.set(LINEUP_SHARE_HASH_KEY, await encodeSharedLineup(lineup, teamResult));
   url.hash = params.toString();
   return url.toString();
 }
@@ -296,13 +302,13 @@ export default function Home() {
       const encoded = params.get(LINEUP_SHARE_HASH_KEY);
       if (!encoded) return;
       try {
-        const sharedLineup = await decodeSharedLineup(encoded);
+        const shared = await decodeSharedLineup(encoded);
         if (cancelled) return;
         setPlannerMode("BALANCE");
-        setTeamResult(null);
-        setTeamVariants([]);
+        setTeamResult(shared.teamResult ?? null);
+        setTeamVariants(shared.teamResult ? [shared.teamResult] : []);
         setSelectedVariantIdx(0);
-        setLineupResult(sharedLineup);
+        setLineupResult(shared.lineup);
         setMatchResult(null);
         setTeamsConfirmed(true);
         setSwapSelection(null);
@@ -764,9 +770,9 @@ export default function Home() {
     });
   }, []);
 
-  async function copyLineupShareUrl(lineup: LineupResult, prebuiltUrl?: string | null) {
+  async function copyLineupShareUrl(lineup: LineupResult, sharedTeamResult?: TeamBalanceResult | null, prebuiltUrl?: string | null) {
     try {
-      const url = prebuiltUrl ?? await buildLineupShareUrl(lineup);
+      const url = prebuiltUrl ?? await buildLineupShareUrl(lineup, sharedTeamResult);
       if (!url) return;
       const shareData = { title: "DEV FC 라인업", text: "DEV FC 라인업 공유", url };
       if (typeof navigator.share === "function" && (!navigator.canShare || navigator.canShare(shareData))) {
@@ -959,6 +965,7 @@ export default function Home() {
       {lineupResult && (
         <LineupResultView
           result={lineupResult}
+          teamResult={plannerMode === "BALANCE" ? teamResult : null}
           copied={copied}
           recordEntryOpen={showRecordEntry}
           onCopyShareUrl={copyLineupShareUrl}
@@ -2724,6 +2731,7 @@ function swapInsideQuarter<T extends SwappableQuarter>(q: T, sec1: LineupSection
 
 function LineupResultView({
   result,
+  teamResult,
   copied,
   recordEntryOpen,
   onCopyShareUrl,
@@ -2731,9 +2739,10 @@ function LineupResultView({
   onToggleRecordEntry,
 }: {
   result: LineupResult;
+  teamResult?: TeamBalanceResult | null;
   copied: boolean;
   recordEntryOpen: boolean;
-  onCopyShareUrl: (result: LineupResult, prebuiltUrl?: string | null) => void;
+  onCopyShareUrl: (result: LineupResult, teamResult?: TeamBalanceResult | null, prebuiltUrl?: string | null) => void;
   onQuartersChange: (quarters: LineupResult["quarters"]) => void;
   onToggleRecordEntry: () => void;
 }) {
@@ -2766,7 +2775,7 @@ function LineupResultView({
     let active = true;
     setShareUrl(null);
     setShareUrlError(null);
-    void buildLineupShareUrl(currentLineup)
+    void buildLineupShareUrl(currentLineup, teamResult)
       .then((url) => {
         if (active) setShareUrl(url);
       })
@@ -2776,7 +2785,7 @@ function LineupResultView({
     return () => {
       active = false;
     };
-  }, [currentLineup]);
+  }, [currentLineup, teamResult]);
 
   function handleQuarterSwap(key: string) {
     if (!quarterSwapKey) {
@@ -2985,7 +2994,7 @@ function LineupResultView({
           </button>
           <button
             className="min-h-11 w-full rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 disabled:cursor-wait disabled:opacity-60 sm:w-auto"
-            onClick={() => onCopyShareUrl(currentLineup, shareUrl)}
+            onClick={() => onCopyShareUrl(currentLineup, teamResult, shareUrl)}
             disabled={!shareUrl && !shareUrlError}
           >
             {copied ? "공유 링크 복사됨" : !shareUrl && !shareUrlError ? "공유 링크 준비 중" : "라인업 공유"}
