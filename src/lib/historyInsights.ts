@@ -44,6 +44,12 @@ type TeamAnalysisInput = {
   matches: HistoricalMatch[];
 };
 
+const PAIR_CONFIDENCE_MATCHES = 8;
+
+function pairConfidenceGoalDiff(pair: HistoryPairInsight): number {
+  return pair.avgGoalDiff * (pair.matches / (pair.matches + PAIR_CONFIDENCE_MATCHES));
+}
+
 export function normalizeHistoryName(value: string): string {
   return value.replace(/\s+/g, "").replace(/[＊*]/g, "").trim();
 }
@@ -142,10 +148,10 @@ function analyzeTeamHistory({ team, players, matches }: TeamAnalysisInput): Team
   const pairInsights = buildPairInsights(normalizedPlayers, displayByName, matches);
   const goodPairs = pairInsights
     .filter((pair) => pair.label === "good")
-    .sort((a, b) => b.avgGoalDiff - a.avgGoalDiff || b.matches - a.matches || b.points - a.points);
+    .sort((a, b) => pairConfidenceGoalDiff(b) - pairConfidenceGoalDiff(a) || b.avgGoalDiff - a.avgGoalDiff || b.matches - a.matches || b.points - a.points);
   const cautionPairs = pairInsights
     .filter((pair) => pair.label === "caution")
-    .sort((a, b) => a.avgGoalDiff - b.avgGoalDiff || b.matches - a.matches || a.points - b.points);
+    .sort((a, b) => pairConfidenceGoalDiff(a) - pairConfidenceGoalDiff(b) || a.avgGoalDiff - b.avgGoalDiff || b.matches - a.matches || a.points - b.points);
   const samplePairs = pairInsights
     .filter((pair) => pair.label === "sample")
     .sort((a, b) => b.matches - a.matches || Math.abs(b.avgGoalDiff) - Math.abs(a.avgGoalDiff));
