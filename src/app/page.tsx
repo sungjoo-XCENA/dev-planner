@@ -2461,6 +2461,10 @@ type LineupSection = "attack" | "mid" | "defense" | "gk" | "bench";
 type PlayerCount = { field: number; gk: number };
 type OverviewPlayer = { name: string; staffRole?: StaffRole };
 
+function isEmptyPlayerName(name: string | undefined): boolean {
+  return !name || name === "없음";
+}
+
 const OVERVIEW_GROUPS: Array<{ group: PositionGroup; label: string }> = [
   { group: "ATTACK", label: "공격" },
   { group: "MID", label: "미드" },
@@ -2631,6 +2635,7 @@ function Pitch({ title, gk, attack, mid, defense, bench, accent = "emerald", sel
   const fieldPaddingClass = imageMode ? "p-3" : "p-2 sm:p-3";
   const rowsClass = imageMode ? "relative flex h-full flex-col justify-around py-2" : "relative flex h-full flex-col justify-around py-1";
   const benchClass = imageMode ? "rounded-b-2xl bg-slate-50 px-4 py-3" : "bg-slate-50 px-4 py-3";
+  const hasGk = !isEmptyPlayerName(gk);
   return (
     <div className={shellClass}>
       <div className={`rounded-t-2xl bg-gradient-to-r ${headerClass} ${headerPaddingClass} text-white`}>
@@ -2647,7 +2652,11 @@ function Pitch({ title, gk, attack, mid, defense, bench, accent = "emerald", sel
           <PitchRow players={mid} section="mid" selectedKey={sel} onSelect={onSelect} counts={counts} staffRoles={staffRoles} imageMode={imageMode} />
           <PitchRow players={defense} section="defense" selectedKey={sel} onSelect={onSelect} counts={counts} staffRoles={staffRoles} imageMode={imageMode} />
           <div className="flex justify-center">
-            <PitchChip name={gk} accent="gk" selected={sel === `gk|${gk}`} onClick={onSelect ? () => onSelect("gk", gk) : undefined} count={counts?.get(gk)} staffRole={staffRoles?.get(gk)} imageMode={imageMode} />
+            {hasGk ? (
+              <PitchChip name={gk} accent="gk" selected={sel === `gk|${gk}`} onClick={onSelect ? () => onSelect("gk", gk) : undefined} count={counts?.get(gk)} staffRole={staffRoles?.get(gk)} imageMode={imageMode} />
+            ) : (
+              <span className="rounded-full bg-amber-100 px-3 py-1.5 text-xs font-bold text-amber-800">GK 미배정</span>
+            )}
           </div>
         </div>
       </div>
@@ -3087,6 +3096,32 @@ function MatchResultView({ result, recordEntryOpen, onToggleRecordEntry }: { res
     addPlayer(result.starters.gk);
     return map;
   }, [result]);
+  const counts = useMemo(() => {
+    const map = new Map<string, PlayerCount>();
+    const ensurePlayer = (name: string) => {
+      if (isEmptyPlayerName(name)) return;
+      if (!map.has(name)) map.set(name, { field: 0, gk: 0 });
+    };
+    const bumpField = (name: string) => {
+      ensurePlayer(name);
+      const c = map.get(name);
+      if (c) map.set(name, { field: c.field + 1, gk: c.gk });
+    };
+    const bumpGk = (name: string) => {
+      ensurePlayer(name);
+      const c = map.get(name);
+      if (c) map.set(name, { field: c.field, gk: c.gk + 1 });
+    };
+
+    for (const quarter of quarters) {
+      quarter.attack.forEach(bumpField);
+      quarter.mid.forEach(bumpField);
+      quarter.defense.forEach(bumpField);
+      bumpGk(quarter.gk);
+    }
+    return map;
+  }, [quarters]);
+
   function handleSelect(key: string, section: LineupSection, name: string) {
     if (!selection) {
       setSelection({ key, section, name });
@@ -3164,6 +3199,7 @@ function MatchResultView({ result, recordEntryOpen, onToggleRecordEntry }: { res
                   defense={q.defense}
                   bench={q.bench}
                   staffRoles={staffRolesByName}
+                  counts={counts}
                   selectedKey={selectedKey}
                   onSelect={(section, name) => handleSelect(key, section, name)}
                 />
@@ -3173,7 +3209,6 @@ function MatchResultView({ result, recordEntryOpen, onToggleRecordEntry }: { res
           );
         })}
       </div>
-      <MatchOperationBoard operation={result.operation} staffRoles={staffRolesByName} />
     </section>
   );
 }
