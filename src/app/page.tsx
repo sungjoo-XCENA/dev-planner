@@ -657,15 +657,18 @@ export default function Home() {
       }
       return;
     }
-    const candidates = targetTeamPlayers.filter((p) => p.assignedGroup === targetGroup);
-    if (candidates.length === 0) return;
-    const sourceComposite = sourcePlayer.attackScore + sourcePlayer.midScore + sourcePlayer.defenseScore + effectiveActivityScore(sourcePlayer);
-    const closest = candidates.reduce((best, p) => {
-      const cP = p.attackScore + p.midScore + p.defenseScore + effectiveActivityScore(p);
-      const cBest = best.attackScore + best.midScore + best.defenseScore + effectiveActivityScore(best);
-      return Math.abs(cP - sourceComposite) < Math.abs(cBest - sourceComposite) ? p : best;
-    });
-    handlePlayerClick(targetTeam, closest.id);
+    const movedPlayer = reassignPlayerGroup(sourcePlayer, targetGroup);
+    const sourceNext = sourceTeamPlayers.filter((p) => p.id !== sourcePlayer.id);
+    const targetNext = [...targetTeamPlayers, movedPlayer];
+    try {
+      const next = swapSelection.team === "A"
+        ? summarizeTeams(sourceNext, targetNext, relations)
+        : summarizeTeams(targetNext, sourceNext, relations);
+      setTeamResult(next);
+      setSwapSelection(null);
+    } catch (error) {
+      setErrors([error instanceof Error ? error.message : String(error)]);
+    }
   }
 
   function handlePlayerClick(team: "A" | "B", playerId: string) {
