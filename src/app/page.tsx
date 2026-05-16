@@ -72,6 +72,7 @@ function modeHelp(mode: PlannerMode): string {
 }
 
 const LINEUP_SHARE_HASH_KEY = "lineup";
+const MATCH_LINEUP_SHARE_HASH_KEY = "matchLineup";
 const COMPRESSED_LINEUP_PREFIX = "gz.";
 const RAW_LINEUP_PREFIX = "raw.";
 
@@ -84,6 +85,11 @@ type SharedLineupPayload = {
 type SharedLineupData = {
   lineup: LineupResult;
   teamResult?: TeamBalanceResult | null;
+};
+
+type SharedMatchLineupPayload = {
+  version: 1;
+  match: MatchPlanResult;
 };
 
 function bytesToBase64Url(bytes: Uint8Array): string {
@@ -162,6 +168,34 @@ async function decodeSharedLineup(value: string): Promise<SharedLineupData> {
   return { lineup: payload.lineup, teamResult: payload.teamResult ?? null };
 }
 
+async function encodeSharedMatchLineup(match: MatchPlanResult): Promise<string> {
+  const payload: SharedMatchLineupPayload = { version: 1, match };
+  const bytes = new TextEncoder().encode(JSON.stringify(payload));
+  if (typeof CompressionStream === "undefined") {
+    return `${RAW_LINEUP_PREFIX}${bytesToBase64Url(bytes)}`;
+  }
+  return `${COMPRESSED_LINEUP_PREFIX}${bytesToBase64Url(await gzip(bytes))}`;
+}
+
+async function decodeSharedMatchLineup(value: string): Promise<MatchPlanResult> {
+  const parsePayload = (json: string) => {
+    const payload = JSON.parse(json) as Partial<SharedMatchLineupPayload>;
+    if (payload.version !== 1 || !payload.match || !Array.isArray(payload.match.quarters)) {
+      throw new Error("매치 라인업 공유 데이터 형식이 올바르지 않습니다.");
+    }
+    return payload.match;
+  };
+
+  if (value.startsWith(RAW_LINEUP_PREFIX)) {
+    return parsePayload(new TextDecoder().decode(base64UrlToBytes(value.slice(RAW_LINEUP_PREFIX.length))));
+  }
+  if (!value.startsWith(COMPRESSED_LINEUP_PREFIX)) {
+    throw new Error("매치 라인업 공유 URL 형식이 올바르지 않습니다.");
+  }
+  const compressed = base64UrlToBytes(value.slice(COMPRESSED_LINEUP_PREFIX.length));
+  return parsePayload(new TextDecoder().decode(await gunzip(compressed)));
+}
+
 async function buildLineupShareUrl(lineup: LineupResult, teamResult?: TeamBalanceResult | null): Promise<string | null> {
   if (typeof window === "undefined") return null;
   const url = new URL(window.location.href);
@@ -172,12 +206,23 @@ async function buildLineupShareUrl(lineup: LineupResult, teamResult?: TeamBalanc
   return url.toString();
 }
 
+async function buildMatchLineupShareUrl(match: MatchPlanResult): Promise<string | null> {
+  if (typeof window === "undefined") return null;
+  const url = new URL(window.location.href);
+  url.search = "";
+  const params = new URLSearchParams();
+  params.set(MATCH_LINEUP_SHARE_HASH_KEY, await encodeSharedMatchLineup(match));
+  url.hash = params.toString();
+  return url.toString();
+}
+
 function clearLineupShareHash() {
   if (typeof window === "undefined") return;
   const url = new URL(window.location.href);
   const params = new URLSearchParams(url.hash.startsWith("#") ? url.hash.slice(1) : url.hash);
-  if (!params.has(LINEUP_SHARE_HASH_KEY)) return;
+  if (!params.has(LINEUP_SHARE_HASH_KEY) && !params.has(MATCH_LINEUP_SHARE_HASH_KEY)) return;
   params.delete(LINEUP_SHARE_HASH_KEY);
+  params.delete(MATCH_LINEUP_SHARE_HASH_KEY);
   url.hash = params.toString();
   window.history.replaceState(null, "", url.toString());
 }
@@ -301,9 +346,26 @@ export default function Home() {
     let cancelled = false;
     const applySharedLineup = async () => {
       const params = new URLSearchParams(window.location.hash.startsWith("#") ? window.location.hash.slice(1) : window.location.hash);
+      const encodedMatch = params.get(MATCH_LINEUP_SHARE_HASH_KEY);
       const encoded = params.get(LINEUP_SHARE_HASH_KEY);
-      if (!encoded) return;
+      if (!encodedMatch && !encoded) return;
       try {
+        if (encodedMatch) {
+          const sharedMatch = await decodeSharedMatchLineup(encodedMatch);
+          if (cancelled) return;
+          setPlannerMode("MATCH");
+          setTeamResult(null);
+          setTeamVariants([]);
+          setSelectedVariantIdx(0);
+          setLineupResult(null);
+          setMatchResult(sharedMatch);
+          setTeamsConfirmed(false);
+          setSwapSelection(null);
+          setCopied(false);
+          window.setTimeout(() => document.getElementById("match-result")?.scrollIntoView({ block: "start" }), 0);
+          return;
+        }
+        if (!encoded) return;
         const shared = await decodeSharedLineup(encoded);
         if (cancelled) return;
         setPlannerMode("BALANCE");
@@ -742,11 +804,48 @@ export default function Home() {
     });
   }, []);
 
+  const handleMatchQuartersChange = useCallback((quarters: MatchPlanResult["quarters"]) => {
+    clearLineupShareHash();
+    setCopied(false);
+    setMatchResult((prev) => {
+      if (!prev || prev.quarters === quarters) return prev;
+      return { ...prev, quarters };
+    });
+  }, []);
+
   async function copyLineupShareUrl(lineup: LineupResult, sharedTeamResult?: TeamBalanceResult | null, prebuiltUrl?: string | null) {
     try {
       const url = prebuiltUrl ?? await buildLineupShareUrl(lineup, sharedTeamResult);
       if (!url) return;
       const shareData = { title: "DEV FC 라인업", text: "DEV FC 라인업 공유", url };
+      if (typeof navigator.share === "function" && (!navigator.canShare || navigator.canShare(shareData))) {
+        try {
+          await navigator.share(shareData);
+        } catch (shareError) {
+          if (shareError instanceof DOMException && shareError.name === "AbortError") return;
+          if (navigator.clipboard?.writeText) {
+            await navigator.clipboard.writeText(url);
+          } else {
+            window.prompt("공유 URL을 복사하세요.", url);
+          }
+        }
+      } else if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(url);
+      } else {
+        window.prompt("공유 URL을 복사하세요.", url);
+      }
+      window.history.replaceState(null, "", url);
+      setCopied(true);
+    } catch (error) {
+      setErrors([error instanceof Error ? error.message : String(error)]);
+    }
+  }
+
+  async function copyMatchLineupShareUrl(match: MatchPlanResult, prebuiltUrl?: string | null) {
+    try {
+      const url = prebuiltUrl ?? await buildMatchLineupShareUrl(match);
+      if (!url) return;
+      const shareData = { title: "DEV FC 매치 라인업", text: "DEV FC 매치 라인업 공유", url };
       if (typeof navigator.share === "function" && (!navigator.canShare || navigator.canShare(shareData))) {
         try {
           await navigator.share(shareData);
@@ -975,7 +1074,10 @@ export default function Home() {
       {plannerMode === "MATCH" && matchResult && (
         <MatchResultView
           result={matchResult}
+          copied={copied}
           recordEntryOpen={showRecordEntry}
+          onCopyShareUrl={copyMatchLineupShareUrl}
+          onQuartersChange={handleMatchQuartersChange}
           onToggleRecordEntry={toggleRecordEntry}
         />
       )}
@@ -3072,15 +3174,48 @@ function TeamLineupImage({
   );
 }
 
-function MatchResultView({ result, recordEntryOpen, onToggleRecordEntry }: { result: MatchPlanResult; recordEntryOpen: boolean; onToggleRecordEntry: () => void }) {
+function MatchResultView({
+  result,
+  copied,
+  recordEntryOpen,
+  onCopyShareUrl,
+  onQuartersChange,
+  onToggleRecordEntry,
+}: {
+  result: MatchPlanResult;
+  copied: boolean;
+  recordEntryOpen: boolean;
+  onCopyShareUrl: (result: MatchPlanResult, prebuiltUrl?: string | null) => void;
+  onQuartersChange: (quarters: MatchPlanResult["quarters"]) => void;
+  onToggleRecordEntry: () => void;
+}) {
   const [quarters, setQuarters] = useState(result.quarters);
   const [selection, setSelection] = useState<{ key: string; section: LineupSection; name: string } | null>(null);
+  const [shareUrl, setShareUrl] = useState<string | null>(null);
+  const [shareUrlError, setShareUrlError] = useState<string | null>(null);
   const refs = useRef<Map<string, HTMLDivElement | null>>(new Map());
+  const currentMatch = useMemo(() => ({ ...result, quarters }), [result, quarters]);
 
   useEffect(() => {
     setQuarters(result.quarters);
     setSelection(null);
   }, [result]);
+
+  useEffect(() => {
+    let active = true;
+    setShareUrl(null);
+    setShareUrlError(null);
+    void buildMatchLineupShareUrl(currentMatch)
+      .then((url) => {
+        if (active) setShareUrl(url);
+      })
+      .catch((error) => {
+        if (active) setShareUrlError(error instanceof Error ? error.message : String(error));
+      });
+    return () => {
+      active = false;
+    };
+  }, [currentMatch]);
 
   const staffRolesByName = useMemo(() => {
     const map = new Map<string, StaffRole>();
@@ -3139,6 +3274,7 @@ function MatchResultView({ result, recordEntryOpen, onToggleRecordEntry }: { res
       `match-${quarter.quarter}` === key ? swapInsideQuarter(quarter, selection.section, selection.name, section, name) : quarter
     ));
     setQuarters(next);
+    onQuartersChange(next);
     setSelection(null);
   }
 
@@ -3159,11 +3295,18 @@ function MatchResultView({ result, recordEntryOpen, onToggleRecordEntry }: { res
   }
 
   return (
-    <section className="mb-6 rounded-3xl bg-white p-6 shadow-sm">
+    <section id="match-result" className="mb-6 rounded-3xl bg-white p-6 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-xl font-bold">매치 라인업 추천</h2>
         <div className="flex flex-wrap gap-2">
           <button className="whitespace-nowrap rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-800 hover:bg-slate-50" onClick={onToggleRecordEntry}>{recordEntryOpen ? "기록 입력 닫기" : "기록 입력"}</button>
+          <button
+            className="whitespace-nowrap rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-800 hover:bg-slate-50 disabled:cursor-wait disabled:opacity-60"
+            onClick={() => onCopyShareUrl(currentMatch, shareUrl)}
+            disabled={!shareUrl && !shareUrlError}
+          >
+            {copied ? "공유 링크 복사됨" : !shareUrl && !shareUrlError ? "공유 링크 준비 중" : "매치 라인업 공유"}
+          </button>
           <button className="whitespace-nowrap rounded-xl bg-slate-900 px-4 py-2 text-sm font-bold text-white" onClick={downloadAll}>전체 이미지 저장</button>
         </div>
       </div>
