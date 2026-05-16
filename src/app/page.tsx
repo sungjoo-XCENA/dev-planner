@@ -228,24 +228,26 @@ export default function Home() {
       const storedGkIds = loadStored<string[]>("dedicatedGkIds", []);
       const storedTempGuests = loadStored<Player[]>("tempGuests", []);
       const storedTempGks = loadStored<DedicatedGoalkeeper[]>("tempGks", []);
+      const storedFieldIdSet = new Set(storedFieldIds);
+      const activeStoredTempGuests = storedTempGuests.filter((guestPlayer) => storedFieldIdSet.has(guestPlayer.id));
 
       setCsvUrl(storedCsvUrl);
       setPlannerMode(storedMode);
-      setTempGuests(storedTempGuests);
+      setTempGuests(activeStoredTempGuests);
       setTempGks(storedTempGks);
 
       const result = await loadPlayersFromCsv(storedCsvUrl);
       if (cancelled) return;
 
-      const allPlayers: Player[] = [...result.players, ...storedTempGuests];
-      setPlayers(allPlayers);
+      const selectablePlayers: Player[] = [...result.players, ...activeStoredTempGuests];
+      setPlayers(result.players);
       setRelations(result.relations);
       setErrors(result.errors);
       setWarnings(result.warnings);
 
-      const validFieldIds = storedFieldIds.filter((id) => allPlayers.some((p) => p.id === id));
+      const validFieldIds = storedFieldIds.filter((id) => selectablePlayers.some((p) => p.id === id));
       setFieldIds(validFieldIds);
-      const validWaitingIds = storedWaitingIds.filter((id) => allPlayers.some((p) => p.id === id));
+      const validWaitingIds = storedWaitingIds.filter((id) => selectablePlayers.some((p) => p.id === id));
       setWaitingIds(validWaitingIds);
 
       const sheetGkPool: DedicatedGoalkeeper[] = result.players
@@ -326,7 +328,8 @@ export default function Home() {
     };
   }, [hydrated]);
 
-  const fieldPlayers = useMemo(() => players.filter((p) => fieldIds.includes(p.id)), [players, fieldIds]);
+  const selectablePlayers = useMemo(() => [...players, ...tempGuests], [players, tempGuests]);
+  const fieldPlayers = useMemo(() => selectablePlayers.filter((p) => fieldIds.includes(p.id)), [selectablePlayers, fieldIds]);
   const isWaitingPlayer = useMemo(() => {
     const set = new Set(waitingIds);
     return (p: Player) => set.has(p.id) || p.memberType === "WAITING";
@@ -353,8 +356,8 @@ export default function Home() {
       .slice(0, 20);
   }, [playerQuery, sortedSheetPlayers]);
   const recordPlayerOptions = useMemo(
-    () => uniqueRecordNames([...players.map((player) => player.name), ...dedicatedGks.map((gk) => gk.name)]),
-    [players, dedicatedGks],
+    () => uniqueRecordNames([...selectablePlayers.map((player) => player.name), ...dedicatedGks.map((gk) => gk.name)]),
+    [selectablePlayers, dedicatedGks],
   );
 
   const canGenerate = plannerMode === "BALANCE"
@@ -417,44 +420,26 @@ export default function Home() {
     setWarnings([]);
     const result = await loadPlayersFromCsv(csvUrl);
 
-    const sheetByName = new Map(result.players.map((p) => [p.name.trim(), p]));
-    const idMigration = new Map<string, string>();
-    const overriddenNames: string[] = [];
-    const filteredTempGuests = tempGuests.filter((tg) => {
-      const sheetMatch = sheetByName.get(tg.name.trim());
-      if (sheetMatch) {
-        idMigration.set(tg.id, sheetMatch.id);
-        overriddenNames.push(tg.name.trim());
-        return false;
-      }
-      return true;
-    });
-    const migrate = (id: string) => idMigration.get(id) ?? id;
+    const fieldIdSet = new Set(fieldIds);
+    const activeTempGuests = tempGuests.filter((guestPlayer) => fieldIdSet.has(guestPlayer.id));
+    const selectablePlayers = [...result.players, ...activeTempGuests];
+    const validIds = new Set(selectablePlayers.map((p) => p.id));
 
-    const mergedPlayers = [...result.players, ...filteredTempGuests];
-    const validIds = new Set(mergedPlayers.map((p) => p.id));
-
-    setPlayers(mergedPlayers);
-    setRelations(result.relations);
-    if (filteredTempGuests.length !== tempGuests.length) {
-      setTempGuests(filteredTempGuests);
+    setPlayers(result.players);
+    if (activeTempGuests.length !== tempGuests.length) {
+      setTempGuests(activeTempGuests);
     }
+    setRelations(result.relations);
     setErrors(result.errors);
-    setWarnings([
-      ...result.warnings,
-      ...(overriddenNames.length > 0
-        ? [`시트와 이름이 같은 임시 등록 선수 ${overriddenNames.length}명을 시트 데이터로 갱신했습니다: ${overriddenNames.join(", ")}`]
-        : []),
-    ]);
+    setWarnings(result.warnings);
     setPlayerQuery("");
     setFieldIds((prev) => {
       const next: string[] = [];
       const seen = new Set<string>();
       for (const id of prev) {
-        const mig = migrate(id);
-        if (!validIds.has(mig) || seen.has(mig)) continue;
-        seen.add(mig);
-        next.push(mig);
+        if (!validIds.has(id) || seen.has(id)) continue;
+        seen.add(id);
+        next.push(id);
       }
       return next;
     });
@@ -462,20 +447,14 @@ export default function Home() {
       const next: string[] = [];
       const seen = new Set<string>();
       for (const id of prev) {
-        const mig = migrate(id);
-        if (!validIds.has(mig) || seen.has(mig)) continue;
-        seen.add(mig);
-        next.push(mig);
+        if (!validIds.has(id) || seen.has(id)) continue;
+        seen.add(id);
+        next.push(id);
       }
       return next;
     });
     setDedicatedGks((prev) =>
       prev
-        .map((gk) => {
-          const mig = migrate(gk.id);
-          if (mig === gk.id) return gk;
-          return { ...gk, id: mig, source: "SHEET" as const };
-        })
         .filter((gk) => gk.source !== "SHEET" || result.players.some((p) => p.id === gk.id)),
     );
   }
@@ -524,6 +503,7 @@ export default function Home() {
   function removeFieldPlayer(id: string) {
     setFieldIds((prev) => prev.filter((item) => item !== id));
     setWaitingIds((prev) => prev.filter((item) => item !== id));
+    setTempGuests((prev) => prev.filter((item) => item.id !== id));
   }
 
   function addDedicatedGk(player: Player) {
@@ -547,16 +527,6 @@ export default function Home() {
   function addTempGuest() {
     const trimmedName = guest.name.trim();
     if (!trimmedName) return;
-    const existing = players.find((p) => p.source === "SHEET" && p.name.trim() === trimmedName);
-    if (existing) {
-      if (!fieldIds.includes(existing.id)) {
-        setFieldIds((prev) => [...prev, existing.id]);
-      }
-      setWaitingIds((prev) => prev.filter((x) => x !== existing.id));
-      setWarnings((prev) => [...prev, `${trimmedName}은 이미 시트에 있어 임시 등록 대신 해당 선수를 필드로 추가했습니다.`]);
-      resetGuest();
-      return;
-    }
     const player: Player = {
       id: `temp_${Date.now()}_${guest.name}`,
       source: "TEMP_GUEST",
@@ -572,7 +542,6 @@ export default function Home() {
       canGk: true,
       memo: guest.memo || undefined,
     };
-    setPlayers((prev) => [...prev, player]);
     setTempGuests((prev) => [...prev, player]);
     setFieldIds((prev) => [...prev, player.id]);
     resetGuest();
