@@ -69,6 +69,7 @@ const MAX_MATCH_FIELD_PLAYERS = 18;
 const DEFAULT_MATCH_QUARTERS = 3;
 const QUARTERS = [1, 2, 3, 4] as const;
 const POSITION_GROUPS: PositionGroup[] = ["ATTACK", "MID", "DEFENSE"];
+const NO_GOALKEEPER = "없음";
 const TARGETS: Record<PositionGroup, number> = {
   ATTACK: 3,
   MID: 3,
@@ -196,6 +197,16 @@ function playerComposite(player: Player): number {
   return player.attackScore + player.midScore + player.defenseScore + player.activityScore;
 }
 
+function pickBenchGoalkeeper(benchItems: MatchSelection[]): MatchSelection | null {
+  return [...benchItems].sort((a, b) => {
+    const gkDiff = Number(b.player.canGk) - Number(a.player.canGk);
+    if (gkDiff !== 0) return gkDiff;
+    const scoreDiff = playerComposite(a.player) - playerComposite(b.player);
+    if (scoreDiff !== 0) return scoreDiff;
+    return a.player.name.localeCompare(b.player.name, "ko");
+  })[0] ?? null;
+}
+
 function formationComposite(plan: FormationPlan): number {
   return selectionsFor(plan).reduce((sum, item) => sum + playerComposite(item.player), 0);
 }
@@ -257,7 +268,13 @@ function lineupFromFormation(
 ): MatchQuarterLineup {
   const selected = selectionsFor(formation);
   const selectedIds = new Set(selected.map((item) => item.player.id));
-  const benchItems = allSelections.filter((item) => !selectedIds.has(item.player.id));
+  let benchItems = allSelections.filter((item) => !selectedIds.has(item.player.id));
+  const fieldGk = dedicatedGk ? null : pickBenchGoalkeeper(benchItems);
+  const gkName = dedicatedGk?.name ?? fieldGk?.player.name ?? NO_GOALKEEPER;
+
+  if (fieldGk) {
+    benchItems = benchItems.filter((item) => item.player.id !== fieldGk.player.id);
+  }
 
   if (countPlays) {
     selected.forEach((item) => {
@@ -270,7 +287,7 @@ function lineupFromFormation(
     attack: formation.attack.map((item) => item.player.name),
     mid: formation.mid.map((item) => item.player.name),
     defense: formation.defense.map((item) => item.player.name),
-    gk: dedicatedGk?.name ?? "없음",
+    gk: gkName,
     bench: benchItems.map((item) => item.player.name),
     unavailable: benchItems
       .filter((item) => (playCounts.get(item.player.id) ?? 0) >= targetFor(item.player.id, limits))
@@ -370,7 +387,7 @@ export function planMatchLineup(
     throw new Error(`매치 후보가 부족합니다. 필드 10명을 만들려면 후보가 ${MATCH_FIELD_SLOTS_PER_QUARTER}명 이상 필요합니다.`);
   }
   if (dedicatedGks.length === 0) {
-    warnings.push("전담 GK가 없습니다. GK를 먼저 추가해주세요.");
+    warnings.push("전담 GK가 없어 각 쿼터 쉬는 선수 중 1명을 GK로 자동 배정합니다.");
   }
   if (dedicatedGks.length > 1) {
     warnings.push("전담 GK가 2명 이상입니다. 첫 번째 GK를 선발 GK로 사용하고 나머지는 대기로 봅니다.");
@@ -483,6 +500,10 @@ export function planMatchLineup(
   const rotateSwaps = buildSwapSuggestions(bestFormation, q4RotateFormation, playCountsBeforeFourth);
 
   quarters.push(lineupFromFormation(4, bestFormation, allSelections, starters.gk, playCounts, quarterLimits));
+
+  if (dedicatedGks.length === 0 && quarters.some((quarter) => quarter.gk === NO_GOALKEEPER)) {
+    warnings.push("쉬는 선수가 없는 쿼터는 GK를 자동 배정하지 못했습니다. 전담 GK를 추가하거나 매치 참석자를 11명 이상으로 맞춰주세요.");
+  }
 
   const requestedSlots = allSelections.reduce((total, item) => total + targetFor(item.player.id, quarterLimits), 0);
   if (requestedSlots > MATCH_FIELD_SLOTS_TOTAL) {
