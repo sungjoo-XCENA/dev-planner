@@ -27,8 +27,12 @@ export type Player = {
   name: string;
   primaryPosition: Position;
   secondaryPositions: FieldPosition[];
+  centerForwardScore: number;
+  wingScore: number;
   attackScore: number;
   midScore: number;
+  centerBackScore: number;
+  wingBackScore: number;
   defenseScore: number;
   activityScore: number;
   injuryLevel?: InjuryLevel;

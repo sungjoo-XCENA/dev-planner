@@ -15,23 +15,33 @@ type CanonicalColumn =
   | "name"
   | "primary_position"
   | "secondary_positions"
+  | "center_forward_score"
+  | "wing_score"
   | "attack_score"
   | "mid_score"
+  | "center_back_score"
+  | "wing_back_score"
   | "defense_score"
   | "activity_score"
   | "injury_level"
   | "gk"
   | "memo"
   | "member_type";
-type ScoreColumn = "attack_score" | "mid_score" | "defense_score" | "activity_score";
+type ScoreColumn =
+  | "center_forward_score"
+  | "wing_score"
+  | "attack_score"
+  | "mid_score"
+  | "center_back_score"
+  | "wing_back_score"
+  | "defense_score"
+  | "activity_score";
 
 const REQUIRED_COLUMNS: CanonicalColumn[] = [
   "active",
   "name",
   "primary_position",
-  "attack_score",
   "mid_score",
-  "defense_score",
   "activity_score",
 ];
 
@@ -40,10 +50,14 @@ const HEADER_ALIASES: Record<CanonicalColumn, string[]> = {
   name: ["이름", "name", "성명", "선수", "선수명"],
   primary_position: ["주포지션", "primary_position", "primary position", "주 포지션", "포지션", "메인포지션"],
   secondary_positions: ["부포지션", "secondary_positions", "secondary positions", "부 포지션", "서브포지션", "가능포지션"],
+  center_forward_score: ["공격(센터포워드)", "센터포워드", "CF", "center_forward_score", "center forward", "centerforward", "cf_score"],
+  wing_score: ["공격(윙)", "윙", "WING", "wing_score", "wing"],
   attack_score: ["공격", "attack_score", "attack", "공격점수", "공격 점수"],
   mid_score: ["미드", "mid_score", "mid", "middle", "midfield", "미드점수", "미드 점수", "중원"],
+  center_back_score: ["수비(센터백)", "센터백", "CB", "center_back_score", "center back", "centerback", "cb_score"],
+  wing_back_score: ["수비(윙백)", "윙백", "WB", "wing_back_score", "wing back", "wingback", "wb_score"],
   defense_score: ["수비", "defense_score", "defense", "defence", "수비점수", "수비 점수"],
-  activity_score: ["활동량", "activity_score", "activity", "활동", "체력", "활동점수"],
+  activity_score: ["활동량", "활동력", "ACT", "activity_score", "activity", "활동", "체력", "활동점수"],
   injury_level: ["부상", "injury", "injury_level", "injury level", "부상정도", "부상 정도", "컨디션"],
   gk: ["키퍼", "gk", "GK", "골키퍼", "키퍼가능", "키퍼 가능", "gk가능"],
   memo: ["메모", "memo", "비고", "참고", "특이사항"],
@@ -111,9 +125,10 @@ function buildHeaderMap(headers: string[]): Partial<Record<CanonicalColumn, numb
   return result;
 }
 
-function parseScore(value: string, playerName: string, column: string, errors: string[]): number | null {
+function parseScore(value: string, playerName: string, column: string, errors: string[], allowDash = false): number | null {
   const raw = value.trim();
-  if (!raw) return null;
+  if (!raw) return allowDash ? 0 : null;
+  if (allowDash && raw === "-") return 0;
 
   const parsed = Number(raw);
   if (!Number.isInteger(parsed) || parsed < 1 || parsed > 10) {
@@ -124,10 +139,12 @@ function parseScore(value: string, playerName: string, column: string, errors: s
 }
 
 const SCORE_COLUMNS: Array<{ key: ScoreColumn; label: string }> = [
-  { key: "attack_score", label: "공격" },
+  { key: "center_forward_score", label: "CF" },
+  { key: "wing_score", label: "WING" },
   { key: "mid_score", label: "미드" },
-  { key: "defense_score", label: "수비" },
-  { key: "activity_score", label: "활동량" },
+  { key: "center_back_score", label: "CB" },
+  { key: "wing_back_score", label: "WB" },
+  { key: "activity_score", label: "ACT" },
 ];
 
 function parseBooleanYN(value: string): boolean | null {
@@ -325,6 +342,15 @@ export async function loadPlayersFromCsv(url: string): Promise<LoadPlayersResult
     errors.push(`필수 컬럼이 누락되었습니다: ${missing.join(", ")}`);
     errors.push(`현재 인식한 헤더: ${headers.join(", ")}`);
   }
+  const missingCompatibleScoreGroups: string[] = [];
+  if (headerMap.center_forward_score === undefined && headerMap.attack_score === undefined) missingCompatibleScoreGroups.push("CF 또는 공격");
+  if (headerMap.wing_score === undefined && headerMap.attack_score === undefined) missingCompatibleScoreGroups.push("WING 또는 공격");
+  if (headerMap.center_back_score === undefined && headerMap.defense_score === undefined) missingCompatibleScoreGroups.push("CB 또는 수비");
+  if (headerMap.wing_back_score === undefined && headerMap.defense_score === undefined) missingCompatibleScoreGroups.push("WB 또는 수비");
+  if (missingCompatibleScoreGroups.length > 0) {
+    errors.push(`필수 점수 컬럼이 누락되었습니다: ${missingCompatibleScoreGroups.join(", ")}`);
+    errors.push(`현재 인식한 헤더: ${headers.join(", ")}`);
+  }
 
   const valueOf = (row: string[], column: CanonicalColumn) => {
     const index = headerMap[column];
@@ -365,20 +391,39 @@ export async function loadPlayersFromCsv(url: string): Promise<LoadPlayersResult
     const oldGkValue = valueOf(row, "gk");
     const oldGkParsed = parseBooleanYN(oldGkValue);
 
-    const missingScoreLabels = SCORE_COLUMNS
-      .filter(({ key }) => !valueOf(row, key).trim())
+    const scoreValue = (key: ScoreColumn, fallbackKeys: ScoreColumn[] = []) => {
+      const primaryValue = valueOf(row, key);
+      if (primaryValue.trim()) return primaryValue;
+      for (const fallbackKey of fallbackKeys) {
+        const fallbackValue = valueOf(row, fallbackKey);
+        if (fallbackValue.trim()) return fallbackValue;
+      }
+      return "";
+    };
+    const missingScoreLabels = isSheetGk ? [] : SCORE_COLUMNS
+      .filter(({ key }) => {
+        if (key === "center_forward_score") return !scoreValue(key, ["attack_score", "wing_score"]).trim();
+        if (key === "wing_score") return !scoreValue(key, ["attack_score", "center_forward_score"]).trim();
+        if (key === "center_back_score") return !scoreValue(key, ["defense_score", "wing_back_score"]).trim();
+        if (key === "wing_back_score") return !scoreValue(key, ["defense_score", "center_back_score"]).trim();
+        return !scoreValue(key).trim();
+      })
       .map(({ label }) => label);
     if (missingScoreLabels.length > 0) {
       errors.push(`${name}: ${missingScoreLabels.join(", ")} 점수가 비어있습니다.`);
       return;
     }
 
-    const attackScore = parseScore(valueOf(row, "attack_score"), name, "공격", errors);
-    const midScore = parseScore(valueOf(row, "mid_score"), name, "미드", errors);
-    const defenseScore = parseScore(valueOf(row, "defense_score"), name, "수비", errors);
-    const activityScore = parseScore(valueOf(row, "activity_score"), name, "활동량", errors);
+    const centerForwardScore = parseScore(scoreValue("center_forward_score", ["attack_score", "wing_score"]), name, "CF", errors, isSheetGk);
+    const wingScore = parseScore(scoreValue("wing_score", ["attack_score", "center_forward_score"]), name, "WING", errors, isSheetGk);
+    const midScore = parseScore(scoreValue("mid_score"), name, "MID", errors, isSheetGk);
+    const centerBackScore = parseScore(scoreValue("center_back_score", ["defense_score", "wing_back_score"]), name, "CB", errors, isSheetGk);
+    const wingBackScore = parseScore(scoreValue("wing_back_score", ["defense_score", "center_back_score"]), name, "WB", errors, isSheetGk);
+    const activityScore = parseScore(scoreValue("activity_score"), name, "ACT", errors, isSheetGk);
+    const attackScore = centerForwardScore !== null && wingScore !== null ? Math.max(centerForwardScore, wingScore) : null;
+    const defenseScore = centerBackScore !== null && wingBackScore !== null ? Math.max(centerBackScore, wingBackScore) : null;
 
-    if (attackScore === null || midScore === null || defenseScore === null || activityScore === null) return;
+    if (centerForwardScore === null || wingScore === null || attackScore === null || midScore === null || centerBackScore === null || wingBackScore === null || defenseScore === null || activityScore === null) return;
 
     players.push({
       id: isSheetGk ? `sheet_gk_${rowNumber}_${name}` : `sheet_${rowNumber}_${name}`,
@@ -388,8 +433,12 @@ export async function loadPlayersFromCsv(url: string): Promise<LoadPlayersResult
       name,
       primaryPosition: primary,
       secondaryPositions,
+      centerForwardScore,
+      wingScore,
       attackScore,
       midScore,
+      centerBackScore,
+      wingBackScore,
       defenseScore,
       activityScore,
       injuryLevel: parseInjuryLevel(valueOf(row, "injury_level"), name, warnings),

@@ -9,10 +9,18 @@ export type Team = {
 };
 
 export type TeamBalanceSummary = {
+  centerForwardScoreA: number;
+  centerForwardScoreB: number;
+  wingScoreA: number;
+  wingScoreB: number;
   attackScoreA: number;
   attackScoreB: number;
   midScoreA: number;
   midScoreB: number;
+  centerBackScoreA: number;
+  centerBackScoreB: number;
+  wingBackScoreA: number;
+  wingBackScoreB: number;
   defenseScoreA: number;
   defenseScoreB: number;
   activityA: number;
@@ -23,6 +31,8 @@ export type TeamBalanceSummary = {
   regularB: number;
   guestA: number;
   guestB: number;
+  coachA: number;
+  coachB: number;
   multiPositionA: number;
   multiPositionB: number;
   relationPenalty: number;

@@ -1,4 +1,5 @@
 import type { DedicatedGoalkeeper, FieldPosition, Player, PositionGroup } from "@/types/player";
+import { centerBackScore, centerForwardScore, detailedTechnicalTotal, wingBackScore, wingScore } from "@/lib/playerScores";
 import { getPositionGroup, hasGroup, scoreForGroup } from "./positions";
 
 export type MatchSelection = {
@@ -183,18 +184,72 @@ function selectionSort(a: MatchSelection, b: MatchSelection): number {
   return a.player.name.localeCompare(b.player.name, "ko");
 }
 
+function selectionNameSort(a: MatchSelection, b: MatchSelection): number {
+  return a.player.name.localeCompare(b.player.name, "ko");
+}
+
+function selectionComposite(selection: MatchSelection): number {
+  return playerComposite(selection.player);
+}
+
+function byCenterForward(a: MatchSelection, b: MatchSelection): number {
+  return centerForwardScore(b.player) - centerForwardScore(a.player)
+    || wingScore(b.player) - wingScore(a.player)
+    || selectionComposite(b) - selectionComposite(a)
+    || selectionNameSort(a, b);
+}
+
+function byWing(a: MatchSelection, b: MatchSelection): number {
+  return wingScore(b.player) - wingScore(a.player)
+    || centerForwardScore(b.player) - centerForwardScore(a.player)
+    || selectionComposite(b) - selectionComposite(a)
+    || selectionNameSort(a, b);
+}
+
+function byCenterBack(a: MatchSelection, b: MatchSelection): number {
+  return centerBackScore(b.player) - centerBackScore(a.player)
+    || wingBackScore(b.player) - wingBackScore(a.player)
+    || selectionComposite(b) - selectionComposite(a)
+    || selectionNameSort(a, b);
+}
+
+function byWingBack(a: MatchSelection, b: MatchSelection): number {
+  return wingBackScore(b.player) - wingBackScore(a.player)
+    || centerBackScore(b.player) - centerBackScore(a.player)
+    || selectionComposite(b) - selectionComposite(a)
+    || selectionNameSort(a, b);
+}
+
+function arrangeAttackSelections(items: MatchSelection[]): MatchSelection[] {
+  if (items.length <= 1) return items;
+  const center = [...items].sort(byCenterForward)[0];
+  const wings = items.filter((item) => item.player.id !== center.player.id).sort(byWing);
+  if (wings.length === 1) return [wings[0], center];
+  return [wings[0], center, ...wings.slice(1)];
+}
+
+function arrangeDefenseSelections(items: MatchSelection[]): MatchSelection[] {
+  if (items.length <= 2) return [...items].sort(byCenterBack);
+  const centerBacks = [...items].sort(byCenterBack).slice(0, Math.min(2, items.length));
+  const centerBackIds = new Set(centerBacks.map((item) => item.player.id));
+  const wingBacks = items.filter((item) => !centerBackIds.has(item.player.id)).sort(byWingBack);
+  if (wingBacks.length === 0) return centerBacks;
+  if (wingBacks.length === 1) return [wingBacks[0], ...centerBacks];
+  return [wingBacks[0], ...centerBacks, ...wingBacks.slice(1)];
+}
+
 function normalizedPlan(plan: FormationPlan): FormationPlan {
   return {
     score: plan.score,
     optionalCount: plan.optionalCount,
-    attack: [...plan.attack].sort(selectionSort),
+    attack: arrangeAttackSelections([...plan.attack].sort(selectionSort)),
     mid: [...plan.mid].sort(selectionSort),
-    defense: [...plan.defense].sort(selectionSort),
+    defense: arrangeDefenseSelections([...plan.defense].sort(selectionSort)),
   };
 }
 
 function playerComposite(player: Player): number {
-  return player.attackScore + player.midScore + player.defenseScore + player.activityScore;
+  return detailedTechnicalTotal(player) + player.activityScore;
 }
 
 function pickBenchGoalkeeper(benchItems: MatchSelection[]): MatchSelection | null {

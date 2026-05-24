@@ -16,6 +16,7 @@ import { clearStoredAll, loadStored, saveStored } from "@/lib/persistedState";
 import { formatTeamName } from "@/lib/teamLabels";
 import { extractStaffRole } from "@/lib/staffRoles";
 import { INJURY_ACTIVITY_RATE, effectiveActivityScore, formatScore, hasInjury } from "@/lib/injury";
+import { centerBackScore, centerForwardScore, detailedTechnicalTotal, wingBackScore, wingScore } from "@/lib/playerScores";
 import { isMultiPositionPlayer, multiPositionGroups } from "@/lib/multiPosition";
 import { makeHistoryInsightKey, normalizeHistoryName } from "@/lib/historyInsights";
 
@@ -26,9 +27,11 @@ type GuestForm = {
   name: string;
   primaryPosition: FieldPosition;
   secondaryPositions: FieldPosition[];
-  attackScore: number;
+  centerForwardScore: number;
+  wingScore: number;
   midScore: number;
-  defenseScore: number;
+  centerBackScore: number;
+  wingBackScore: number;
   activityScore: number;
   memo: string;
 };
@@ -37,9 +40,11 @@ const emptyGuest: GuestForm = {
   name: "",
   primaryPosition: "CF",
   secondaryPositions: [],
-  attackScore: 5,
+  centerForwardScore: 5,
+  wingScore: 5,
   midScore: 5,
-  defenseScore: 5,
+  centerBackScore: 5,
+  wingBackScore: 5,
   activityScore: 5,
   memo: "",
 };
@@ -597,9 +602,13 @@ export default function Home() {
       name: trimmedName,
       primaryPosition: guest.primaryPosition,
       secondaryPositions: guest.secondaryPositions,
-      attackScore: guest.attackScore,
+      centerForwardScore: guest.centerForwardScore,
+      wingScore: guest.wingScore,
+      attackScore: Math.max(guest.centerForwardScore, guest.wingScore),
       midScore: guest.midScore,
-      defenseScore: guest.defenseScore,
+      centerBackScore: guest.centerBackScore,
+      wingBackScore: guest.wingBackScore,
+      defenseScore: Math.max(guest.centerBackScore, guest.wingBackScore),
       activityScore: guest.activityScore,
       canGk: true,
       memo: guest.memo || undefined,
@@ -971,11 +980,13 @@ export default function Home() {
               })}
             </div>
           </div>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <ScoreSelect label="공격" value={guest.attackScore} onChange={(v) => setGuest({ ...guest, attackScore: v })} />
-            <ScoreSelect label="미드" value={guest.midScore} onChange={(v) => setGuest({ ...guest, midScore: v })} />
-            <ScoreSelect label="수비" value={guest.defenseScore} onChange={(v) => setGuest({ ...guest, defenseScore: v })} />
-            <ScoreSelect label="활동" value={guest.activityScore} onChange={(v) => setGuest({ ...guest, activityScore: v })} />
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
+            <ScoreSelect label="CF" value={guest.centerForwardScore} onChange={(v) => setGuest({ ...guest, centerForwardScore: v })} />
+            <ScoreSelect label="WING" value={guest.wingScore} onChange={(v) => setGuest({ ...guest, wingScore: v })} />
+            <ScoreSelect label="MID" value={guest.midScore} onChange={(v) => setGuest({ ...guest, midScore: v })} />
+            <ScoreSelect label="CB" value={guest.centerBackScore} onChange={(v) => setGuest({ ...guest, centerBackScore: v })} />
+            <ScoreSelect label="WB" value={guest.wingBackScore} onChange={(v) => setGuest({ ...guest, wingBackScore: v })} />
+            <ScoreSelect label="ACT" value={guest.activityScore} onChange={(v) => setGuest({ ...guest, activityScore: v })} />
           </div>
           <input className="rounded-xl border border-slate-300 px-3 py-2" placeholder="메모" value={guest.memo} onChange={(e) => setGuest({ ...guest, memo: e.target.value })} />
           <button className={`w-full rounded-xl px-4 py-3 font-semibold text-white ${guestRole === "GK" ? "bg-emerald-600" : "bg-violet-600"}`} onClick={guestRole === "GK" ? addTempGk : addTempGuest}>
@@ -1327,7 +1338,7 @@ function PlayerSearchRow({ player, isField, isWaiting, isGk, onAddField, onRemov
             {(isGk || isSheetGk) && <RoleBadge role="GK" />}
           </div>
           <p className="mt-1 text-xs text-slate-500">주 {player.primaryPosition} · 부 {secondary}</p>
-          <p className="mt-0.5 text-xs text-slate-400">공격{player.attackScore} · 미드{player.midScore} · 수비{player.defenseScore} · 활동{activityDisplay(player)}</p>
+          <p className="mt-0.5 text-xs text-slate-400">{playerScoreLine(player)}</p>
         </div>
         <div className="flex shrink-0 gap-1">
           {fieldRegular
@@ -1400,7 +1411,7 @@ function InjuryBadge({ player, compact = false }: { player: Player; compact?: bo
   );
 }
 
-function MultiPositionBadge({ player, compact = false }: { player: Pick<Player, "attackScore" | "midScore" | "defenseScore">; compact?: boolean }) {
+function MultiPositionBadge({ player, compact = false }: { player: Pick<Player, "attackScore" | "midScore" | "defenseScore"> & Partial<Pick<Player, "centerForwardScore" | "wingScore" | "centerBackScore" | "wingBackScore">>; compact?: boolean }) {
   if (!isMultiPositionPlayer(player)) return null;
   const groups = multiPositionGroups(player).map(groupKorean).join("/");
   const sizeClass = compact ? "px-1 py-0 text-[8px]" : "px-1.5 py-0.5 text-[10px]";
@@ -1436,6 +1447,10 @@ function injuryBadgeClass(level: 1 | 2 | 3): string {
 function activityDisplay(player: { activityScore: number; injuryLevel?: Player["injuryLevel"] }): string {
   if (!hasInjury(player)) return String(player.activityScore);
   return `${player.activityScore}→${formatScore(effectiveActivityScore(player))}`;
+}
+
+function playerScoreLine(player: Player): string {
+  return `CF${centerForwardScore(player)} · W${wingScore(player)} · MID${player.midScore} · CB${centerBackScore(player)} · WB${wingBackScore(player)} · ACT${activityDisplay(player)}`;
 }
 
 function staffRoleChipClass(role?: StaffRole | null): string {
@@ -1496,8 +1511,8 @@ function TeamResultView({
   onToggleRecordEntry: () => void;
 }) {
   const s = result.summary;
-  const totalA = s.attackScoreA + s.midScoreA + s.defenseScoreA + s.activityA;
-  const totalB = s.attackScoreB + s.midScoreB + s.defenseScoreB + s.activityB;
+  const totalA = s.centerForwardScoreA + s.wingScoreA + s.midScoreA + s.centerBackScoreA + s.wingBackScoreA + s.activityA;
+  const totalB = s.centerForwardScoreB + s.wingScoreB + s.midScoreB + s.centerBackScoreB + s.wingBackScoreB + s.activityB;
   const overridesA = result.teamA.players.filter((p) => p.isPositionOverride).length;
   const overridesB = result.teamB.players.filter((p) => p.isPositionOverride).length;
   const [history, setHistory] = useState<HistoryInsightResponse | null>(null);
@@ -1568,13 +1583,16 @@ function TeamResultView({
       )}
       {result.warnings.length > 0 && <div className="mt-4"><MessageBox title="팀 경고" items={result.warnings} tone="warning" /></div>}
       <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <MetricCard label="공격 점수" a={s.attackScoreA} b={s.attackScoreB} />
-        <MetricCard label="미드 점수" a={s.midScoreA} b={s.midScoreB} />
-        <MetricCard label="수비 점수" a={s.defenseScoreA} b={s.defenseScoreB} />
-        <MetricCard label="활동량" a={s.activityA} b={s.activityB} />
+        <MetricCard label="CF" a={s.centerForwardScoreA} b={s.centerForwardScoreB} />
+        <MetricCard label="WING" a={s.wingScoreA} b={s.wingScoreB} />
+        <MetricCard label="MID" a={s.midScoreA} b={s.midScoreB} />
+        <MetricCard label="CB" a={s.centerBackScoreA} b={s.centerBackScoreB} />
+        <MetricCard label="WB" a={s.wingBackScoreA} b={s.wingBackScoreB} />
+        <MetricCard label="ACT" a={s.activityA} b={s.activityB} />
         <MetricCard label="총합" a={totalA} b={totalB} highlight />
         <MetricCard label="정규" a={s.regularA} b={s.regularB} />
         <MetricCard label="용병" a={s.guestA} b={s.guestB} />
+        <MetricCard label="COACH" a={s.coachA} b={s.coachB} />
         <MetricCard label="멀티포지션" a={s.multiPositionA} b={s.multiPositionB} />
         <MetricCard label="포지션 변경자" a={overridesA} b={overridesB} />
       </div>
@@ -1600,14 +1618,14 @@ function TeamResultView({
       )}
       {!confirmed && (
         <p className="mt-4 rounded-2xl bg-blue-50 px-4 py-3 text-sm text-blue-800">
-          선수를 한 명 누르면 선택되고, 다른 팀 선수를 누르면 자리를 바꿔요. <span className="rounded-md bg-amber-100 px-1.5 py-0.5 text-amber-900">노란 테두리</span>는 종합 점수(공+미+수+활)가 ±3 이내라 swap해도 균형이 잘 유지되는 후보예요. 조정이 끝나면 <strong>팀 확정</strong> 버튼을 누르세요.
+          선수를 한 명 누르면 선택되고, 다른 팀 선수를 누르면 자리를 바꿔요. <span className="rounded-md bg-amber-100 px-1.5 py-0.5 text-amber-900">노란 테두리</span>는 종합 점수(CF+WING+MID+CB+WB+ACT)가 ±3 이내라 swap해도 균형이 잘 유지되는 후보예요. 조정이 끝나면 <strong>팀 확정</strong> 버튼을 누르세요.
         </p>
       )}
       {selection && (() => {
         const sourcePlayers = selection.team === "A" ? result.teamA.players : result.teamB.players;
         const sel = sourcePlayers.find((p) => p.id === selection.playerId);
         if (!sel) return null;
-        const composite = sel.attackScore + sel.midScore + sel.defenseScore + effectiveActivityScore(sel);
+        const composite = detailedTechnicalTotal(sel) + effectiveActivityScore(sel);
         const secondary = sel.secondaryPositions.length > 0 ? sel.secondaryPositions.join(",") : "-";
         const staffRole = extractStaffRole(sel.memo);
         return (
@@ -1623,7 +1641,7 @@ function TeamResultView({
                 </div>
                 <p className="text-xs text-blue-800">주포 {sel.primaryPosition} · 부포 {secondary} · 종합 {formatScore(composite)}</p>
               </div>
-              <p className="text-xs font-mono text-blue-900">공 {sel.attackScore} · 미 {sel.midScore} · 수 {sel.defenseScore} · 활 {activityDisplay(sel)}</p>
+              <p className="text-xs font-mono text-blue-900">{playerScoreLine(sel)}</p>
             </div>
           </div>
         );
@@ -1652,7 +1670,7 @@ function TeamResultView({
           groupScores={{ ATTACK: s.attackScoreB, MID: s.midScoreB, DEFENSE: s.defenseScoreB }}
         />
       </div>
-      <p className="mt-4 text-xs text-slate-500"><span className="font-bold">*</span> 부포지션으로 배정된 선수 · <span className="font-bold">**</span> 인원 균형을 위해 주·부와 무관한 포지션으로 강제 배정된 선수 · <span className="inline-flex rounded-md border border-fuchsia-200 bg-fuchsia-50 px-1 py-0 text-[10px] font-black leading-none text-fuchsia-700">멀티</span> 공격/미드/수비 중 7점 이상이 2개 이상인 선수</p>
+      <p className="mt-4 text-xs text-slate-500"><span className="font-bold">*</span> 부포지션으로 배정된 선수 · <span className="font-bold">**</span> 인원 균형을 위해 주·부와 무관한 포지션으로 강제 배정된 선수 · <span className="inline-flex rounded-md border border-fuchsia-200 bg-fuchsia-50 px-1 py-0 text-[10px] font-black leading-none text-fuchsia-700">멀티</span> 공격/MID/수비 중 7점 이상이 2개 이상인 선수</p>
       {variantCount > 1 && !confirmed && (
         <div className="mt-5 flex flex-wrap items-center gap-2 rounded-2xl bg-slate-50 px-3 py-3">
           <span className="text-xs font-semibold text-slate-500">버전</span>
@@ -2446,7 +2464,7 @@ function TeamCard({
         : otherTeamPlayers.find((p) => p.id === selection.playerId))
     : undefined;
   const selectedComposite = selectedPlayer
-    ? selectedPlayer.attackScore + selectedPlayer.midScore + selectedPlayer.defenseScore + effectiveActivityScore(selectedPlayer)
+    ? detailedTechnicalTotal(selectedPlayer) + effectiveActivityScore(selectedPlayer)
     : null;
   const showSwapHints = selection != null && selection.team !== team;
   const showGroupTargets = selection != null && interactive;
@@ -2485,7 +2503,7 @@ function TeamCard({
               <div className="mt-1.5 grid gap-1 sm:gap-1.5" style={{ gridTemplateColumns: `repeat(${Math.max(1, groupPlayers.length)}, minmax(0, 1fr))` }}>
                 {groupPlayers.map((p) => {
                   const isSelected = selection?.team === team && selection.playerId === p.id;
-                  const composite = p.attackScore + p.midScore + p.defenseScore + effectiveActivityScore(p);
+                  const composite = detailedTechnicalTotal(p) + effectiveActivityScore(p);
                   const isSwapHint = showSwapHints && selectedComposite != null && Math.abs(composite - selectedComposite) <= 3;
                   const staffRole = extractStaffRole(p.memo);
                   const hasBadge = p.memberType === "GUEST" || staffRole != null || hasInjury(p) || isMultiPositionPlayer(p);
@@ -2502,7 +2520,7 @@ function TeamCard({
                     <button
                       key={p.id}
                       type="button"
-                      title={`${staffRole ? `${staffRole} · ` : ""}${p.assignmentReason} · 공${p.attackScore} 미${p.midScore} 수${p.defenseScore} 활${activityDisplay(p)}`}
+                      title={`${staffRole ? `${staffRole} · ` : ""}${p.assignmentReason} · ${playerScoreLine(p)}`}
                       className={`${baseClass} ${stateClass}`}
                       disabled={!interactive}
                       onClick={() => onPlayerClick(team, p.id)}
@@ -2519,7 +2537,7 @@ function TeamCard({
                         )}
                       </div>
                       <div className={`truncate font-mono text-[9px] leading-tight ${statClass}`}>
-                        {p.attackScore}/{p.midScore}/{p.defenseScore}/{activityDisplay(p)}
+                        CF{centerForwardScore(p)}/W{wingScore(p)}/M{p.midScore}/CB{centerBackScore(p)}/WB{wingBackScore(p)}/ACT{activityDisplay(p)}
                       </div>
                     </button>
                   );
