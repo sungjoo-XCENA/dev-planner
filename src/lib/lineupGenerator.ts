@@ -3,6 +3,7 @@ import type { LineupResult, LineupRole, PlayerLineupSummary, Quarter, TeamQuarte
 import type { Team, TeamName } from "@/types/team";
 import { formatTeamName } from "@/lib/teamLabels";
 import { extractStaffRole } from "@/lib/staffRoles";
+import { centerBackScore, centerForwardScore, detailedTechnicalTotal, wingBackScore, wingScore } from "@/lib/playerScores";
 
 const QUARTERS: Quarter[] = [1, 2, 3, 4];
 const MAX_DEDICATED_GK_AUTO_ASSIGN = 2;
@@ -25,7 +26,7 @@ function dedicatedGkFor(team: TeamName, quarter: Quarter, dedicatedGks: Dedicate
 }
 
 function compositeScore(p: AssignedPlayer): number {
-  return p.attackScore + p.midScore + p.defenseScore + p.activityScore;
+  return detailedTechnicalTotal(p) + p.activityScore;
 }
 
 function ironmanCountFor(teamSize: number): number {
@@ -42,6 +43,56 @@ function sortByCompositeDesc(players: AssignedPlayer[]): AssignedPlayer[] {
     if (diff !== 0) return diff;
     return a.name.localeCompare(b.name, "ko");
   });
+}
+
+function byName(a: AssignedPlayer, b: AssignedPlayer): number {
+  return a.name.localeCompare(b.name, "ko");
+}
+
+function byCenterForward(a: AssignedPlayer, b: AssignedPlayer): number {
+  return centerForwardScore(b) - centerForwardScore(a)
+    || wingScore(b) - wingScore(a)
+    || compositeScore(b) - compositeScore(a)
+    || byName(a, b);
+}
+
+function byWing(a: AssignedPlayer, b: AssignedPlayer): number {
+  return wingScore(b) - wingScore(a)
+    || centerForwardScore(b) - centerForwardScore(a)
+    || compositeScore(b) - compositeScore(a)
+    || byName(a, b);
+}
+
+function byCenterBack(a: AssignedPlayer, b: AssignedPlayer): number {
+  return centerBackScore(b) - centerBackScore(a)
+    || wingBackScore(b) - wingBackScore(a)
+    || compositeScore(b) - compositeScore(a)
+    || byName(a, b);
+}
+
+function byWingBack(a: AssignedPlayer, b: AssignedPlayer): number {
+  return wingBackScore(b) - wingBackScore(a)
+    || centerBackScore(b) - centerBackScore(a)
+    || compositeScore(b) - compositeScore(a)
+    || byName(a, b);
+}
+
+function arrangeAttackLine(players: AssignedPlayer[]): AssignedPlayer[] {
+  if (players.length <= 1) return players;
+  const center = [...players].sort(byCenterForward)[0];
+  const wings = players.filter((player) => player.id !== center.id).sort(byWing);
+  if (wings.length === 1) return [wings[0], center];
+  return [wings[0], center, ...wings.slice(1)];
+}
+
+function arrangeDefenseLine(players: AssignedPlayer[]): AssignedPlayer[] {
+  if (players.length <= 2) return [...players].sort(byCenterBack);
+  const centerBacks = [...players].sort(byCenterBack).slice(0, Math.min(2, players.length));
+  const centerBackIds = new Set(centerBacks.map((player) => player.id));
+  const wingBacks = players.filter((player) => !centerBackIds.has(player.id)).sort(byWingBack);
+  if (wingBacks.length === 0) return centerBacks;
+  if (wingBacks.length === 1) return [wingBacks[0], ...centerBacks];
+  return [wingBacks[0], ...centerBacks, ...wingBacks.slice(1)];
 }
 
 type PerQuarterRotation = {
@@ -140,7 +191,11 @@ function assignPositions(
     else if (mid.length < FORMATION_OUTFIELD.MID) mid.push(p);
     else if (attack.length < FORMATION_OUTFIELD.ATTACK) attack.push(p);
   }
-  return { attack, mid, defense };
+  return {
+    attack: arrangeAttackLine(attack),
+    mid,
+    defense: arrangeDefenseLine(defense),
+  };
 }
 
 type TeamLineupPlan = {

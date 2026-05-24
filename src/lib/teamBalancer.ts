@@ -4,6 +4,8 @@ import type { Team, TeamBalanceResult, TeamBalanceSummary } from "@/types/team";
 import { formatTeamName } from "@/lib/teamLabels";
 import { effectiveActivityScore } from "@/lib/injury";
 import { isMultiPositionPlayer } from "@/lib/multiPosition";
+import { attackRoleScore, centerBackScore, centerForwardScore, defenseRoleScore, detailedTechnicalTotal, wingBackScore, wingScore } from "@/lib/playerScores";
+import { extractStaffRole } from "@/lib/staffRoles";
 import { getPositionGroup, hasGroup, scoreForGroup } from "./positions";
 
 const POSITION_GROUPS: PositionGroup[] = ["ATTACK", "MID", "DEFENSE"];
@@ -14,6 +16,7 @@ const PAIR_FLIP_MAX_ROUNDS = 30;
 const STRONG_RESERVE_PER_TEAM = 2;
 const MISMATCH_PENALTY = 1.5;
 const MULTI_POSITION_BALANCE_PENALTY = 16;
+const COACH_BALANCE_PENALTY = 80;
 const RELATION_PENALTY: Record<PlayerRelation["score"], number> = {
   1: 1000,
   2: 80,
@@ -35,7 +38,11 @@ function targetForTeamSize(size: number): RoleTargets {
 }
 
 function compositeScore(player: FieldPlayer): number {
-  return player.attackScore + player.midScore + player.defenseScore + effectiveActivityScore(player);
+  return detailedTechnicalTotal(player) + effectiveActivityScore(player);
+}
+
+function isCoach(player: Pick<Player, "memo">): boolean {
+  return extractStaffRole(player.memo) === "코치";
 }
 
 function primaryRank(player: FieldPlayer, group: PositionGroup): number {
@@ -93,19 +100,30 @@ function pairCostByGroup(
 ): number {
   const sumByGroup = (team: FieldPlayer[], group: PositionGroup, fn: (p: FieldPlayer) => number) =>
     team.filter((p) => groupOf.get(p.id) === group).reduce((acc, p) => acc + fn(p), 0);
-  const aAtt = sumByGroup(teamA, "ATTACK", (p) => p.attackScore);
+  const aCf = sumByGroup(teamA, "ATTACK", centerForwardScore);
+  const aWing = sumByGroup(teamA, "ATTACK", wingScore);
+  const aAtt = sumByGroup(teamA, "ATTACK", attackRoleScore);
   const aMid = sumByGroup(teamA, "MID", (p) => p.midScore);
-  const aDef = sumByGroup(teamA, "DEFENSE", (p) => p.defenseScore);
+  const aCb = sumByGroup(teamA, "DEFENSE", centerBackScore);
+  const aWb = sumByGroup(teamA, "DEFENSE", wingBackScore);
+  const aDef = sumByGroup(teamA, "DEFENSE", defenseRoleScore);
   const aAct = teamA.reduce((acc, p) => acc + effectiveActivityScore(p), 0);
-  const bAtt = sumByGroup(teamB, "ATTACK", (p) => p.attackScore);
+  const bCf = sumByGroup(teamB, "ATTACK", centerForwardScore);
+  const bWing = sumByGroup(teamB, "ATTACK", wingScore);
+  const bAtt = sumByGroup(teamB, "ATTACK", attackRoleScore);
   const bMid = sumByGroup(teamB, "MID", (p) => p.midScore);
-  const bDef = sumByGroup(teamB, "DEFENSE", (p) => p.defenseScore);
+  const bCb = sumByGroup(teamB, "DEFENSE", centerBackScore);
+  const bWb = sumByGroup(teamB, "DEFENSE", wingBackScore);
+  const bDef = sumByGroup(teamB, "DEFENSE", defenseRoleScore);
   const bAct = teamB.reduce((acc, p) => acc + effectiveActivityScore(p), 0);
+  const aCoach = teamA.filter(isCoach).length;
+  const bCoach = teamB.filter(isCoach).length;
   const aMulti = teamA.filter(isMultiPositionPlayer).length;
   const bMulti = teamB.filter(isMultiPositionPlayer).length;
   const total = (aAtt + aMid + aDef + aAct) - (bAtt + bMid + bDef + bAct);
-  return (Math.abs(aAtt - bAtt) + Math.abs(aMid - bMid) + Math.abs(aDef - bDef)) * 5
+  return (Math.abs(aCf - bCf) + Math.abs(aWing - bWing) + Math.abs(aMid - bMid) + Math.abs(aCb - bCb) + Math.abs(aWb - bWb)) * 5
        + Math.abs(aAct - bAct) * 2
+       + Math.abs(aCoach - bCoach) * COACH_BALANCE_PENALTY
        + Math.abs(aMulti - bMulti) * MULTI_POSITION_BALANCE_PENALTY
        + Math.abs(total)
        + relationPenaltyForSplit(teamA, teamB, relations);
@@ -230,12 +248,20 @@ function calcSummary(
   const byGroup = (players: AssignedFieldPlayer[], group: PositionGroup) =>
     players.filter((p) => p.assignedGroup === group);
 
-  const attackScoreA = sum(byGroup(teamA, "ATTACK"), (p) => p.attackScore);
-  const attackScoreB = sum(byGroup(teamB, "ATTACK"), (p) => p.attackScore);
+  const centerForwardScoreA = sum(byGroup(teamA, "ATTACK"), centerForwardScore);
+  const centerForwardScoreB = sum(byGroup(teamB, "ATTACK"), centerForwardScore);
+  const wingScoreA = sum(byGroup(teamA, "ATTACK"), wingScore);
+  const wingScoreB = sum(byGroup(teamB, "ATTACK"), wingScore);
+  const attackScoreA = sum(byGroup(teamA, "ATTACK"), attackRoleScore);
+  const attackScoreB = sum(byGroup(teamB, "ATTACK"), attackRoleScore);
   const midScoreA = sum(byGroup(teamA, "MID"), (p) => p.midScore);
   const midScoreB = sum(byGroup(teamB, "MID"), (p) => p.midScore);
-  const defenseScoreA = sum(byGroup(teamA, "DEFENSE"), (p) => p.defenseScore);
-  const defenseScoreB = sum(byGroup(teamB, "DEFENSE"), (p) => p.defenseScore);
+  const centerBackScoreA = sum(byGroup(teamA, "DEFENSE"), centerBackScore);
+  const centerBackScoreB = sum(byGroup(teamB, "DEFENSE"), centerBackScore);
+  const wingBackScoreA = sum(byGroup(teamA, "DEFENSE"), wingBackScore);
+  const wingBackScoreB = sum(byGroup(teamB, "DEFENSE"), wingBackScore);
+  const defenseScoreA = sum(byGroup(teamA, "DEFENSE"), defenseRoleScore);
+  const defenseScoreB = sum(byGroup(teamB, "DEFENSE"), defenseRoleScore);
   const activityA = sum(teamA, (p) => effectiveActivityScore(p));
   const activityB = sum(teamB, (p) => effectiveActivityScore(p));
   const fieldGkA = teamA.filter((p) => p.canGk).length;
@@ -244,6 +270,8 @@ function calcSummary(
   const regularB = teamB.filter((p) => p.memberType === "REGULAR").length;
   const guestA = teamA.filter((p) => p.memberType === "GUEST").length;
   const guestB = teamB.filter((p) => p.memberType === "GUEST").length;
+  const coachA = teamA.filter(isCoach).length;
+  const coachB = teamB.filter(isCoach).length;
   const multiPositionA = teamA.filter(isMultiPositionPlayer).length;
   const multiPositionB = teamB.filter(isMultiPositionPlayer).length;
   const overrides = [...teamA, ...teamB].filter((p) => p.isPositionOverride).length;
@@ -251,21 +279,32 @@ function calcSummary(
   const relationPenalty = relationViolations.reduce((acc, violation) => acc + violation.penalty, 0);
 
   const balanceScore =
-    Math.abs(attackScoreA - attackScoreB) * 5 +
+    Math.abs(centerForwardScoreA - centerForwardScoreB) * 5 +
+    Math.abs(wingScoreA - wingScoreB) * 5 +
     Math.abs(midScoreA - midScoreB) * 5 +
-    Math.abs(defenseScoreA - defenseScoreB) * 5 +
+    Math.abs(centerBackScoreA - centerBackScoreB) * 5 +
+    Math.abs(wingBackScoreA - wingBackScoreB) * 5 +
     Math.abs(activityA - activityB) * 2 +
     Math.abs(fieldGkA - fieldGkB) * 3 +
     Math.abs(guestA - guestB) +
+    Math.abs(coachA - coachB) * COACH_BALANCE_PENALTY +
     Math.abs(multiPositionA - multiPositionB) * MULTI_POSITION_BALANCE_PENALTY +
     overrides * 1.5 +
     relationPenalty;
 
   return {
+    centerForwardScoreA,
+    centerForwardScoreB,
+    wingScoreA,
+    wingScoreB,
     attackScoreA,
     attackScoreB,
     midScoreA,
     midScoreB,
+    centerBackScoreA,
+    centerBackScoreB,
+    wingBackScoreA,
+    wingBackScoreB,
     defenseScoreA,
     defenseScoreB,
     activityA,
@@ -276,6 +315,8 @@ function calcSummary(
     regularB,
     guestA,
     guestB,
+    coachA,
+    coachB,
     multiPositionA,
     multiPositionB,
     relationPenalty,
@@ -437,6 +478,7 @@ function buildResult(
   if (summary.fieldGkA === 0 || summary.fieldGkB === 0) warnings.push("한 팀에 필드 GK 가능자가 없습니다. 전담 GK가 없거나 부족하면 문제가 될 수 있습니다.");
   if (Math.abs(summary.activityA - summary.activityB) >= 8) warnings.push("팀별 활동량 차이가 큽니다.");
   if (Math.abs(summary.guestA - summary.guestB) >= 5) warnings.push("정규 선수와 용병 비율이 한쪽으로 몰렸습니다.");
+  if (Math.abs(summary.coachA - summary.coachB) > 1) warnings.push("코치가 한쪽 팀으로 몰렸습니다.");
   if (Math.abs(summary.multiPositionA - summary.multiPositionB) >= 2) warnings.push("멀티포지션 선수가 한쪽으로 몰렸습니다.");
   const hardViolations = relationViolations.filter((violation) => violation.score === 1);
   if (hardViolations.length > 0) {

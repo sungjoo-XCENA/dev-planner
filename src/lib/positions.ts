@@ -1,4 +1,5 @@
 import type { FieldPosition, PositionGroup } from "@/types/player";
+import { attackRoleScore, defenseRoleScore } from "@/lib/playerScores";
 
 export const POSITIONS = ["CF", "LW", "RW", "MF", "LB", "RB", "CB"] as const;
 
@@ -40,11 +41,19 @@ export function hasGroup(positions: FieldPosition[], group: PositionGroup): bool
 
 export function scoreForGroup(
   group: PositionGroup,
-  scores: { attackScore: number; midScore: number; defenseScore: number },
+  scores: {
+    attackScore: number;
+    midScore: number;
+    defenseScore: number;
+    centerForwardScore?: number;
+    wingScore?: number;
+    centerBackScore?: number;
+    wingBackScore?: number;
+  },
 ): number {
-  if (group === "ATTACK") return scores.attackScore;
+  if (group === "ATTACK") return attackRoleScore(scores);
   if (group === "MID") return scores.midScore;
-  return scores.defenseScore;
+  return defenseRoleScore(scores);
 }
 
 export function groupLabel(group: PositionGroup): string {
