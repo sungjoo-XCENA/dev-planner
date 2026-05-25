@@ -1479,11 +1479,11 @@ function TeamPlayerScoreChips({ player, group }: { player: Player; group: Positi
   ] as const;
 
   return (
-    <div className="mt-1 flex max-w-full flex-wrap items-center justify-center gap-0.5">
+    <div className="mt-1 flex max-w-full flex-wrap items-center justify-center gap-px">
       {items.map((item) => (
         <span
           key={item.key}
-          className={`inline-flex items-center rounded-md border px-1 py-0 text-[8px] font-black leading-[1.15] ${teamScoreChipClass(item.active, item.tone)}`}
+          className={`inline-flex items-center rounded-md border px-0.5 py-0 text-[7px] font-black leading-[1.1] ${teamScoreChipClass(item.active, item.tone)}`}
           title={`${item.key} ${item.value}`}
         >
           <span>{item.key}</span>
@@ -2555,8 +2555,7 @@ function TeamCard({
                   const composite = detailedTechnicalTotal(p) + effectiveActivityScore(p);
                   const isSwapHint = showSwapHints && selectedComposite != null && Math.abs(composite - selectedComposite) <= 3;
                   const staffRole = extractStaffRole(p.memo);
-                  const hasBadge = p.memberType === "GUEST" || staffRole != null || hasInjury(p) || isMultiPositionPlayer(p);
-                  const baseClass = "min-h-[4.8rem] min-w-0 rounded-lg border px-1 py-1.5 text-center transition";
+                  const baseClass = "min-h-[3.85rem] min-w-0 rounded-lg border px-1 py-1.5 text-center transition";
                   const stateClass = isSelected
                     ? teamSelectedPlayerClass(team)
                     : isSwapHint
@@ -2574,15 +2573,13 @@ function TeamCard({
                       onClick={() => onPlayerClick(team, p.id)}
                     >
                       <div className="flex min-w-0 flex-col items-center justify-center gap-0.5">
-                        <span className="max-w-full truncate text-[11px] font-bold leading-tight">{p.name}{overrideMark(p.assignmentReason)}</span>
-                        {hasBadge && (
-                          <span className="flex min-h-[0.9rem] max-w-full flex-wrap items-center justify-center gap-0.5">
-                            <GuestBadge player={p} compact />
-                            <StaffRoleBadge role={staffRole} compact />
-                            <InjuryBadge player={p} compact />
-                            <MultiPositionBadge player={p} compact />
-                          </span>
-                        )}
+                        <span className="flex max-w-full items-center justify-center gap-0.5 overflow-hidden">
+                          <span className="min-w-0 truncate text-[11px] font-bold leading-tight">{p.name}{overrideMark(p.assignmentReason)}</span>
+                          <GuestBadge player={p} compact />
+                          <StaffRoleBadge role={staffRole} compact />
+                          <InjuryBadge player={p} compact />
+                          <MultiPositionBadge player={p} compact />
+                        </span>
                       </div>
                       <TeamPlayerScoreChips player={p} group={g} />
                     </button>
