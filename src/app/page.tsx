@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import type { DedicatedGoalkeeper, FieldPosition, Player, PositionGroup, StaffRole } from "@/types/player";
+import type { AssignedSubRole, DedicatedGoalkeeper, FieldPosition, Player, PositionGroup, StaffRole } from "@/types/player";
 import type { PlayerRelation } from "@/types/relation";
 import type { LineupResult, LineupRole, Quarter } from "@/types/lineup";
 import type { TeamBalanceResult, TeamName } from "@/types/team";
@@ -1453,7 +1453,18 @@ function playerScoreLine(player: Player): string {
   return `CF${centerForwardScore(player)} · W${wingScore(player)} · MID${player.midScore} · CB${centerBackScore(player)} · WB${wingBackScore(player)} · ACT${activityDisplay(player)}`;
 }
 
-function appliedScoreKeys(player: Player, group: PositionGroup): Array<"CF" | "W" | "M" | "CB" | "WB"> {
+function appliedScoreKeyForSubRole(role?: AssignedSubRole): "CF" | "W" | "M" | "CB" | "WB" | null {
+  if (role === "CF") return "CF";
+  if (role === "WING") return "W";
+  if (role === "MID") return "M";
+  if (role === "CB") return "CB";
+  if (role === "WB") return "WB";
+  return null;
+}
+
+function appliedScoreKeys(player: Player & { assignedSubRole?: AssignedSubRole }, group: PositionGroup): Array<"CF" | "W" | "M" | "CB" | "WB"> {
+  const assignedKey = appliedScoreKeyForSubRole(player.assignedSubRole);
+  if (assignedKey) return [assignedKey];
   if (group === "MID") return ["M"];
   if (group === "ATTACK") {
     const cf = centerForwardScore(player);

@@ -1,10 +1,10 @@
-import type { AssignedPlayer, FieldPosition, Player, PositionGroup } from "@/types/player";
+import type { AssignedPlayer, AssignedSubRole, FieldPosition, Player, PositionGroup } from "@/types/player";
 import type { PlayerRelation, TeamRelationViolation } from "@/types/relation";
 import type { Team, TeamBalanceResult, TeamBalanceSummary } from "@/types/team";
 import { formatTeamName } from "@/lib/teamLabels";
 import { effectiveActivityScore } from "@/lib/injury";
 import { isMultiPositionPlayer } from "@/lib/multiPosition";
-import { attackRoleScore, centerBackScore, centerForwardScore, defenseRoleScore, detailedTechnicalTotal, wingBackScore, wingScore } from "@/lib/playerScores";
+import { centerBackScore, centerForwardScore, detailedTechnicalTotal, wingBackScore, wingScore } from "@/lib/playerScores";
 import { extractStaffRole } from "@/lib/staffRoles";
 import { getPositionGroup, hasGroup, scoreForGroup } from "./positions";
 
@@ -29,6 +29,15 @@ const RELATION_PENALTY: Record<PlayerRelation["score"], number> = {
 type FieldPlayer = Player & { primaryPosition: FieldPosition };
 type AssignedFieldPlayer = AssignedPlayer & { primaryPosition: FieldPosition };
 type RoleTargets = Record<PositionGroup, number>;
+type SubRoleScores = {
+  centerForward: number;
+  wing: number;
+  attack: number;
+  mid: number;
+  centerBack: number;
+  wingBack: number;
+  defense: number;
+};
 
 function isFieldPlayer(player: Player): player is FieldPlayer {
   return player.primaryPosition !== "GK";
@@ -96,36 +105,118 @@ function compareForStrongPool(group: PositionGroup, a: FieldPlayer, b: FieldPlay
   return a.name.localeCompare(b.name, "ko");
 }
 
+function subRoleScore(player: Pick<Player, "centerForwardScore" | "wingScore" | "midScore" | "centerBackScore" | "wingBackScore" | "attackScore" | "defenseScore">, role: AssignedSubRole): number {
+  if (role === "CF") return centerForwardScore(player);
+  if (role === "WING") return wingScore(player);
+  if (role === "MID") return player.midScore;
+  if (role === "CB") return centerBackScore(player);
+  return wingBackScore(player);
+}
+
+function bestSubRoleScore(player: FieldPlayer | AssignedFieldPlayer, group: PositionGroup): number {
+  if (group === "ATTACK") return Math.max(centerForwardScore(player), wingScore(player));
+  if (group === "DEFENSE") return Math.max(centerBackScore(player), wingBackScore(player));
+  return player.midScore;
+}
+
+function subRoleTargets(group: "ATTACK" | "DEFENSE", count: number): { firstRole: AssignedSubRole; firstCount: number; secondRole: AssignedSubRole } {
+  if (group === "ATTACK") {
+    const centerForwardCount = Math.max(1, Math.min(count, Math.round(count * 0.35)));
+    return { firstRole: "CF", firstCount: centerForwardCount, secondRole: "WING" };
+  }
+
+  const wingBackCount = Math.max(1, Math.min(count - 1, Math.round(count * 0.4)));
+  return { firstRole: "WB", firstCount: wingBackCount, secondRole: "CB" };
+}
+
+function assignGroupSubRoles<T extends (FieldPlayer | AssignedFieldPlayer) & { assignedGroup: PositionGroup }>(
+  players: T[],
+  group: "ATTACK" | "DEFENSE",
+): Array<T & { assignedSubRole: AssignedSubRole }> {
+  if (players.length === 0) return [];
+  if (players.length === 1) {
+    const role = group === "ATTACK"
+      ? centerForwardScore(players[0]) >= wingScore(players[0]) ? "CF" : "WING"
+      : centerBackScore(players[0]) >= wingBackScore(players[0]) ? "CB" : "WB";
+    return [{ ...players[0], assignedSubRole: role }];
+  }
+
+  const { firstRole, firstCount, secondRole } = subRoleTargets(group, players.length);
+  const firstRoleIds = new Set(
+    [...players]
+      .sort((a, b) => {
+        const aDelta = subRoleScore(a, firstRole) - subRoleScore(a, secondRole);
+        const bDelta = subRoleScore(b, firstRole) - subRoleScore(b, secondRole);
+        if (aDelta !== bDelta) return bDelta - aDelta;
+        const firstRoleScoreDiff = subRoleScore(b, firstRole) - subRoleScore(a, firstRole);
+        if (firstRoleScoreDiff !== 0) return firstRoleScoreDiff;
+        const bestScoreDiff = bestSubRoleScore(b, group) - bestSubRoleScore(a, group);
+        if (bestScoreDiff !== 0) return bestScoreDiff;
+        return a.name.localeCompare(b.name, "ko");
+      })
+      .slice(0, firstCount)
+      .map((player) => player.id),
+  );
+
+  return players.map((player) => ({
+    ...player,
+    assignedSubRole: firstRoleIds.has(player.id) ? firstRole : secondRole,
+  }));
+}
+
+function assignDetailedSubRoles<T extends (FieldPlayer | AssignedFieldPlayer) & { assignedGroup: PositionGroup }>(players: T[]): Array<T & { assignedSubRole: AssignedSubRole }> {
+  const attackers = assignGroupSubRoles(players.filter((player) => player.assignedGroup === "ATTACK"), "ATTACK");
+  const mids = players
+    .filter((player) => player.assignedGroup === "MID")
+    .map((player) => ({ ...player, assignedSubRole: "MID" as const }));
+  const defenders = assignGroupSubRoles(players.filter((player) => player.assignedGroup === "DEFENSE"), "DEFENSE");
+  const byId = new Map([...attackers, ...mids, ...defenders].map((player) => [player.id, player]));
+  return players.map((player) => byId.get(player.id) ?? { ...player, assignedSubRole: "MID" as const });
+}
+
+function subRoleScores(players: Array<FieldPlayer & { assignedGroup: PositionGroup }>): SubRoleScores {
+  const assigned = assignDetailedSubRoles(players);
+  return assigned.reduce<SubRoleScores>((scores, player) => {
+    if (player.assignedSubRole === "CF") {
+      scores.centerForward += centerForwardScore(player);
+      scores.attack += centerForwardScore(player);
+    } else if (player.assignedSubRole === "WING") {
+      scores.wing += wingScore(player);
+      scores.attack += wingScore(player);
+    } else if (player.assignedSubRole === "MID") {
+      scores.mid += player.midScore;
+    } else if (player.assignedSubRole === "CB") {
+      scores.centerBack += centerBackScore(player);
+      scores.defense += centerBackScore(player);
+    } else {
+      scores.wingBack += wingBackScore(player);
+      scores.defense += wingBackScore(player);
+    }
+    return scores;
+  }, { centerForward: 0, wing: 0, attack: 0, mid: 0, centerBack: 0, wingBack: 0, defense: 0 });
+}
+
 function pairCostByGroup(
   teamA: FieldPlayer[],
   teamB: FieldPlayer[],
   groupOf: Map<string, PositionGroup>,
   relations: PlayerRelation[] = [],
 ): number {
-  const sumByGroup = (team: FieldPlayer[], group: PositionGroup, fn: (p: FieldPlayer) => number) =>
-    team.filter((p) => groupOf.get(p.id) === group).reduce((acc, p) => acc + fn(p), 0);
-  const aCf = sumByGroup(teamA, "ATTACK", centerForwardScore);
-  const aWing = sumByGroup(teamA, "ATTACK", wingScore);
-  const aAtt = sumByGroup(teamA, "ATTACK", attackRoleScore);
-  const aMid = sumByGroup(teamA, "MID", (p) => p.midScore);
-  const aCb = sumByGroup(teamA, "DEFENSE", centerBackScore);
-  const aWb = sumByGroup(teamA, "DEFENSE", wingBackScore);
-  const aDef = sumByGroup(teamA, "DEFENSE", defenseRoleScore);
+  const withGroups = (team: FieldPlayer[]) => team.map((player) => ({ ...player, assignedGroup: groupOf.get(player.id)! }));
+  const aScores = subRoleScores(withGroups(teamA));
+  const bScores = subRoleScores(withGroups(teamB));
   const aAct = teamA.reduce((acc, p) => acc + effectiveActivityScore(p), 0);
-  const bCf = sumByGroup(teamB, "ATTACK", centerForwardScore);
-  const bWing = sumByGroup(teamB, "ATTACK", wingScore);
-  const bAtt = sumByGroup(teamB, "ATTACK", attackRoleScore);
-  const bMid = sumByGroup(teamB, "MID", (p) => p.midScore);
-  const bCb = sumByGroup(teamB, "DEFENSE", centerBackScore);
-  const bWb = sumByGroup(teamB, "DEFENSE", wingBackScore);
-  const bDef = sumByGroup(teamB, "DEFENSE", defenseRoleScore);
   const bAct = teamB.reduce((acc, p) => acc + effectiveActivityScore(p), 0);
   const aCoach = teamA.filter(isCoach).length;
   const bCoach = teamB.filter(isCoach).length;
   const aMulti = teamA.filter(isMultiPositionPlayer).length;
   const bMulti = teamB.filter(isMultiPositionPlayer).length;
-  const total = (aAtt + aMid + aDef + aAct) - (bAtt + bMid + bDef + bAct);
-  return (Math.abs(aCf - bCf) + Math.abs(aWing - bWing) + Math.abs(aMid - bMid) + Math.abs(aCb - bCb) + Math.abs(aWb - bWb)) * 5
+  const total = (aScores.attack + aScores.mid + aScores.defense + aAct) - (bScores.attack + bScores.mid + bScores.defense + bAct);
+  return (Math.abs(aScores.centerForward - bScores.centerForward)
+       + Math.abs(aScores.wing - bScores.wing)
+       + Math.abs(aScores.mid - bScores.mid)
+       + Math.abs(aScores.centerBack - bScores.centerBack)
+       + Math.abs(aScores.wingBack - bScores.wingBack)) * 5
        + Math.abs(aAct - bAct) * 2
        + Math.abs(aCoach - bCoach) * COACH_BALANCE_PENALTY
        + Math.abs(aMulti - bMulti) * MULTI_POSITION_BALANCE_PENALTY
@@ -249,23 +340,22 @@ function calcSummary(
 ): TeamBalanceSummary {
   const sum = (players: AssignedFieldPlayer[], fn: (p: AssignedFieldPlayer) => number) =>
     players.reduce((acc, p) => acc + fn(p), 0);
-  const byGroup = (players: AssignedFieldPlayer[], group: PositionGroup) =>
-    players.filter((p) => p.assignedGroup === group);
-
-  const centerForwardScoreA = sum(byGroup(teamA, "ATTACK"), centerForwardScore);
-  const centerForwardScoreB = sum(byGroup(teamB, "ATTACK"), centerForwardScore);
-  const wingScoreA = sum(byGroup(teamA, "ATTACK"), wingScore);
-  const wingScoreB = sum(byGroup(teamB, "ATTACK"), wingScore);
-  const attackScoreA = sum(byGroup(teamA, "ATTACK"), attackRoleScore);
-  const attackScoreB = sum(byGroup(teamB, "ATTACK"), attackRoleScore);
-  const midScoreA = sum(byGroup(teamA, "MID"), (p) => p.midScore);
-  const midScoreB = sum(byGroup(teamB, "MID"), (p) => p.midScore);
-  const centerBackScoreA = sum(byGroup(teamA, "DEFENSE"), centerBackScore);
-  const centerBackScoreB = sum(byGroup(teamB, "DEFENSE"), centerBackScore);
-  const wingBackScoreA = sum(byGroup(teamA, "DEFENSE"), wingBackScore);
-  const wingBackScoreB = sum(byGroup(teamB, "DEFENSE"), wingBackScore);
-  const defenseScoreA = sum(byGroup(teamA, "DEFENSE"), defenseRoleScore);
-  const defenseScoreB = sum(byGroup(teamB, "DEFENSE"), defenseRoleScore);
+  const aScores = subRoleScores(teamA);
+  const bScores = subRoleScores(teamB);
+  const centerForwardScoreA = aScores.centerForward;
+  const centerForwardScoreB = bScores.centerForward;
+  const wingScoreA = aScores.wing;
+  const wingScoreB = bScores.wing;
+  const attackScoreA = aScores.attack;
+  const attackScoreB = bScores.attack;
+  const midScoreA = aScores.mid;
+  const midScoreB = bScores.mid;
+  const centerBackScoreA = aScores.centerBack;
+  const centerBackScoreB = bScores.centerBack;
+  const wingBackScoreA = aScores.wingBack;
+  const wingBackScoreB = bScores.wingBack;
+  const defenseScoreA = aScores.defense;
+  const defenseScoreB = bScores.defense;
   const activityA = sum(teamA, (p) => effectiveActivityScore(p));
   const activityB = sum(teamB, (p) => effectiveActivityScore(p));
   const fieldGkA = teamA.filter((p) => p.canGk).length;
@@ -500,9 +590,11 @@ function buildResult(
   summary: TeamBalanceSummary,
   relations: PlayerRelation[] = [],
 ): TeamBalanceResult {
+  const teamAWithSubRoles = assignDetailedSubRoles(teamA);
+  const teamBWithSubRoles = assignDetailedSubRoles(teamB);
   const warnings: string[] = [];
-  const relationViolations = relationViolationsForTeams(teamA, teamB, relations);
-  const overrides = [...teamA, ...teamB].filter((p) => p.isPositionOverride);
+  const relationViolations = relationViolationsForTeams(teamAWithSubRoles, teamBWithSubRoles, relations);
+  const overrides = [...teamAWithSubRoles, ...teamBWithSubRoles].filter((p) => p.isPositionOverride);
   if (overrides.length >= 6) warnings.push(`포지션 변경자가 ${overrides.length}명입니다. 역할 배정이 다소 억지일 수 있습니다.`);
   if (summary.fieldGkA === 0 || summary.fieldGkB === 0) warnings.push("한 팀에 필드 GK 가능자가 없습니다. 전담 GK가 없거나 부족하면 문제가 될 수 있습니다.");
   if (Math.abs(summary.activityA - summary.activityB) >= 8) warnings.push("팀별 활동량 차이가 큽니다.");
@@ -517,8 +609,8 @@ function buildResult(
   const quality: TeamBalanceResult["quality"] = warnings.length === 0 ? "좋음" : warnings.length <= 2 ? "주의" : "나쁨";
 
   return {
-    teamA: { name: "A", players: teamA },
-    teamB: { name: "B", players: teamB },
+    teamA: { name: "A", players: teamAWithSubRoles },
+    teamB: { name: "B", players: teamBWithSubRoles },
     summary,
     relationViolations,
     warnings,

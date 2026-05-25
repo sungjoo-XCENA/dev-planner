@@ -10,6 +10,7 @@ export type FieldPosition =
 export type Position = FieldPosition | "GK";
 
 export type PositionGroup = "ATTACK" | "MID" | "DEFENSE";
+export type AssignedSubRole = "CF" | "WING" | "MID" | "CB" | "WB";
 
 export type PlayerSource = "SHEET" | "TEMP_GUEST" | "LOCAL_GUEST";
 
@@ -49,6 +50,7 @@ export type DedicatedGoalkeeper = {
 
 export type AssignedPlayer = Player & {
   assignedGroup: PositionGroup;
+  assignedSubRole?: AssignedSubRole;
   assignmentReason: string;
   isPositionOverride: boolean;
 };
