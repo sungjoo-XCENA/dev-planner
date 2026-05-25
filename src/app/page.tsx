@@ -1385,7 +1385,7 @@ function StaffRoleBadge({ role, compact = false, hideOnMobile = false, imageMode
       ? "min-h-4 px-1.5 py-0 text-[9px]"
       : "min-h-5 px-2 py-0 text-[11px]"
     : compact
-      ? "px-1.5 py-0.5 text-[9px]"
+      ? "px-0.5 py-0 text-[7px]"
       : "px-2 py-0.5 text-[11px]";
   const displayClass = hideOnMobile ? "hidden sm:inline-flex" : "inline-flex";
   return (
@@ -1399,13 +1399,13 @@ function InjuryBadge({ player, compact = false }: { player: Player; compact?: bo
   if (!hasInjury(player)) return null;
   const level = player.injuryLevel as 1 | 2 | 3;
   const rate = Math.round(INJURY_ACTIVITY_RATE[level] * 100);
-  const sizeClass = compact ? "px-1 py-0 text-[8px]" : "px-1.5 py-0.5 text-[10px]";
+  const sizeClass = compact ? "px-0.5 py-0 text-[7px]" : "px-1.5 py-0.5 text-[10px]";
   return (
     <span
-      className={`inline-flex shrink-0 items-center gap-0.5 rounded-md border font-black leading-none ${sizeClass} ${injuryBadgeClass(level)}`}
+      className={`inline-flex shrink-0 items-center gap-0.5 rounded-md border font-black leading-none [&>span:last-child]:hidden ${sizeClass} ${injuryBadgeClass(level)}`}
       title={`부상 ${level}: 활동량 ${rate}% 반영 (${player.activityScore} → ${formatScore(effectiveActivityScore(player))})`}
     >
-      <span className="font-black">+</span>
+      <span aria-hidden="true">✚</span>
       <span>부{level}</span>
     </span>
   );
@@ -1414,7 +1414,7 @@ function InjuryBadge({ player, compact = false }: { player: Player; compact?: bo
 function MultiPositionBadge({ player, compact = false }: { player: Pick<Player, "attackScore" | "midScore" | "defenseScore"> & Partial<Pick<Player, "centerForwardScore" | "wingScore" | "centerBackScore" | "wingBackScore">>; compact?: boolean }) {
   if (!isMultiPositionPlayer(player)) return null;
   const groups = multiPositionGroups(player).map(groupKorean).join("/");
-  const sizeClass = compact ? "px-1 py-0 text-[8px]" : "px-1.5 py-0.5 text-[10px]";
+  const sizeClass = compact ? "px-0.5 py-0 text-[7px]" : "px-1.5 py-0.5 text-[10px]";
   return (
     <span
       className={`inline-flex shrink-0 items-center rounded-md border border-fuchsia-200 bg-fuchsia-50 font-black leading-none text-fuchsia-700 ${sizeClass}`}
@@ -1427,7 +1427,7 @@ function MultiPositionBadge({ player, compact = false }: { player: Pick<Player, 
 
 function GuestBadge({ player, compact = false }: { player: Pick<Player, "memberType">; compact?: boolean }) {
   if (player.memberType !== "GUEST") return null;
-  const sizeClass = compact ? "px-1 py-0 text-[8px]" : "px-1.5 py-0.5 text-[10px]";
+  const sizeClass = compact ? "px-0.5 py-0 text-[7px]" : "px-1.5 py-0.5 text-[10px]";
   return (
     <span
       className={`inline-flex shrink-0 items-center rounded-md border border-violet-200 bg-violet-50 font-black leading-none text-violet-700 ${sizeClass}`}
@@ -2566,7 +2566,7 @@ function TeamCard({
                   const composite = detailedTechnicalTotal(p) + effectiveActivityScore(p);
                   const isSwapHint = showSwapHints && selectedComposite != null && Math.abs(composite - selectedComposite) <= 3;
                   const staffRole = extractStaffRole(p.memo);
-                  const baseClass = "min-h-[3.85rem] min-w-0 rounded-lg border px-1 py-1.5 text-center transition";
+                  const baseClass = "min-h-[4.1rem] min-w-0 rounded-lg border px-0.5 py-1.5 text-center transition";
                   const stateClass = isSelected
                     ? teamSelectedPlayerClass(team)
                     : isSwapHint
@@ -2584,8 +2584,10 @@ function TeamCard({
                       onClick={() => onPlayerClick(team, p.id)}
                     >
                       <div className="flex min-w-0 flex-col items-center justify-center gap-0.5">
-                        <span className="flex max-w-full items-center justify-center gap-0.5 overflow-hidden">
-                          <span className="min-w-0 truncate text-[11px] font-bold leading-tight">{p.name}{overrideMark(p.assignmentReason)}</span>
+                        <span className="block max-w-full break-keep text-[11px] font-bold leading-tight [overflow-wrap:anywhere]">
+                          {p.name}{overrideMark(p.assignmentReason)}
+                        </span>
+                        <span className="flex min-h-[0.55rem] max-w-full flex-wrap items-center justify-center gap-px">
                           <GuestBadge player={p} compact />
                           <StaffRoleBadge role={staffRole} compact />
                           <InjuryBadge player={p} compact />
