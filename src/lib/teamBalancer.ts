@@ -14,6 +14,10 @@ const MIN_TEAM_SIZE = 11;
 const MAX_TEAM_SIZE = 18;
 const PAIR_FLIP_MAX_ROUNDS = 30;
 const STRONG_RESERVE_PER_TEAM = 2;
+const ROLE_VARIANT_WINDOW = 6;
+const ROLE_VARIANT_MAX_SWAPS = 2;
+const VARIANT_DIVERSITY_PENALTY = 4;
+const VARIANT_SCORE_BUCKET = 5;
 const MISMATCH_PENALTY = 1.5;
 const MULTI_POSITION_BALANCE_PENALTY = 16;
 const COACH_BALANCE_PENALTY = 80;
@@ -362,6 +366,27 @@ function combinations<T>(items: T[], k: number): T[][] {
   return withFirst.concat(withoutFirst);
 }
 
+function pickRankedPool<T extends { id: string }>(ranked: T[], count: number, variant: number): T[] {
+  if (count <= 0) return [];
+  const base = ranked.slice(0, count);
+  const alternates = ranked.slice(count, count + ROLE_VARIANT_WINDOW);
+  if (variant <= 0 || base.length === 0 || alternates.length === 0) return base;
+
+  const pool = [...base];
+  const maxSwapCount = Math.min(ROLE_VARIANT_MAX_SWAPS, pool.length, alternates.length);
+  const swapCount = 1 + (Math.floor(variant / Math.max(1, alternates.length)) % maxSwapCount);
+  const replaceableCount = Math.min(pool.length, Math.max(3, Math.ceil(pool.length / 2)));
+
+  for (let swap = 0; swap < swapCount; swap += 1) {
+    const outIndex = pool.length - 1 - ((variant + swap * 3) % replaceableCount);
+    const alternate = alternates[(Math.floor(variant / (swap + 1)) + swap * 2) % alternates.length];
+    if (!alternate || pool.some((player) => player.id === alternate.id)) continue;
+    pool[outIndex] = alternate;
+  }
+
+  return pool;
+}
+
 function buildPools(fieldPlayers: FieldPlayer[], teamTargets: RoleTargets, variant: number, relations: PlayerRelation[] = []): {
   attPool: FieldPlayer[];
   midPool: FieldPlayer[];
@@ -371,20 +396,24 @@ function buildPools(fieldPlayers: FieldPlayer[], teamTargets: RoleTargets, varia
   const totalAtt = teamTargets.ATTACK * 2;
   const totalDef = teamTargets.DEFENSE * 2;
 
-  const midPool = [...fieldPlayers].sort(compareForMidPool).slice(0, totalMid);
+  const midPool = pickRankedPool([...fieldPlayers].sort(compareForMidPool), totalMid, variant);
   const remainingAfterMid = fieldPlayers.filter((p) => !midPool.includes(p));
 
   const strongDefCount = Math.max(0, (teamTargets.DEFENSE - STRONG_RESERVE_PER_TEAM) * 2);
-  const strongDef = [...remainingAfterMid]
-    .sort((a, b) => compareForStrongPool("DEFENSE", a, b))
-    .slice(0, strongDefCount);
+  const strongDef = pickRankedPool(
+    [...remainingAfterMid].sort((a, b) => compareForStrongPool("DEFENSE", a, b)),
+    strongDefCount,
+    Math.floor(variant / 2),
+  );
 
   const remainingAfterDef = remainingAfterMid.filter((p) => !strongDef.includes(p));
 
   const strongAttCount = Math.max(0, (teamTargets.ATTACK - STRONG_RESERVE_PER_TEAM) * 2);
-  const strongAtt = [...remainingAfterDef]
-    .sort((a, b) => compareForStrongPool("ATTACK", a, b))
-    .slice(0, strongAttCount);
+  const strongAtt = pickRankedPool(
+    [...remainingAfterDef].sort((a, b) => compareForStrongPool("ATTACK", a, b)),
+    strongAttCount,
+    Math.floor(variant / 3),
+  );
 
   const lastN = remainingAfterDef.filter((p) => !strongAtt.includes(p));
   const lastAttCount = totalAtt - strongAttCount;
@@ -527,27 +556,101 @@ export function rebalanceTeams(teamAPlayers: Player[], teamBPlayers: Player[], v
   return balanceTeams([...teamAPlayers, ...teamBPlayers], variant, relations);
 }
 
+function detailedTotalDiff(summary: TeamBalanceSummary): number {
+  const totalA = summary.centerForwardScoreA + summary.wingScoreA + summary.midScoreA + summary.centerBackScoreA + summary.wingBackScoreA + summary.activityA;
+  const totalB = summary.centerForwardScoreB + summary.wingScoreB + summary.midScoreB + summary.centerBackScoreB + summary.wingBackScoreB + summary.activityB;
+  return Math.abs(totalA - totalB);
+}
+
+function variantQualityScore(result: TeamBalanceResult): number {
+  const summary = result.summary;
+  const coachDiff = Math.abs(summary.coachA - summary.coachB);
+  const coachPenalty = Math.max(0, coachDiff - 1) * 1500 + coachDiff * 25;
+  return summary.relationHardViolationCount * 10_000
+    + (summary.relationViolationCount - summary.relationHardViolationCount) * 600
+    + coachPenalty
+    + summary.balanceScore
+    + detailedTotalDiff(summary) * 12;
+}
+
+function variantScoreBucket(result: TeamBalanceResult): number {
+  return Math.round(variantQualityScore(result) / VARIANT_SCORE_BUCKET) * VARIANT_SCORE_BUCKET;
+}
+
+function teamVariantKey(result: TeamBalanceResult): string {
+  const aIds = result.teamA.players.map((p) => p.id).sort().join(",");
+  const bIds = result.teamB.players.map((p) => p.id).sort().join(",");
+  return aIds < bIds ? `${aIds}|${bIds}` : `${bIds}|${aIds}`;
+}
+
+function assignmentMap(result: TeamBalanceResult): Map<string, string> {
+  const map = new Map<string, string>();
+  result.teamA.players.forEach((player) => map.set(player.id, `A:${player.assignedGroup}`));
+  result.teamB.players.forEach((player) => map.set(player.id, `B:${player.assignedGroup}`));
+  return map;
+}
+
+function assignmentSimilarity(a: TeamBalanceResult, b: TeamBalanceResult): number {
+  const bMap = assignmentMap(b);
+  return Array.from(assignmentMap(a).entries()).reduce((count, [id, assignment]) => (
+    bMap.get(id) === assignment ? count + 1 : count
+  ), 0);
+}
+
+function diversityPenalty(candidate: TeamBalanceResult, selected: TeamBalanceResult[]): number {
+  if (selected.length === 0) return 0;
+  return Math.max(...selected.map((item) => assignmentSimilarity(candidate, item))) * VARIANT_DIVERSITY_PENALTY;
+}
+
 export function balanceTeamsVariants(players: Player[], maxVariants = 10, relations: PlayerRelation[] = []): TeamBalanceResult[] {
-  const results: TeamBalanceResult[] = [];
+  const candidates: TeamBalanceResult[] = [];
   const seen = new Set<string>();
-  const probe = Math.max(maxVariants * 10, 100);
-  for (let v = 0; v < probe && results.length < maxVariants; v += 1) {
+  const probe = Math.max(maxVariants * 80, 400);
+  for (let v = 0; v < probe; v += 1) {
     let r: TeamBalanceResult;
     try {
       r = balanceTeams(players, v, relations);
     } catch {
-      if (results.length === 0) throw new Error("팀 분배 실패");
+      if (candidates.length === 0) throw new Error("팀 분배 실패");
       break;
     }
-    const aIds = r.teamA.players.map((p) => p.id).sort().join(",");
-    const bIds = r.teamB.players.map((p) => p.id).sort().join(",");
-    const key = aIds < bIds ? `${aIds}|${bIds}` : `${bIds}|${aIds}`;
+    const key = teamVariantKey(r);
     if (seen.has(key)) continue;
     seen.add(key);
-    results.push(r);
+    candidates.push(r);
   }
-  if (results.length === 0) throw new Error("팀 분배 실패");
-  return results;
+  if (candidates.length === 0) throw new Error("팀 분배 실패");
+
+  candidates.sort((a, b) => {
+    const qualityDiff = variantQualityScore(a) - variantQualityScore(b);
+    if (qualityDiff !== 0) return qualityDiff;
+    return teamVariantKey(a).localeCompare(teamVariantKey(b));
+  });
+
+  const selected: TeamBalanceResult[] = [];
+  const remaining = [...candidates];
+  while (selected.length < maxVariants && remaining.length > 0) {
+    const bestBucket = variantScoreBucket(remaining[0]);
+    const bucketEnd = remaining.findIndex((candidate) => variantScoreBucket(candidate) !== bestBucket);
+    const candidateCount = bucketEnd === -1 ? remaining.length : bucketEnd;
+    let bestIndex = 0;
+    let bestScore = Number.POSITIVE_INFINITY;
+    for (let i = 0; i < candidateCount; i += 1) {
+      const candidate = remaining[i];
+      const score = diversityPenalty(candidate, selected);
+      if (score < bestScore) {
+        bestScore = score;
+        bestIndex = i;
+      }
+    }
+    selected.push(remaining.splice(bestIndex, 1)[0]);
+  }
+
+  return selected.sort((a, b) => {
+    const qualityDiff = variantQualityScore(a) - variantQualityScore(b);
+    if (qualityDiff !== 0) return qualityDiff;
+    return teamVariantKey(a).localeCompare(teamVariantKey(b));
+  });
 }
 
 export function summarizeTeams(teamAPlayers: AssignedPlayer[], teamBPlayers: AssignedPlayer[], relations: PlayerRelation[] = []): TeamBalanceResult {

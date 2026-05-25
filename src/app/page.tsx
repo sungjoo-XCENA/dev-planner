@@ -1453,13 +1453,52 @@ function playerScoreLine(player: Player): string {
   return `CF${centerForwardScore(player)} · W${wingScore(player)} · MID${player.midScore} · CB${centerBackScore(player)} · WB${wingBackScore(player)} · ACT${activityDisplay(player)}`;
 }
 
+function appliedScoreKeys(player: Player, group: PositionGroup): Array<"CF" | "W" | "M" | "CB" | "WB"> {
+  if (group === "MID") return ["M"];
+  if (group === "ATTACK") {
+    const cf = centerForwardScore(player);
+    const wing = wingScore(player);
+    if (cf === wing) return ["CF", "W"];
+    return cf > wing ? ["CF"] : ["W"];
+  }
+  const cb = centerBackScore(player);
+  const wb = wingBackScore(player);
+  if (cb === wb) return ["CB", "WB"];
+  return cb > wb ? ["CB"] : ["WB"];
+}
+
+function appliedScoreLabel(player: Player, group: PositionGroup): string {
+  const keys = appliedScoreKeys(player, group);
+  const value = keys[0] === "CF" ? centerForwardScore(player)
+    : keys[0] === "W" ? wingScore(player)
+      : keys[0] === "M" ? player.midScore
+        : keys[0] === "CB" ? centerBackScore(player)
+          : wingBackScore(player);
+  return `적용 ${keys.join("/")} ${value}`;
+}
+
+function AssignedScoreBadge({ player, group }: { player: Player; group: PositionGroup }) {
+  return (
+    <span className={`inline-flex shrink-0 items-center rounded-md border px-1 py-0 text-[8px] font-black leading-none ${assignedScoreBadgeClass(group)}`}>
+      {appliedScoreLabel(player, group)}
+    </span>
+  );
+}
+
+function assignedScoreBadgeClass(group: PositionGroup): string {
+  if (group === "ATTACK") return "border-rose-200 bg-rose-50 text-rose-700";
+  if (group === "MID") return "border-sky-200 bg-sky-50 text-sky-700";
+  return "border-emerald-200 bg-emerald-50 text-emerald-700";
+}
+
 function TeamPlayerScoreChips({ player, group }: { player: Player; group: PositionGroup }) {
+  const activeKeys = new Set(appliedScoreKeys(player, group));
   const items = [
-    { key: "CF", value: centerForwardScore(player), active: group === "ATTACK", tone: "attack" },
-    { key: "W", value: wingScore(player), active: group === "ATTACK", tone: "attack" },
-    { key: "M", value: player.midScore, active: group === "MID", tone: "mid" },
-    { key: "CB", value: centerBackScore(player), active: group === "DEFENSE", tone: "defense" },
-    { key: "WB", value: wingBackScore(player), active: group === "DEFENSE", tone: "defense" },
+    { key: "CF", value: centerForwardScore(player), active: activeKeys.has("CF"), tone: "attack" },
+    { key: "W", value: wingScore(player), active: activeKeys.has("W"), tone: "attack" },
+    { key: "M", value: player.midScore, active: activeKeys.has("M"), tone: "mid" },
+    { key: "CB", value: centerBackScore(player), active: activeKeys.has("CB"), tone: "defense" },
+    { key: "WB", value: wingBackScore(player), active: activeKeys.has("WB"), tone: "defense" },
     { key: "ACT", value: activityDisplay(player), active: false, tone: "activity" },
   ] as const;
 
@@ -2540,8 +2579,7 @@ function TeamCard({
                   const composite = detailedTechnicalTotal(p) + effectiveActivityScore(p);
                   const isSwapHint = showSwapHints && selectedComposite != null && Math.abs(composite - selectedComposite) <= 3;
                   const staffRole = extractStaffRole(p.memo);
-                  const hasBadge = p.memberType === "GUEST" || staffRole != null || hasInjury(p) || isMultiPositionPlayer(p);
-                  const baseClass = "min-h-[4.8rem] min-w-0 rounded-lg border px-1 py-1.5 text-center transition";
+                  const baseClass = "min-h-[5.25rem] min-w-0 rounded-lg border px-1 py-1.5 text-center transition";
                   const stateClass = isSelected
                     ? teamSelectedPlayerClass(team)
                     : isSwapHint
@@ -2560,14 +2598,13 @@ function TeamCard({
                     >
                       <div className="flex min-w-0 flex-col items-center justify-center gap-0.5">
                         <span className="max-w-full truncate text-[11px] font-bold leading-tight">{p.name}{overrideMark(p.assignmentReason)}</span>
-                        {hasBadge && (
-                          <span className="flex min-h-[0.9rem] max-w-full flex-wrap items-center justify-center gap-0.5">
-                            <GuestBadge player={p} compact />
-                            <StaffRoleBadge role={staffRole} compact />
-                            <InjuryBadge player={p} compact />
-                            <MultiPositionBadge player={p} compact />
-                          </span>
-                        )}
+                        <span className="flex min-h-[0.9rem] max-w-full flex-wrap items-center justify-center gap-0.5">
+                          <GuestBadge player={p} compact />
+                          <StaffRoleBadge role={staffRole} compact />
+                          <InjuryBadge player={p} compact />
+                          <MultiPositionBadge player={p} compact />
+                        </span>
+                        <AssignedScoreBadge player={p} group={g} />
                       </div>
                       <TeamPlayerScoreChips player={p} group={g} />
                     </button>
