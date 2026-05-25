@@ -1453,6 +1453,40 @@ function playerScoreLine(player: Player): string {
   return `CF${centerForwardScore(player)} · W${wingScore(player)} · MID${player.midScore} · CB${centerBackScore(player)} · WB${wingBackScore(player)} · ACT${activityDisplay(player)}`;
 }
 
+function TeamPlayerScoreChips({ player, group }: { player: Player; group: PositionGroup }) {
+  const items = [
+    { key: "CF", value: centerForwardScore(player), active: group === "ATTACK", tone: "attack" },
+    { key: "W", value: wingScore(player), active: group === "ATTACK", tone: "attack" },
+    { key: "M", value: player.midScore, active: group === "MID", tone: "mid" },
+    { key: "CB", value: centerBackScore(player), active: group === "DEFENSE", tone: "defense" },
+    { key: "WB", value: wingBackScore(player), active: group === "DEFENSE", tone: "defense" },
+    { key: "ACT", value: activityDisplay(player), active: false, tone: "activity" },
+  ] as const;
+
+  return (
+    <div className="mt-1 flex max-w-full flex-wrap items-center justify-center gap-0.5">
+      {items.map((item) => (
+        <span
+          key={item.key}
+          className={`inline-flex items-center rounded-md border px-1 py-0 text-[8px] font-black leading-[1.15] ${teamScoreChipClass(item.active, item.tone)}`}
+          title={`${item.key} ${item.value}`}
+        >
+          <span>{item.key}</span>
+          <span>{item.value}</span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function teamScoreChipClass(active: boolean, tone: "attack" | "mid" | "defense" | "activity"): string {
+  if (!active) return "border-slate-200 bg-white/80 text-slate-400";
+  if (tone === "attack") return "border-rose-200 bg-rose-50 text-rose-700";
+  if (tone === "mid") return "border-sky-200 bg-sky-50 text-sky-700";
+  if (tone === "defense") return "border-emerald-200 bg-emerald-50 text-emerald-700";
+  return "border-slate-200 bg-white/80 text-slate-400";
+}
+
 function staffRoleChipClass(role?: StaffRole | null): string {
   if (role === "단장") return "bg-white text-slate-950 ring-slate-300 border-b-2 border-slate-500";
   if (role === "감독") return "bg-white text-indigo-950 ring-indigo-300 border-b-2 border-indigo-500";
@@ -1670,7 +1704,7 @@ function TeamResultView({
           groupScores={{ ATTACK: s.attackScoreB, MID: s.midScoreB, DEFENSE: s.defenseScoreB }}
         />
       </div>
-      <p className="mt-4 text-xs text-slate-500"><span className="font-bold">*</span> 부포지션으로 배정된 선수 · <span className="font-bold">**</span> 인원 균형을 위해 주·부와 무관한 포지션으로 강제 배정된 선수 · <span className="inline-flex rounded-md border border-fuchsia-200 bg-fuchsia-50 px-1 py-0 text-[10px] font-black leading-none text-fuchsia-700">멀티</span> 공격/MID/수비 중 7점 이상이 2개 이상인 선수</p>
+      <p className="mt-4 text-xs text-slate-500"><span className="font-bold">*</span> 부포지션으로 배정된 선수 · <span className="font-bold">**</span> 인원 균형을 위해 주·부와 무관한 포지션으로 강제 배정된 선수 · <span className="inline-flex rounded-md border border-fuchsia-200 bg-fuchsia-50 px-1 py-0 text-[10px] font-black leading-none text-fuchsia-700">멀티</span> 공격/미드/수비 중 7점 이상이 2개 이상인 선수</p>
       {variantCount > 1 && !confirmed && (
         <div className="mt-5 flex flex-wrap items-center gap-2 rounded-2xl bg-slate-50 px-3 py-3">
           <span className="text-xs font-semibold text-slate-500">버전</span>
@@ -2507,7 +2541,7 @@ function TeamCard({
                   const isSwapHint = showSwapHints && selectedComposite != null && Math.abs(composite - selectedComposite) <= 3;
                   const staffRole = extractStaffRole(p.memo);
                   const hasBadge = p.memberType === "GUEST" || staffRole != null || hasInjury(p) || isMultiPositionPlayer(p);
-                  const baseClass = "min-h-[3.9rem] min-w-0 rounded-lg border px-1 py-1.5 text-center transition";
+                  const baseClass = "min-h-[4.8rem] min-w-0 rounded-lg border px-1 py-1.5 text-center transition";
                   const stateClass = isSelected
                     ? teamSelectedPlayerClass(team)
                     : isSwapHint
@@ -2515,7 +2549,6 @@ function TeamCard({
                       : interactive
                         ? `bg-slate-50 text-slate-700 border-transparent ${teamHoverClass(team)} cursor-pointer`
                         : "bg-slate-50 text-slate-700 border-transparent";
-                  const statClass = isSelected ? teamSelectedStatClass(team) : "text-slate-500";
                   return (
                     <button
                       key={p.id}
@@ -2536,9 +2569,7 @@ function TeamCard({
                           </span>
                         )}
                       </div>
-                      <div className={`truncate font-mono text-[9px] leading-tight ${statClass}`}>
-                        CF{centerForwardScore(p)}/W{wingScore(p)}/M{p.midScore}/CB{centerBackScore(p)}/WB{wingBackScore(p)}/ACT{activityDisplay(p)}
-                      </div>
+                      <TeamPlayerScoreChips player={p} group={g} />
                     </button>
                   );
                 })}
@@ -2631,10 +2662,6 @@ function teamSelectedPlayerClass(team: TeamName): string {
   return team === "A"
     ? "bg-lime-300 text-lime-950 shadow-md border-lime-500"
     : "bg-orange-500 text-white shadow-md border-orange-600";
-}
-
-function teamSelectedStatClass(team: TeamName): string {
-  return team === "A" ? "text-lime-800" : "text-orange-100";
 }
 
 function overviewGroupPillClass(group: PositionGroup): string {
