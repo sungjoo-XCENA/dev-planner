@@ -16,9 +16,10 @@ const PAIR_FLIP_MAX_ROUNDS = 30;
 const STRONG_RESERVE_PER_TEAM = 2;
 const ROLE_VARIANT_WINDOW = 6;
 const ROLE_VARIANT_MAX_SWAPS = 2;
-const VARIANT_DIVERSITY_PENALTY = 4;
-const VARIANT_SCORE_BUCKET = 5;
 const MISMATCH_PENALTY = 1.5;
+const OFF_BEST_GROUP_GAP_THRESHOLD = 5;
+const OFF_BEST_GROUP_SOFT_PENALTY = 18;
+const OFF_BEST_GROUP_HARD_PENALTY = 160;
 const MULTI_POSITION_BALANCE_PENALTY = 16;
 const COACH_BALANCE_PENALTY = 80;
 const RELATION_PENALTY: Record<PlayerRelation["score"], number> = {
@@ -96,6 +97,8 @@ function compareForMidPool(a: FieldPlayer, b: FieldPlayer): number {
 function compareForStrongPool(group: PositionGroup, a: FieldPlayer, b: FieldPlayer): number {
   const posDiff = scoreForGroup(group, b) - scoreForGroup(group, a);
   if (posDiff !== 0) return posDiff;
+  const gapDiff = offBestGroupGap(a, group) - offBestGroupGap(b, group);
+  if (gapDiff !== 0) return gapDiff;
   const actDiff = effectiveActivityScore(b) - effectiveActivityScore(a);
   if (actDiff !== 0) return actDiff;
   const aRank = primaryRank(a, group);
@@ -117,6 +120,36 @@ function bestSubRoleScore(player: FieldPlayer | AssignedFieldPlayer, group: Posi
   if (group === "ATTACK") return Math.max(centerForwardScore(player), wingScore(player));
   if (group === "DEFENSE") return Math.max(centerBackScore(player), wingBackScore(player));
   return player.midScore;
+}
+
+function bestScoringGroup(player: FieldPlayer): PositionGroup {
+  return POSITION_GROUPS.reduce((best, group) => {
+    const bestScore = scoreForGroup(best, player);
+    const groupScore = scoreForGroup(group, player);
+    if (groupScore !== bestScore) return groupScore > bestScore ? group : best;
+
+    const bestRank = primaryRank(player, best);
+    const groupRank = primaryRank(player, group);
+    if (groupRank !== bestRank) return groupRank < bestRank ? group : best;
+
+    return best;
+  }, POSITION_GROUPS[0]);
+}
+
+function offBestGroupGap(player: FieldPlayer, group: PositionGroup): number {
+  const bestScore = scoreForGroup(bestScoringGroup(player), player);
+  return Math.max(0, bestScore - scoreForGroup(group, player));
+}
+
+function offBestGroupPenalty(player: FieldPlayer, group: PositionGroup): number {
+  const gap = offBestGroupGap(player, group);
+  if (gap <= 0) return 0;
+  const hardPenalty = gap >= OFF_BEST_GROUP_GAP_THRESHOLD ? OFF_BEST_GROUP_HARD_PENALTY : 0;
+  return hardPenalty + gap * OFF_BEST_GROUP_SOFT_PENALTY;
+}
+
+function assignmentFitPenalty(players: AssignedFieldPlayer[]): number {
+  return players.reduce((sum, player) => sum + offBestGroupPenalty(player, player.assignedGroup), 0);
 }
 
 function subRoleTargets(group: "ATTACK" | "DEFENSE", count: number): { firstRole: AssignedSubRole; firstCount: number; secondRole: AssignedSubRole } {
@@ -435,8 +468,9 @@ function evaluatePoolAssignment(
     return primary !== p.assignedGroup && !hasGroup(p.secondaryPositions, p.assignedGroup);
   }).length;
   const balanceScore = summary.balanceScore;
+  const fitPenalty = assignmentFitPenalty([...teamA, ...teamB]);
   return {
-    adjScore: balanceScore + mismatchCount * MISMATCH_PENALTY,
+    adjScore: balanceScore + mismatchCount * MISMATCH_PENALTY + fitPenalty,
     balanceScore,
     mismatchCount,
     teamA,
@@ -486,7 +520,7 @@ function buildPools(fieldPlayers: FieldPlayer[], teamTargets: RoleTargets, varia
   const totalAtt = teamTargets.ATTACK * 2;
   const totalDef = teamTargets.DEFENSE * 2;
 
-  const midPool = pickRankedPool([...fieldPlayers].sort(compareForMidPool), totalMid, variant);
+  const midPool = [...fieldPlayers].sort(compareForMidPool).slice(0, totalMid);
   const remainingAfterMid = fieldPlayers.filter((p) => !midPool.includes(p));
 
   const strongDefCount = Math.max(0, (teamTargets.DEFENSE - STRONG_RESERVE_PER_TEAM) * 2);
@@ -658,40 +692,19 @@ function variantQualityScore(result: TeamBalanceResult): number {
   const summary = result.summary;
   const coachDiff = Math.abs(summary.coachA - summary.coachB);
   const coachPenalty = Math.max(0, coachDiff - 1) * 1500 + coachDiff * 25;
+  const fitPenalty = assignmentFitPenalty([...(result.teamA.players as AssignedFieldPlayer[]), ...(result.teamB.players as AssignedFieldPlayer[])]);
   return summary.relationHardViolationCount * 10_000
     + (summary.relationViolationCount - summary.relationHardViolationCount) * 600
     + coachPenalty
+    + fitPenalty
     + summary.balanceScore
     + detailedTotalDiff(summary) * 12;
-}
-
-function variantScoreBucket(result: TeamBalanceResult): number {
-  return Math.round(variantQualityScore(result) / VARIANT_SCORE_BUCKET) * VARIANT_SCORE_BUCKET;
 }
 
 function teamVariantKey(result: TeamBalanceResult): string {
   const aIds = result.teamA.players.map((p) => p.id).sort().join(",");
   const bIds = result.teamB.players.map((p) => p.id).sort().join(",");
   return aIds < bIds ? `${aIds}|${bIds}` : `${bIds}|${aIds}`;
-}
-
-function assignmentMap(result: TeamBalanceResult): Map<string, string> {
-  const map = new Map<string, string>();
-  result.teamA.players.forEach((player) => map.set(player.id, `A:${player.assignedGroup}`));
-  result.teamB.players.forEach((player) => map.set(player.id, `B:${player.assignedGroup}`));
-  return map;
-}
-
-function assignmentSimilarity(a: TeamBalanceResult, b: TeamBalanceResult): number {
-  const bMap = assignmentMap(b);
-  return Array.from(assignmentMap(a).entries()).reduce((count, [id, assignment]) => (
-    bMap.get(id) === assignment ? count + 1 : count
-  ), 0);
-}
-
-function diversityPenalty(candidate: TeamBalanceResult, selected: TeamBalanceResult[]): number {
-  if (selected.length === 0) return 0;
-  return Math.max(...selected.map((item) => assignmentSimilarity(candidate, item))) * VARIANT_DIVERSITY_PENALTY;
 }
 
 export function balanceTeamsVariants(players: Player[], maxVariants = 10, relations: PlayerRelation[] = []): TeamBalanceResult[] {
@@ -719,30 +732,7 @@ export function balanceTeamsVariants(players: Player[], maxVariants = 10, relati
     return teamVariantKey(a).localeCompare(teamVariantKey(b));
   });
 
-  const selected: TeamBalanceResult[] = [];
-  const remaining = [...candidates];
-  while (selected.length < maxVariants && remaining.length > 0) {
-    const bestBucket = variantScoreBucket(remaining[0]);
-    const bucketEnd = remaining.findIndex((candidate) => variantScoreBucket(candidate) !== bestBucket);
-    const candidateCount = bucketEnd === -1 ? remaining.length : bucketEnd;
-    let bestIndex = 0;
-    let bestScore = Number.POSITIVE_INFINITY;
-    for (let i = 0; i < candidateCount; i += 1) {
-      const candidate = remaining[i];
-      const score = diversityPenalty(candidate, selected);
-      if (score < bestScore) {
-        bestScore = score;
-        bestIndex = i;
-      }
-    }
-    selected.push(remaining.splice(bestIndex, 1)[0]);
-  }
-
-  return selected.sort((a, b) => {
-    const qualityDiff = variantQualityScore(a) - variantQualityScore(b);
-    if (qualityDiff !== 0) return qualityDiff;
-    return teamVariantKey(a).localeCompare(teamVariantKey(b));
-  });
+  return candidates.slice(0, maxVariants);
 }
 
 export function summarizeTeams(teamAPlayers: AssignedPlayer[], teamBPlayers: AssignedPlayer[], relations: PlayerRelation[] = []): TeamBalanceResult {
