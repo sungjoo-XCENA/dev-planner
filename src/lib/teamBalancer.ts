@@ -280,11 +280,34 @@ type SplitResult = {
   groupOf: Map<string, PositionGroup>;
 };
 
+function rotateItems<T>(items: T[], offset: number): T[] {
+  if (items.length === 0) return items;
+  const normalized = ((offset % items.length) + items.length) % items.length;
+  return [...items.slice(normalized), ...items.slice(0, normalized)];
+}
+
+function midPairingOrder(sortedMidPool: FieldPlayer[], variant: number): FieldPlayer[] {
+  if (variant <= 0) return sortedMidPool;
+  if (sortedMidPool.length <= 2) return sortedMidPool;
+
+  const half = Math.ceil(sortedMidPool.length / 2);
+  const adjustedVariant = variant - 1;
+  const upper = rotateItems(sortedMidPool.slice(0, half), Math.floor(adjustedVariant / Math.max(1, sortedMidPool.length - half)));
+  const lower = rotateItems(sortedMidPool.slice(half), adjustedVariant);
+  const ordered: FieldPlayer[] = [];
+  for (let index = 0; index < upper.length; index += 1) {
+    ordered.push(upper[index]);
+    if (lower[index]) ordered.push(lower[index]);
+  }
+  return ordered;
+}
+
 function pairSplitPools(
   attPool: FieldPlayer[],
   midPool: FieldPlayer[],
   defPool: FieldPlayer[],
   relations: PlayerRelation[] = [],
+  variant = 0,
 ): SplitResult {
   const groupOf = new Map<string, PositionGroup>();
   attPool.forEach((p) => groupOf.set(p.id, "ATTACK"));
@@ -302,7 +325,8 @@ function pairSplitPools(
   };
 
   for (const group of PAIRING_GROUP_ORDER) {
-    const pool = [...poolsByGroup[group]].sort((a, b) => comparePlayersForPair(group, a, b));
+    const sortedPool = [...poolsByGroup[group]].sort((a, b) => comparePlayersForPair(group, a, b));
+    const pool = group === "MID" ? midPairingOrder(sortedPool, variant) : sortedPool;
 
     for (let i = 0; i < pool.length; i += 2) {
       const stronger = pool[i];
@@ -324,7 +348,9 @@ function pairSplitPools(
 
       const cost1 = pairCostByGroup([...teamA, stronger], [...teamB, weaker], groupOf, relations);
       const cost2 = pairCostByGroup([...teamA, weaker], [...teamB, stronger], groupOf, relations);
-      if (cost1 <= cost2) {
+      const pairIndex = Math.floor(i / 2);
+      const flipTie = group === "MID" && Math.abs(cost1 - cost2) < 0.0001 && ((variant + pairIndex) % 2 === 1);
+      if (cost1 < cost2 || (cost1 <= cost2 && !flipTie)) {
         teamA.push(stronger);
         teamB.push(weaker);
       } else {
@@ -474,8 +500,9 @@ function evaluatePoolAssignment(
   midPool: FieldPlayer[],
   defPool: FieldPlayer[],
   relations: PlayerRelation[] = [],
+  variant = 0,
 ): { adjScore: number; balanceScore: number; mismatchCount: number; teamA: AssignedFieldPlayer[]; teamB: AssignedFieldPlayer[]; partnerById: Map<string, string>; summary: TeamBalanceSummary } {
-  const split = pairSplitPools(attPool, midPool, defPool, relations);
+  const split = pairSplitPools(attPool, midPool, defPool, relations, variant);
   const teamA = split.teamA.map((p) => buildAssigned(p, split.groupOf.get(p.id)!));
   const teamB = split.teamB.map((p) => buildAssigned(p, split.groupOf.get(p.id)!));
   const summary = calcSummary(teamA, teamB, relations);
@@ -565,7 +592,7 @@ function buildPools(fieldPlayers: FieldPlayer[], teamTargets: RoleTargets, varia
     for (const lastAttCombo of combinations(lastN, attPickCount)) {
       const attCandidate = [...strongAtt, ...lastAttCombo];
       const defCandidate = [...strongDef, ...lastN.filter((p) => !lastAttCombo.includes(p))];
-      const result = evaluatePoolAssignment(attCandidate, midPool, defCandidate, relations);
+      const result = evaluatePoolAssignment(attCandidate, midPool, defCandidate, relations, variant);
       const key = [...attCandidate.map((p) => p.id).sort(), "|", ...defCandidate.map((p) => p.id).sort()].join(",");
       candidates.push({ adjScore: result.adjScore, att: attCandidate, def: defCandidate, key });
     }
@@ -683,7 +710,7 @@ export function balanceTeams(players: Player[], variant = 0, relations: PlayerRe
   const teamTargets = targetForTeamSize(halfSize);
 
   const { attPool, midPool, defPool } = buildPools(fieldPlayers, teamTargets, variant, relations);
-  const initial = evaluatePoolAssignment(attPool, midPool, defPool, relations);
+  const initial = evaluatePoolAssignment(attPool, midPool, defPool, relations, variant);
 
   if (initial.teamA.length < MIN_TEAM_SIZE || initial.teamA.length > MAX_TEAM_SIZE
       || initial.teamB.length < MIN_TEAM_SIZE || initial.teamB.length > MAX_TEAM_SIZE) {
