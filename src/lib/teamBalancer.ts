@@ -84,6 +84,8 @@ function comparePlayersForPair(group: PositionGroup, a: FieldPlayer, b: FieldPla
 }
 
 function compareForMidPool(a: FieldPlayer, b: FieldPlayer): number {
+  const rankDiff = groupFitRank(a, "MID") - groupFitRank(b, "MID");
+  if (rankDiff !== 0) return rankDiff;
   if (b.midScore !== a.midScore) return b.midScore - a.midScore;
   const activityDiff = effectiveActivityScore(b) - effectiveActivityScore(a);
   if (activityDiff !== 0) return activityDiff;
@@ -95,8 +97,13 @@ function compareForMidPool(a: FieldPlayer, b: FieldPlayer): number {
 }
 
 function compareForStrongPool(group: PositionGroup, a: FieldPlayer, b: FieldPlayer): number {
+  const aFitRank = groupFitRank(a, group);
+  const bFitRank = groupFitRank(b, group);
+  const forcedRankDiff = (aFitRank >= 4 ? 1 : 0) - (bFitRank >= 4 ? 1 : 0);
+  if (forcedRankDiff !== 0) return forcedRankDiff;
   const posDiff = scoreForGroup(group, b) - scoreForGroup(group, a);
   if (posDiff !== 0) return posDiff;
+  if (aFitRank !== bFitRank) return aFitRank - bFitRank;
   const gapDiff = offBestGroupGap(a, group) - offBestGroupGap(b, group);
   if (gapDiff !== 0) return gapDiff;
   const actDiff = effectiveActivityScore(b) - effectiveActivityScore(a);
@@ -146,6 +153,15 @@ function offBestGroupPenalty(player: FieldPlayer, group: PositionGroup): number 
   if (gap <= 0) return 0;
   const hardPenalty = gap >= OFF_BEST_GROUP_GAP_THRESHOLD ? OFF_BEST_GROUP_HARD_PENALTY : 0;
   return hardPenalty + gap * OFF_BEST_GROUP_SOFT_PENALTY;
+}
+
+function groupFitRank(player: FieldPlayer, group: PositionGroup): number {
+  const primary = getPositionGroup(player.primaryPosition);
+  if (primary === group) return 0;
+  if (hasGroup(player.secondaryPositions, group)) return 1;
+  if (scoreForGroup(group, player) >= 7 && offBestGroupGap(player, group) < OFF_BEST_GROUP_GAP_THRESHOLD) return 2;
+  if (offBestGroupGap(player, group) < OFF_BEST_GROUP_GAP_THRESHOLD) return 3;
+  return 4;
 }
 
 function assignmentFitPenalty(players: AssignedFieldPlayer[]): number {
