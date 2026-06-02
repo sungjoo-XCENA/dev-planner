@@ -22,8 +22,10 @@ const OFF_BEST_GROUP_SOFT_PENALTY = 18;
 const OFF_BEST_GROUP_HARD_PENALTY = 160;
 const PROFILE_OVERLAP_MIN_SCORE = 7;
 const PROFILE_OVERLAP_BASELINE = 14;
+const PROFILE_STACK_VARIANT_WEIGHT = 6;
 const MULTI_POSITION_BALANCE_PENALTY = 16;
 const COACH_BALANCE_PENALTY = 80;
+const VARIANT_TOTAL_DIFF_TOLERANCE = 2;
 const RELATION_PENALTY: Record<PlayerRelation["score"], number> = {
   1: 1000,
   2: 80,
@@ -778,6 +780,30 @@ function profileStackPenalty(result: TeamBalanceResult): number {
     + teamProfileStackPenalty(result.teamB.players as AssignedFieldPlayer[]);
 }
 
+function multiPositionStrength(player: AssignedFieldPlayer): number {
+  const scores = [
+    centerForwardScore(player),
+    wingScore(player),
+    player.midScore,
+    centerBackScore(player),
+    wingBackScore(player),
+  ].filter((score) => score >= PROFILE_OVERLAP_MIN_SCORE);
+
+  if (scores.length < 2) return 0;
+  return scores.length * 20 + scores.reduce((sum, score) => sum + score, 0);
+}
+
+function teamMultiStrength(players: AssignedFieldPlayer[]): number {
+  return players.reduce((sum, player) => sum + multiPositionStrength(player), 0);
+}
+
+function multiStrengthDiff(result: TeamBalanceResult): number {
+  return Math.abs(
+    teamMultiStrength(result.teamA.players as AssignedFieldPlayer[])
+    - teamMultiStrength(result.teamB.players as AssignedFieldPlayer[]),
+  );
+}
+
 function fitPenaltyForResult(result: TeamBalanceResult): number {
   return assignmentFitPenalty([...(result.teamA.players as AssignedFieldPlayer[]), ...(result.teamB.players as AssignedFieldPlayer[])]);
 }
@@ -788,22 +814,96 @@ function variantQualityScore(result: TeamBalanceResult): number {
   const coachPenalty = Math.max(0, coachDiff - 1) * 1500 + coachDiff * 25;
   return coachPenalty
     + totalDiffBucket(result) * 1000
-    + profileStackPenalty(result) * 40
+    + profileStackPenalty(result) * PROFILE_STACK_VARIANT_WEIGHT
+    + multiStrengthDiff(result) * 2
     + detailedTotalDiff(summary) * 20
     + roleBalanceDiff(summary) * 8
     + fitPenaltyForResult(result);
 }
 
 function teamVariantKey(result: TeamBalanceResult): string {
-  const aIds = result.teamA.players.map((p) => p.id).sort().join(",");
-  const bIds = result.teamB.players.map((p) => p.id).sort().join(",");
+  const aIds = result.teamA.players.map((p) => `${p.id}:${p.assignedGroup}`).sort().join(",");
+  const bIds = result.teamB.players.map((p) => `${p.id}:${p.assignedGroup}`).sort().join(",");
   return aIds < bIds ? `${aIds}|${bIds}` : `${bIds}|${aIds}`;
+}
+
+function groupIds(result: TeamBalanceResult, team: "A" | "B", group: PositionGroup): string[] {
+  const players = team === "A" ? result.teamA.players : result.teamB.players;
+  return players
+    .filter((player) => player.assignedGroup === group)
+    .map((player) => player.id)
+    .sort();
+}
+
+function midVariantKey(result: TeamBalanceResult): string {
+  const aIds = groupIds(result, "A", "MID").join(",");
+  const bIds = groupIds(result, "B", "MID").join(",");
+  return aIds < bIds ? `${aIds}|${bIds}` : `${bIds}|${aIds}`;
+}
+
+function overlapCount(a: string[], b: string[]): number {
+  const bIds = new Set(b);
+  return a.reduce((count, id) => count + (bIds.has(id) ? 1 : 0), 0);
+}
+
+function midSimilarity(a: TeamBalanceResult, b: TeamBalanceResult): number {
+  const aMidA = groupIds(a, "A", "MID");
+  const aMidB = groupIds(a, "B", "MID");
+  const bMidA = groupIds(b, "A", "MID");
+  const bMidB = groupIds(b, "B", "MID");
+  const sameOrientation = overlapCount(aMidA, bMidA) + overlapCount(aMidB, bMidB);
+  const flippedOrientation = overlapCount(aMidA, bMidB) + overlapCount(aMidB, bMidA);
+  return Math.max(sameOrientation, flippedOrientation);
+}
+
+function selectDiverseVariants(candidates: TeamBalanceResult[], maxVariants: number): TeamBalanceResult[] {
+  if (candidates.length <= maxVariants) return candidates;
+
+  const bestTotalDiff = detailedTotalDiff(candidates[0].summary);
+  const selected: TeamBalanceResult[] = [];
+  const selectedKeys = new Set<string>();
+  const selectedMidKeys = new Set<string>();
+  const add = (candidate: TeamBalanceResult): boolean => {
+    const key = teamVariantKey(candidate);
+    const midKey = midVariantKey(candidate);
+    if (selectedKeys.has(key) || selectedMidKeys.has(midKey)) return false;
+    selectedKeys.add(key);
+    selectedMidKeys.add(midKey);
+    selected.push(candidate);
+    return true;
+  };
+
+  add(candidates[0]);
+
+  for (const maxSimilarity of [4, 6, 8]) {
+    for (const candidate of candidates) {
+      if (selected.length >= maxVariants) break;
+      if (detailedTotalDiff(candidate.summary) > bestTotalDiff + VARIANT_TOTAL_DIFF_TOLERANCE) continue;
+      if (selected.some((selectedCandidate) => midSimilarity(candidate, selectedCandidate) > maxSimilarity)) continue;
+      add(candidate);
+    }
+  }
+
+  for (const candidate of candidates) {
+    if (selected.length >= maxVariants) break;
+    add(candidate);
+  }
+
+  for (const candidate of candidates) {
+    if (selected.length >= maxVariants) break;
+    const key = teamVariantKey(candidate);
+    if (selectedKeys.has(key)) continue;
+    selectedKeys.add(key);
+    selected.push(candidate);
+  }
+
+  return selected;
 }
 
 export function balanceTeamsVariants(players: Player[], maxVariants = 10, relations: PlayerRelation[] = []): TeamBalanceResult[] {
   const candidates: TeamBalanceResult[] = [];
   const seen = new Set<string>();
-  const probe = Math.max(maxVariants * 80, 400);
+  const probe = Math.max(maxVariants * 40, 400);
   for (let v = 0; v < probe; v += 1) {
     let r: TeamBalanceResult;
     try {
@@ -825,7 +925,7 @@ export function balanceTeamsVariants(players: Player[], maxVariants = 10, relati
     return teamVariantKey(a).localeCompare(teamVariantKey(b));
   });
 
-  return candidates.slice(0, maxVariants);
+  return selectDiverseVariants(candidates, maxVariants);
 }
 
 export function summarizeTeams(teamAPlayers: AssignedPlayer[], teamBPlayers: AssignedPlayer[], relations: PlayerRelation[] = []): TeamBalanceResult {
