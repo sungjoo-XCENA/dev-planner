@@ -20,6 +20,8 @@ const MISMATCH_PENALTY = 1.5;
 const OFF_BEST_GROUP_GAP_THRESHOLD = 5;
 const OFF_BEST_GROUP_SOFT_PENALTY = 18;
 const OFF_BEST_GROUP_HARD_PENALTY = 160;
+const PROFILE_OVERLAP_MIN_SCORE = 7;
+const PROFILE_OVERLAP_BASELINE = 14;
 const MULTI_POSITION_BALANCE_PENALTY = 16;
 const COACH_BALANCE_PENALTY = 80;
 const RELATION_PENALTY: Record<PlayerRelation["score"], number> = {
@@ -731,17 +733,65 @@ function detailedTotalDiff(summary: TeamBalanceSummary): number {
   return Math.abs(totalA - totalB);
 }
 
+function totalDiffBucket(result: TeamBalanceResult): number {
+  return Math.ceil(detailedTotalDiff(result.summary) * 2);
+}
+
+function roleBalanceDiff(summary: TeamBalanceSummary): number {
+  return Math.abs(summary.centerForwardScoreA - summary.centerForwardScoreB)
+    + Math.abs(summary.wingScoreA - summary.wingScoreB)
+    + Math.abs(summary.midScoreA - summary.midScoreB)
+    + Math.abs(summary.centerBackScoreA - summary.centerBackScoreB)
+    + Math.abs(summary.wingBackScoreA - summary.wingBackScoreB)
+    + Math.abs(summary.activityA - summary.activityB);
+}
+
+function strongProfileOverlap(a: AssignedFieldPlayer, b: AssignedFieldPlayer): number {
+  const pairs = [
+    [centerForwardScore(a), centerForwardScore(b)],
+    [wingScore(a), wingScore(b)],
+    [a.midScore, b.midScore],
+    [centerBackScore(a), centerBackScore(b)],
+    [wingBackScore(a), wingBackScore(b)],
+  ];
+  const overlaps = pairs
+    .filter(([aScore, bScore]) => aScore >= PROFILE_OVERLAP_MIN_SCORE && bScore >= PROFILE_OVERLAP_MIN_SCORE)
+    .map(([aScore, bScore]) => Math.min(aScore, bScore));
+
+  if (overlaps.length < 2) return 0;
+  const overlapTotal = overlaps.reduce((sum, score) => sum + score, 0);
+  return Math.max(0, overlapTotal - PROFILE_OVERLAP_BASELINE) + (overlaps.length - 2) * 2;
+}
+
+function teamProfileStackPenalty(players: AssignedFieldPlayer[]): number {
+  let penalty = 0;
+  for (let i = 0; i < players.length; i += 1) {
+    for (let j = i + 1; j < players.length; j += 1) {
+      penalty += strongProfileOverlap(players[i], players[j]);
+    }
+  }
+  return penalty;
+}
+
+function profileStackPenalty(result: TeamBalanceResult): number {
+  return teamProfileStackPenalty(result.teamA.players as AssignedFieldPlayer[])
+    + teamProfileStackPenalty(result.teamB.players as AssignedFieldPlayer[]);
+}
+
+function fitPenaltyForResult(result: TeamBalanceResult): number {
+  return assignmentFitPenalty([...(result.teamA.players as AssignedFieldPlayer[]), ...(result.teamB.players as AssignedFieldPlayer[])]);
+}
+
 function variantQualityScore(result: TeamBalanceResult): number {
   const summary = result.summary;
   const coachDiff = Math.abs(summary.coachA - summary.coachB);
   const coachPenalty = Math.max(0, coachDiff - 1) * 1500 + coachDiff * 25;
-  const fitPenalty = assignmentFitPenalty([...(result.teamA.players as AssignedFieldPlayer[]), ...(result.teamB.players as AssignedFieldPlayer[])]);
-  return summary.relationHardViolationCount * 10_000
-    + (summary.relationViolationCount - summary.relationHardViolationCount) * 600
-    + coachPenalty
-    + fitPenalty
-    + summary.balanceScore
-    + detailedTotalDiff(summary) * 12;
+  return coachPenalty
+    + totalDiffBucket(result) * 1000
+    + profileStackPenalty(result) * 40
+    + detailedTotalDiff(summary) * 20
+    + roleBalanceDiff(summary) * 8
+    + fitPenaltyForResult(result);
 }
 
 function teamVariantKey(result: TeamBalanceResult): string {
@@ -757,7 +807,7 @@ export function balanceTeamsVariants(players: Player[], maxVariants = 10, relati
   for (let v = 0; v < probe; v += 1) {
     let r: TeamBalanceResult;
     try {
-      r = balanceTeams(players, v, relations);
+      r = balanceTeams(players, v, []);
     } catch {
       if (candidates.length === 0) throw new Error("팀 분배 실패");
       break;
