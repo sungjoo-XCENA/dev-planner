@@ -2930,7 +2930,16 @@ function LineupResultView({
     matchKind: "SELF",
     records: recordEntryRecords,
     staffRoles: lineupRecordStaffRoles(result),
-    playerOptions: uniqueRecordNames(result.playerSummaries.map((summary) => summary.playerName)),
+    playerOptions: uniqueRecordNames([
+      ...result.playerSummaries.map((summary) => summary.playerName),
+      ...recordEntryRecords.flatMap((record) => [
+        ...record.attack,
+        ...record.mid,
+        ...record.defense,
+        record.gk,
+        ...record.bench,
+      ]),
+    ]),
     allowEdit: false,
     allowPlayerEdit: true,
     canRefreshLineup: true,

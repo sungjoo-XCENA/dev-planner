@@ -205,11 +205,15 @@ type TeamLineupPlan = {
   rotation: Record<string, string[]>;
 };
 
+type WaitingCallup = {
+  player: Player;
+  quarter: Quarter;
+};
+
 function lineupForTeam(
   team: Team,
   dedicatedGks: DedicatedGoalkeeper[],
-  waitingPlayer: Player | null,
-  waitingQuarter: Quarter | null,
+  waitingCallups: WaitingCallup[] = [],
 ): TeamLineupPlan {
   const dedicatedSlice = dedicatedGks.slice(0, MAX_DEDICATED_GK_AUTO_ASSIGN);
   const dedicatedByQuarter: Record<Quarter, DedicatedGoalkeeper | null> = {
@@ -224,9 +228,7 @@ function lineupForTeam(
   const ironmenCount = Math.min(ironmanCountFor(teamSize), Math.max(0, teamSize - 1));
   const ironmen = sortedComposite.slice(0, ironmenCount);
   const ironmanIds = new Set(ironmen.map((p) => p.id));
-  const topIronman: AssignedPlayer | null = ironmen[0] ?? null;
   const nonIronmen = team.players.filter((p) => !ironmanIds.has(p.id));
-  const willHaveWaiting = waitingPlayer !== null && waitingQuarter !== null;
 
   const hasDedicatedGk = QUARTERS.map((q) => dedicatedByQuarter[q] !== null);
   // Per-Q nonIM bench count: field slots are always 10, while GK comes from the team only without a dedicated GK.
@@ -243,7 +245,7 @@ function lineupForTeam(
 
   for (let qIdx = 0; qIdx < QUARTERS.length; qIdx += 1) {
     const quarter = QUARTERS[qIdx];
-    const isWaitingQuarter = willHaveWaiting && waitingQuarter === quarter;
+    const callupsThisQuarter = waitingCallups.filter((callup) => callup.quarter === quarter);
     const dedicated = dedicatedByQuarter[quarter];
 
     let benchPlayers = [...rotation[qIdx].benches];
@@ -261,10 +263,22 @@ function lineupForTeam(
       warnings.push(`${team.name}팀 ${quarter}Q GK 배정 필요`);
     }
 
-    if (isWaitingQuarter && topIronman) {
-      // 대기 들어오는 쿼터는 ironman 양보. benches 마지막에 ironman 추가 (rotation에서 이미 추가 1명 산정됨)
-      benchPlayers = benchPlayers.filter((p) => p.id !== topIronman.id);
-      benchPlayers.push(topIronman);
+    const replacementExcluded = new Set<string>();
+    benchPlayers.forEach((p) => replacementExcluded.add(p.id));
+    if (gkPlayer) replacementExcluded.add(gkPlayer.id);
+    const replacementPool = [...ironmen, ...sortedComposite]
+      .filter((player, index, source) => source.findIndex((item) => item.id === player.id) === index)
+      .filter((player) => !replacementExcluded.has(player.id));
+    const callupSlots = callupsThisQuarter.flatMap((callup) => {
+      const replacement = replacementPool.shift();
+      if (!replacement) return [];
+      benchPlayers = benchPlayers.filter((p) => p.id !== replacement.id);
+      benchPlayers.push(replacement);
+      replacementExcluded.add(replacement.id);
+      return [{ player: callup.player, group: replacement.assignedGroup }];
+    });
+    if (callupsThisQuarter.length > callupSlots.length) {
+      warnings.push(`${team.name}팀 ${quarter}Q 대기 콜업 ${callupsThisQuarter.length - callupSlots.length}명 배정 필요`);
     }
 
     const excluded = new Set<string>();
@@ -284,12 +298,11 @@ function lineupForTeam(
     let midNames = positions.mid.map((p) => p.name);
     let defenseNames = positions.defense.map((p) => p.name);
 
-    if (isWaitingQuarter && waitingPlayer && topIronman) {
-      const slotGroup = topIronman.assignedGroup;
-      if (slotGroup === "ATTACK") attackNames = [...attackNames, waitingPlayer.name];
-      else if (slotGroup === "MID") midNames = [...midNames, waitingPlayer.name];
-      else if (slotGroup === "DEFENSE") defenseNames = [...defenseNames, waitingPlayer.name];
-    }
+    callupSlots.forEach((slot) => {
+      if (slot.group === "ATTACK") attackNames = [...attackNames, slot.player.name];
+      else if (slot.group === "MID") midNames = [...midNames, slot.player.name];
+      else if (slot.group === "DEFENSE") defenseNames = [...defenseNames, slot.player.name];
+    });
 
     const benchNames = benchPlayers.map((p) => p.name);
 
@@ -354,6 +367,22 @@ function buildStaffRoleMap(
   return result;
 }
 
+function waitingQuarterPair(index: number): { first: Quarter; second: Quarter } {
+  const pairIndex = Math.floor(index / 2) % 2;
+  return pairIndex === 0 ? { first: 1, second: 3 } : { first: 2, second: 4 };
+}
+
+function buildWaitingCallups(waitingPlayers: Player[], team: TeamName): WaitingCallup[] {
+  return waitingPlayers.map((player, index) => {
+    const pair = waitingQuarterPair(index);
+    const useFirst = index % 2 === 0;
+    const quarter = team === "A"
+      ? useFirst ? pair.first : pair.second
+      : useFirst ? pair.second : pair.first;
+    return { player, quarter };
+  });
+}
+
 export function generateLineups(
   teamA: Team,
   teamB: Team,
@@ -364,12 +393,11 @@ export function generateLineups(
   if (dedicatedGks.length > MAX_DEDICATED_GK_AUTO_ASSIGN) warnings.push("전담 GK가 3명 이상입니다. 2명만 자동 배정합니다.");
 
   const fieldWaiting = waitingPlayers.filter((p) => p.primaryPosition !== "GK");
-  const waitingPlayer = fieldWaiting[0] ?? null;
-  const waitingQuarterA: Quarter | null = waitingPlayer ? 1 : null;
-  const waitingQuarterB: Quarter | null = waitingPlayer ? 2 : null;
+  const waitingCallupsA = buildWaitingCallups(fieldWaiting, "A");
+  const waitingCallupsB = buildWaitingCallups(fieldWaiting, "B");
 
-  const a = lineupForTeam(teamA, dedicatedGks, waitingPlayer, waitingQuarterA);
-  const b = lineupForTeam(teamB, dedicatedGks, waitingPlayer, waitingQuarterB);
+  const a = lineupForTeam(teamA, dedicatedGks, waitingCallupsA);
+  const b = lineupForTeam(teamB, dedicatedGks, waitingCallupsB);
 
   const rotation: Record<string, string[]> = { ...a.rotation };
   Object.entries(b.rotation).forEach(([name, items]) => {
@@ -378,17 +406,14 @@ export function generateLineups(
   dedicatedGks.slice(MAX_DEDICATED_GK_AUTO_ASSIGN).forEach((gk) => {
     rotation[gk.name] = ["교대/대기"];
   });
-  if (waitingPlayer) {
-    rotation[waitingPlayer.name] = [...(rotation[waitingPlayer.name] ?? []), "대기 콜업"];
-  }
-  fieldWaiting.slice(1).forEach((wp) => {
-    rotation[wp.name] = [...(rotation[wp.name] ?? []), "대기 (콜업 미배정)"];
+  waitingCallupsA.forEach((callup) => {
+    rotation[callup.player.name] = [...(rotation[callup.player.name] ?? []), `${formatTeamName("A")} ${callup.quarter}Q`];
   });
-  if (fieldWaiting.length > 1) {
-    warnings.push(`대기 ${fieldWaiting.length}명 중 1명만 자동 콜업됩니다.`);
-  }
-  if (waitingPlayer && waitingQuarterA && waitingQuarterB) {
-    warnings.push(`대기 1명이 ${formatTeamName("A")} ${waitingQuarterA}Q · ${formatTeamName("B")} ${waitingQuarterB}Q에 콜업되었습니다.`);
+  waitingCallupsB.forEach((callup) => {
+    rotation[callup.player.name] = [...(rotation[callup.player.name] ?? []), `${formatTeamName("B")} ${callup.quarter}Q`];
+  });
+  if (fieldWaiting.length > 0) {
+    warnings.push(`대기 ${fieldWaiting.length}명이 양 팀에 1Q씩 공용 출전합니다.`);
   }
 
   return {
