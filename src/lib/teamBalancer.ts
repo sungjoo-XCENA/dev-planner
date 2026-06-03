@@ -62,8 +62,8 @@ function compositeScore(player: FieldPlayer): number {
   return detailedTechnicalTotal(player) + effectiveActivityScore(player);
 }
 
-function isCoach(player: Pick<Player, "memo">): boolean {
-  return extractStaffRole(player.memo) === "코치";
+function isStaffMember(player: Pick<Player, "memo">): boolean {
+  return extractStaffRole(player.memo) !== null;
 }
 
 function primaryRank(player: FieldPlayer, group: PositionGroup): number {
@@ -398,8 +398,8 @@ function pairCostByAssignments(
   const bScores = subRoleScores(assignedPlayersForCost(teamB, assignments));
   const aAct = teamA.reduce((acc, p) => acc + effectiveActivityScore(p), 0);
   const bAct = teamB.reduce((acc, p) => acc + effectiveActivityScore(p), 0);
-  const aCoach = teamA.filter(isCoach).length;
-  const bCoach = teamB.filter(isCoach).length;
+  const aCoach = teamA.filter(isStaffMember).length;
+  const bCoach = teamB.filter(isStaffMember).length;
   const aMulti = teamA.filter(isMultiPositionPlayer).length;
   const bMulti = teamB.filter(isMultiPositionPlayer).length;
   const total = (aScores.attack + aScores.mid + aScores.defense + aAct) - (bScores.attack + bScores.mid + bScores.defense + bAct);
@@ -557,8 +557,8 @@ function calcSummary(
   const regularB = teamB.filter((p) => p.memberType === "REGULAR").length;
   const guestA = teamA.filter((p) => p.memberType === "GUEST").length;
   const guestB = teamB.filter((p) => p.memberType === "GUEST").length;
-  const coachA = teamA.filter(isCoach).length;
-  const coachB = teamB.filter(isCoach).length;
+  const coachA = teamA.filter(isStaffMember).length;
+  const coachB = teamB.filter(isStaffMember).length;
   const multiPositionA = teamA.filter(isMultiPositionPlayer).length;
   const multiPositionB = teamB.filter(isMultiPositionPlayer).length;
   const overrides = [...teamA, ...teamB].filter((p) => p.isPositionOverride).length;
@@ -750,7 +750,7 @@ function buildResult(
   if (summary.fieldGkA === 0 || summary.fieldGkB === 0) warnings.push("한 팀에 필드 GK 가능자가 없습니다. 전담 GK가 없거나 부족하면 문제가 될 수 있습니다.");
   if (Math.abs(summary.activityA - summary.activityB) >= 8) warnings.push("팀별 활동량 차이가 큽니다.");
   if (Math.abs(summary.guestA - summary.guestB) >= 5) warnings.push("정규 선수와 용병 비율이 한쪽으로 몰렸습니다.");
-  if (Math.abs(summary.coachA - summary.coachB) > 1) warnings.push("코치가 한쪽 팀으로 몰렸습니다.");
+  if (Math.abs(summary.coachA - summary.coachB) > 1) warnings.push("코치/감독/단장이 한쪽 팀으로 몰렸습니다.");
   if (Math.abs(summary.multiPositionA - summary.multiPositionB) >= 2) warnings.push("멀티포지션 선수가 한쪽으로 몰렸습니다.");
   const hardViolations = relationViolations.filter((violation) => violation.score === 1);
   if (hardViolations.length > 0) {

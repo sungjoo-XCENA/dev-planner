@@ -1846,7 +1846,7 @@ function TeamResultView({
         <MetricCard label="총합" a={totalA} b={totalB} highlight />
         <MetricCard label="정규" a={s.regularA} b={s.regularB} />
         <MetricCard label="용병" a={s.guestA} b={s.guestB} />
-        <MetricCard label="COACH" a={s.coachA} b={s.coachB} />
+        <MetricCard label="운영진" a={s.coachA} b={s.coachB} />
         <MetricCard label="멀티포지션" a={s.multiPositionA} b={s.multiPositionB} />
         <MetricCard label="포지션 변경자" a={overridesA} b={overridesB} />
       </div>
