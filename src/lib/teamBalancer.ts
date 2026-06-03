@@ -88,9 +88,9 @@ function comparePlayersForPair(group: PositionGroup, a: FieldPlayer, b: FieldPla
 }
 
 function compareForMidPool(a: FieldPlayer, b: FieldPlayer): number {
+  if (b.midScore !== a.midScore) return b.midScore - a.midScore;
   const rankDiff = groupFitRank(a, "MID") - groupFitRank(b, "MID");
   if (rankDiff !== 0) return rankDiff;
-  if (b.midScore !== a.midScore) return b.midScore - a.midScore;
   const activityDiff = effectiveActivityScore(b) - effectiveActivityScore(a);
   if (activityDiff !== 0) return activityDiff;
   const aMaxOther = Math.max(a.attackScore, a.defenseScore);
