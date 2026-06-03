@@ -24,7 +24,11 @@ const PROFILE_OVERLAP_BASELINE = 14;
 const PROFILE_STACK_VARIANT_WEIGHT = 6;
 const MULTI_POSITION_BALANCE_PENALTY = 16;
 const COACH_BALANCE_PENALTY = 80;
-const VARIANT_TOTAL_DIFF_TOLERANCE = 2;
+const LINE_BALANCE_WEIGHT = 8;
+const DETAIL_SLOT_BALANCE_WEIGHT = 1.5;
+const ACTIVITY_BALANCE_WEIGHT = 2;
+const GOOD_TOTAL_DIFF_LIMIT = 3;
+const VARIANT_TOTAL_DIFF_TOLERANCE = 3;
 const RELATION_PENALTY: Record<PlayerRelation["score"], number> = {
   1: 1000,
   2: 80,
@@ -403,12 +407,16 @@ function pairCostByAssignments(
   const aMulti = teamA.filter(isMultiPositionPlayer).length;
   const bMulti = teamB.filter(isMultiPositionPlayer).length;
   const total = (aScores.attack + aScores.mid + aScores.defense + aAct) - (bScores.attack + bScores.mid + bScores.defense + bAct);
-  return (Math.abs(aScores.centerForward - bScores.centerForward)
-       + Math.abs(aScores.wing - bScores.wing)
-       + Math.abs(aScores.mid - bScores.mid)
-       + Math.abs(aScores.centerBack - bScores.centerBack)
-       + Math.abs(aScores.wingBack - bScores.wingBack)) * 5
-       + Math.abs(aAct - bAct) * 2
+  const lineDiff = Math.abs(aScores.attack - bScores.attack)
+    + Math.abs(aScores.mid - bScores.mid)
+    + Math.abs(aScores.defense - bScores.defense);
+  const detailSlotDiff = Math.abs(aScores.centerForward - bScores.centerForward)
+    + Math.abs(aScores.wing - bScores.wing)
+    + Math.abs(aScores.centerBack - bScores.centerBack)
+    + Math.abs(aScores.wingBack - bScores.wingBack);
+  return lineDiff * LINE_BALANCE_WEIGHT
+       + detailSlotDiff * DETAIL_SLOT_BALANCE_WEIGHT
+       + Math.abs(aAct - bAct) * ACTIVITY_BALANCE_WEIGHT
        + Math.abs(aCoach - bCoach) * COACH_BALANCE_PENALTY
        + Math.abs(aMulti - bMulti) * MULTI_POSITION_BALANCE_PENALTY
        + lateralBalancePenalty(teamA, teamB, assignments) * 8
@@ -565,13 +573,18 @@ function calcSummary(
   const relationViolations = relationViolationsForTeams(teamA, teamB, relations);
   const relationPenalty = relationViolations.reduce((acc, violation) => acc + violation.penalty, 0);
 
+  const lineDiff = Math.abs(attackScoreA - attackScoreB)
+    + Math.abs(midScoreA - midScoreB)
+    + Math.abs(defenseScoreA - defenseScoreB);
+  const detailSlotDiff = Math.abs(centerForwardScoreA - centerForwardScoreB)
+    + Math.abs(wingScoreA - wingScoreB)
+    + Math.abs(centerBackScoreA - centerBackScoreB)
+    + Math.abs(wingBackScoreA - wingBackScoreB);
+
   const balanceScore =
-    Math.abs(centerForwardScoreA - centerForwardScoreB) * 5 +
-    Math.abs(wingScoreA - wingScoreB) * 5 +
-    Math.abs(midScoreA - midScoreB) * 5 +
-    Math.abs(centerBackScoreA - centerBackScoreB) * 5 +
-    Math.abs(wingBackScoreA - wingBackScoreB) * 5 +
-    Math.abs(activityA - activityB) * 2 +
+    lineDiff * LINE_BALANCE_WEIGHT +
+    detailSlotDiff * DETAIL_SLOT_BALANCE_WEIGHT +
+    Math.abs(activityA - activityB) * ACTIVITY_BALANCE_WEIGHT +
     Math.abs(fieldGkA - fieldGkB) * 3 +
     Math.abs(guestA - guestB) +
     Math.abs(coachA - coachB) * COACH_BALANCE_PENALTY +
@@ -804,17 +817,23 @@ function detailedTotalDiff(summary: TeamBalanceSummary): number {
   return Math.abs(totalA - totalB);
 }
 
-function totalDiffBucket(result: TeamBalanceResult): number {
-  return Math.ceil(detailedTotalDiff(result.summary) * 2);
+function roleBalanceDiff(summary: TeamBalanceSummary): number {
+  return Math.abs(summary.attackScoreA - summary.attackScoreB)
+    + Math.abs(summary.midScoreA - summary.midScoreB)
+    + Math.abs(summary.defenseScoreA - summary.defenseScoreB);
 }
 
-function roleBalanceDiff(summary: TeamBalanceSummary): number {
+function detailSlotBalanceDiff(summary: TeamBalanceSummary): number {
   return Math.abs(summary.centerForwardScoreA - summary.centerForwardScoreB)
     + Math.abs(summary.wingScoreA - summary.wingScoreB)
-    + Math.abs(summary.midScoreA - summary.midScoreB)
     + Math.abs(summary.centerBackScoreA - summary.centerBackScoreB)
-    + Math.abs(summary.wingBackScoreA - summary.wingBackScoreB)
-    + Math.abs(summary.activityA - summary.activityB);
+    + Math.abs(summary.wingBackScoreA - summary.wingBackScoreB);
+}
+
+function totalDiffPenalty(result: TeamBalanceResult): number {
+  const diff = detailedTotalDiff(result.summary);
+  if (diff <= GOOD_TOTAL_DIFF_LIMIT) return diff * 60;
+  return GOOD_TOTAL_DIFF_LIMIT * 60 + (diff - GOOD_TOTAL_DIFF_LIMIT) * 800;
 }
 
 function strongProfileOverlap(a: AssignedFieldPlayer, b: AssignedFieldPlayer): number {
@@ -883,11 +902,12 @@ function variantQualityScore(result: TeamBalanceResult): number {
   const coachDiff = Math.abs(summary.coachA - summary.coachB);
   const coachPenalty = Math.max(0, coachDiff - 1) * 1500 + coachDiff * 25;
   return coachPenalty
-    + totalDiffBucket(result) * 1000
+    + totalDiffPenalty(result)
+    + roleBalanceDiff(summary) * 140
     + profileStackPenalty(result) * PROFILE_STACK_VARIANT_WEIGHT
     + multiStrengthDiff(result) * 2
     + detailedTotalDiff(summary) * 20
-    + roleBalanceDiff(summary) * 8
+    + detailSlotBalanceDiff(summary) * 10
     + fitPenaltyForResult(result);
 }
 
@@ -929,7 +949,8 @@ function midSimilarity(a: TeamBalanceResult, b: TeamBalanceResult): number {
 function selectDiverseVariants(candidates: TeamBalanceResult[], maxVariants: number): TeamBalanceResult[] {
   if (candidates.length <= maxVariants) return candidates;
 
-  const bestTotalDiff = detailedTotalDiff(candidates[0].summary);
+  const bestTotalDiff = Math.min(...candidates.map((candidate) => detailedTotalDiff(candidate.summary)));
+  const acceptableTotalDiff = Math.max(GOOD_TOTAL_DIFF_LIMIT, bestTotalDiff + VARIANT_TOTAL_DIFF_TOLERANCE);
   const selected: TeamBalanceResult[] = [];
   const selectedKeys = new Set<string>();
   const selectedMidKeys = new Set<string>();
@@ -948,7 +969,7 @@ function selectDiverseVariants(candidates: TeamBalanceResult[], maxVariants: num
   for (const maxSimilarity of [4, 6, 8]) {
     for (const candidate of candidates) {
       if (selected.length >= maxVariants) break;
-      if (detailedTotalDiff(candidate.summary) > bestTotalDiff + VARIANT_TOTAL_DIFF_TOLERANCE) continue;
+      if (detailedTotalDiff(candidate.summary) > acceptableTotalDiff) continue;
       if (selected.some((selectedCandidate) => midSimilarity(candidate, selectedCandidate) > maxSimilarity)) continue;
       add(candidate);
     }
