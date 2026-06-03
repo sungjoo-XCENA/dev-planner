@@ -31,18 +31,6 @@ export type TeamBalanceSummary = {
   regularB: number;
   guestA: number;
   guestB: number;
-  playerCountA: number;
-  playerCountB: number;
-  rotationAdjustedTotalA: number;
-  rotationAdjustedTotalB: number;
-  rotationOneQuarterA: number;
-  rotationOneQuarterB: number;
-  rotationTwoQuarterA: number;
-  rotationTwoQuarterB: number;
-  rotationThreeQuarterA: number;
-  rotationThreeQuarterB: number;
-  rotationFourQuarterA: number;
-  rotationFourQuarterB: number;
   coachA: number;
   coachB: number;
   multiPositionA: number;
