@@ -26,6 +26,8 @@ const PROFILE_STACK_VARIANT_WEIGHT = 6;
 const MULTI_POSITION_BALANCE_PENALTY = 16;
 const COACH_BALANCE_PENALTY = 80;
 const VARIANT_TOTAL_DIFF_TOLERANCE = 2;
+const FIELD_PLAYERS_PER_QUARTER = 11;
+const MATCH_QUARTERS = 4;
 const RELATION_PENALTY: Record<PlayerRelation["score"], number> = {
   1: 1000,
   2: 80,
@@ -42,6 +44,11 @@ type SubRoleScores = {
   centerBack: number;
   wingBack: number;
   defense: number;
+};
+type QuarterCounts = Record<1 | 2 | 3 | 4, number>;
+type RotationProjection = {
+  adjustedTotal: number;
+  quarterCounts: QuarterCounts;
 };
 
 function isFieldPlayer(player: Player): player is FieldPlayer {
@@ -249,6 +256,33 @@ function subRoleScores(players: Array<FieldPlayer & { assignedGroup: PositionGro
   }, { centerForward: 0, wing: 0, attack: 0, mid: 0, centerBack: 0, wingBack: 0, defense: 0 });
 }
 
+function assignedPlayerImpact(player: FieldPlayer & { assignedSubRole: AssignedSubRole }): number {
+  return subRoleScore(player, player.assignedSubRole) + effectiveActivityScore(player);
+}
+
+function projectRotationTotal(players: Array<FieldPlayer & { assignedGroup: PositionGroup }>): RotationProjection {
+  const count = players.length;
+  const quarterCounts: QuarterCounts = { 1: 0, 2: 0, 3: 0, 4: 0 };
+  if (count === 0) return { adjustedTotal: 0, quarterCounts };
+
+  const totalSlots = Math.min(count * MATCH_QUARTERS, FIELD_PLAYERS_PER_QUARTER * MATCH_QUARTERS);
+  const baseQuarters = Math.floor(totalSlots / count);
+  const bonusPlayers = totalSlots - baseQuarters * count;
+  const assigned = assignDetailedSubRoles(players).sort((a, b) => {
+    const impactDiff = assignedPlayerImpact(b) - assignedPlayerImpact(a);
+    if (impactDiff !== 0) return impactDiff;
+    return a.name.localeCompare(b.name, "ko");
+  });
+
+  const adjustedTotal = assigned.reduce((total, player, index) => {
+    const quarters = Math.min(MATCH_QUARTERS, baseQuarters + (index < bonusPlayers ? 1 : 0)) as 1 | 2 | 3 | 4;
+    quarterCounts[quarters] += 1;
+    return total + assignedPlayerImpact(player) * (quarters / MATCH_QUARTERS);
+  }, 0);
+
+  return { adjustedTotal, quarterCounts };
+}
+
 function pairCostByGroup(
   teamA: FieldPlayer[],
   teamB: FieldPlayer[],
@@ -264,7 +298,11 @@ function pairCostByGroup(
   const bCoach = teamB.filter(isCoach).length;
   const aMulti = teamA.filter(isMultiPositionPlayer).length;
   const bMulti = teamB.filter(isMultiPositionPlayer).length;
-  const total = (aScores.attack + aScores.mid + aScores.defense + aAct) - (bScores.attack + bScores.mid + bScores.defense + bAct);
+  const rawTotalA = aScores.attack + aScores.mid + aScores.defense + aAct;
+  const rawTotalB = bScores.attack + bScores.mid + bScores.defense + bAct;
+  const totalDiff = teamA.length === teamB.length
+    ? Math.abs(rawTotalA - rawTotalB)
+    : Math.abs(projectRotationTotal(withGroups(teamA)).adjustedTotal - projectRotationTotal(withGroups(teamB)).adjustedTotal);
   return (Math.abs(aScores.centerForward - bScores.centerForward)
        + Math.abs(aScores.wing - bScores.wing)
        + Math.abs(aScores.mid - bScores.mid)
@@ -273,7 +311,7 @@ function pairCostByGroup(
        + Math.abs(aAct - bAct) * 2
        + Math.abs(aCoach - bCoach) * COACH_BALANCE_PENALTY
        + Math.abs(aMulti - bMulti) * MULTI_POSITION_BALANCE_PENALTY
-       + Math.abs(total)
+       + totalDiff
        + relationPenaltyForSplit(teamA, teamB, relations);
 }
 
@@ -439,6 +477,8 @@ function calcSummary(
   const activityB = sum(teamB, (p) => effectiveActivityScore(p));
   const fieldGkA = teamA.filter((p) => p.canGk).length;
   const fieldGkB = teamB.filter((p) => p.canGk).length;
+  const playerCountA = teamA.length;
+  const playerCountB = teamB.length;
   const regularA = teamA.filter((p) => p.memberType === "REGULAR").length;
   const regularB = teamB.filter((p) => p.memberType === "REGULAR").length;
   const guestA = teamA.filter((p) => p.memberType === "GUEST").length;
@@ -450,6 +490,13 @@ function calcSummary(
   const overrides = [...teamA, ...teamB].filter((p) => p.isPositionOverride).length;
   const relationViolations = relationViolationsForTeams(teamA, teamB, relations);
   const relationPenalty = relationViolations.reduce((acc, violation) => acc + violation.penalty, 0);
+  const rotationA = projectRotationTotal(teamA);
+  const rotationB = projectRotationTotal(teamB);
+  const rawTotalA = centerForwardScoreA + wingScoreA + midScoreA + centerBackScoreA + wingBackScoreA + activityA;
+  const rawTotalB = centerForwardScoreB + wingScoreB + midScoreB + centerBackScoreB + wingBackScoreB + activityB;
+  const totalDiffForBalance = playerCountA === playerCountB
+    ? Math.abs(rawTotalA - rawTotalB)
+    : Math.abs(rotationA.adjustedTotal - rotationB.adjustedTotal);
 
   const balanceScore =
     Math.abs(centerForwardScoreA - centerForwardScoreB) * 5 +
@@ -463,6 +510,7 @@ function calcSummary(
     Math.abs(coachA - coachB) * COACH_BALANCE_PENALTY +
     Math.abs(multiPositionA - multiPositionB) * MULTI_POSITION_BALANCE_PENALTY +
     overrides * 1.5 +
+    totalDiffForBalance * 3 +
     relationPenalty;
 
   return {
@@ -484,10 +532,22 @@ function calcSummary(
     activityB,
     fieldGkA,
     fieldGkB,
+    playerCountA,
+    playerCountB,
     regularA,
     regularB,
     guestA,
     guestB,
+    rotationAdjustedTotalA: rotationA.adjustedTotal,
+    rotationAdjustedTotalB: rotationB.adjustedTotal,
+    rotationOneQuarterA: rotationA.quarterCounts[1],
+    rotationOneQuarterB: rotationB.quarterCounts[1],
+    rotationTwoQuarterA: rotationA.quarterCounts[2],
+    rotationTwoQuarterB: rotationB.quarterCounts[2],
+    rotationThreeQuarterA: rotationA.quarterCounts[3],
+    rotationThreeQuarterB: rotationB.quarterCounts[3],
+    rotationFourQuarterA: rotationA.quarterCounts[4],
+    rotationFourQuarterB: rotationB.quarterCounts[4],
     coachA,
     coachB,
     multiPositionA,
@@ -732,6 +792,9 @@ export function rebalanceTeams(teamAPlayers: Player[], teamBPlayers: Player[], v
 function detailedTotalDiff(summary: TeamBalanceSummary): number {
   const totalA = summary.centerForwardScoreA + summary.wingScoreA + summary.midScoreA + summary.centerBackScoreA + summary.wingBackScoreA + summary.activityA;
   const totalB = summary.centerForwardScoreB + summary.wingScoreB + summary.midScoreB + summary.centerBackScoreB + summary.wingBackScoreB + summary.activityB;
+  if (summary.playerCountA !== summary.playerCountB) {
+    return Math.abs(summary.rotationAdjustedTotalA - summary.rotationAdjustedTotalB);
+  }
   return Math.abs(totalA - totalB);
 }
 

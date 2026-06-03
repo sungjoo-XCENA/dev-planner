@@ -1544,6 +1544,26 @@ function MetricCard({ label, a, b, highlight }: { label: string; a: number; b: n
   );
 }
 
+function rotationSummary(summary: TeamBalanceResult["summary"], team: TeamName): string {
+  const items = team === "A"
+    ? [
+        { q: 4, count: summary.rotationFourQuarterA },
+        { q: 3, count: summary.rotationThreeQuarterA },
+        { q: 2, count: summary.rotationTwoQuarterA },
+        { q: 1, count: summary.rotationOneQuarterA },
+      ]
+    : [
+        { q: 4, count: summary.rotationFourQuarterB },
+        { q: 3, count: summary.rotationThreeQuarterB },
+        { q: 2, count: summary.rotationTwoQuarterB },
+        { q: 1, count: summary.rotationOneQuarterB },
+      ];
+  return items
+    .filter((item) => item.count > 0)
+    .map((item) => `${item.count}명 ${item.q}Q`)
+    .join(" · ");
+}
+
 function TeamResultView({
   result,
   confirmed,
@@ -1574,6 +1594,7 @@ function TeamResultView({
   const s = result.summary;
   const totalA = s.centerForwardScoreA + s.wingScoreA + s.midScoreA + s.centerBackScoreA + s.wingBackScoreA + s.activityA;
   const totalB = s.centerForwardScoreB + s.wingScoreB + s.midScoreB + s.centerBackScoreB + s.wingBackScoreB + s.activityB;
+  const hasUnevenTeamSize = result.teamA.players.length !== result.teamB.players.length;
   const overridesA = result.teamA.players.filter((p) => p.isPositionOverride).length;
   const overridesB = result.teamB.players.filter((p) => p.isPositionOverride).length;
   const [history, setHistory] = useState<HistoryInsightResponse | null>(null);
@@ -1651,12 +1672,21 @@ function TeamResultView({
         <MetricCard label="WB" a={s.wingBackScoreA} b={s.wingBackScoreB} />
         <MetricCard label="ACT" a={s.activityA} b={s.activityB} />
         <MetricCard label="총합" a={totalA} b={totalB} highlight />
+        {hasUnevenTeamSize && <MetricCard label="출전보정" a={s.rotationAdjustedTotalA} b={s.rotationAdjustedTotalB} highlight />}
         <MetricCard label="정규" a={s.regularA} b={s.regularB} />
         <MetricCard label="용병" a={s.guestA} b={s.guestB} />
         <MetricCard label="COACH" a={s.coachA} b={s.coachB} />
         <MetricCard label="멀티포지션" a={s.multiPositionA} b={s.multiPositionB} />
         <MetricCard label="포지션 변경자" a={overridesA} b={overridesB} />
       </div>
+      {hasUnevenTeamSize && (
+        <div className="mt-4 rounded-2xl border border-indigo-100 bg-indigo-50 px-4 py-3 text-sm text-indigo-900">
+          <p className="font-bold">홀수 인원이라 예상 출전 쿼터를 반영해 추천 순서를 계산합니다.</p>
+          <p className="mt-1 text-xs font-semibold text-indigo-800">
+            {formatTeamName("A")} {result.teamA.players.length}명: {rotationSummary(s, "A")} · {formatTeamName("B")} {result.teamB.players.length}명: {rotationSummary(s, "B")}
+          </p>
+        </div>
+      )}
       {result.relationViolations.length > 0 && (
         <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
