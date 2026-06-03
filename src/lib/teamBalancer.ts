@@ -9,7 +9,7 @@ import { extractStaffRole } from "@/lib/staffRoles";
 import { getPositionGroup, hasGroup, scoreForGroup } from "./positions";
 
 const POSITION_GROUPS: PositionGroup[] = ["ATTACK", "MID", "DEFENSE"];
-const PAIRING_SUBROLE_ORDER: AssignedSubRole[] = ["CB", "WB", "MID", "CF", "WING"];
+const PAIRING_GROUP_ORDER: PositionGroup[] = ["MID", "DEFENSE", "ATTACK"];
 const MIN_TEAM_SIZE = 11;
 const MAX_TEAM_SIZE = 18;
 const STRONG_RESERVE_PER_TEAM = 2;
@@ -303,16 +303,35 @@ function buildSlotAssignments(
   return assignments;
 }
 
-function comparePlayersForSubRole(role: AssignedSubRole, a: FieldPlayer, b: FieldPlayer): number {
-  if (role === "WB") {
+function pairingGroupForPlayer(player: FieldPlayer, assignments: Map<string, SlotAssignment>): PositionGroup {
+  const assignedGroup = assignments.get(player.id)?.group;
+  if (assignedGroup === "MID") return "MID";
+
+  const attackScore = scoreForGroup("ATTACK", player);
+  const defenseScore = scoreForGroup("DEFENSE", player);
+  if (attackScore !== defenseScore) return attackScore > defenseScore ? "ATTACK" : "DEFENSE";
+  if (assignedGroup === "ATTACK" || assignedGroup === "DEFENSE") return assignedGroup;
+
+  const primaryGroup = getPositionGroup(player.primaryPosition);
+  if (primaryGroup === "ATTACK" || primaryGroup === "DEFENSE") return primaryGroup;
+  return "DEFENSE";
+}
+
+function comparePlayersForPairingGroup(group: PositionGroup, a: FieldPlayer, b: FieldPlayer): number {
+  const groupDiff = scoreForGroup(group, b) - scoreForGroup(group, a);
+  if (groupDiff !== 0) return groupDiff;
+  const fitDiff = groupFitRank(a, group) - groupFitRank(b, group);
+  if (fitDiff !== 0) return fitDiff;
+  if (group === "DEFENSE") {
     const sideDiff = lateralSideRank(a) - lateralSideRank(b);
     if (sideDiff !== 0) return sideDiff;
   }
-  const roleDiff = subRoleScore(b, role) - subRoleScore(a, role);
-  if (roleDiff !== 0) return roleDiff;
-  const group = groupForSubRole(role);
-  const fitDiff = groupFitRank(a, group) - groupFitRank(b, group);
-  if (fitDiff !== 0) return fitDiff;
+  const subRoleDiff = group === "ATTACK"
+    ? Math.max(centerForwardScore(b), wingScore(b)) - Math.max(centerForwardScore(a), wingScore(a))
+    : group === "DEFENSE"
+      ? Math.max(centerBackScore(b), wingBackScore(b)) - Math.max(centerBackScore(a), wingBackScore(a))
+      : b.midScore - a.midScore;
+  if (subRoleDiff !== 0) return subRoleDiff;
   const actDiff = effectiveActivityScore(b) - effectiveActivityScore(a);
   if (actDiff !== 0) return actDiff;
   const compositeDiff = compositeScore(b) - compositeScore(a);
@@ -329,16 +348,23 @@ function profileDistance(a: FieldPlayer, b: FieldPlayer): number {
     + Math.abs(effectiveActivityScore(a) - effectiveActivityScore(b));
 }
 
-function pairSimilarityCost(role: AssignedSubRole, a: FieldPlayer, b: FieldPlayer): number {
-  const sidePenalty = role === "WB" && lateralSide(a) !== lateralSide(b) ? 20 : 0;
-  return Math.abs(subRoleScore(a, role) - subRoleScore(b, role)) * 6
+function pairSimilarityCost(group: PositionGroup, a: FieldPlayer, b: FieldPlayer): number {
+  const sidePenalty = group === "DEFENSE" && lateralSide(a) !== "NEUTRAL" && lateralSide(b) !== "NEUTRAL" && lateralSide(a) !== lateralSide(b) ? 8 : 0;
+  const detailDiff = group === "ATTACK"
+    ? Math.abs(centerForwardScore(a) - centerForwardScore(b)) + Math.abs(wingScore(a) - wingScore(b))
+    : group === "DEFENSE"
+      ? Math.abs(centerBackScore(a) - centerBackScore(b)) + Math.abs(wingBackScore(a) - wingBackScore(b))
+      : Math.abs(a.midScore - b.midScore);
+
+  return Math.abs(scoreForGroup(group, a) - scoreForGroup(group, b)) * 10
+    + detailDiff * 2
     + Math.abs(compositeScore(a) - compositeScore(b))
     + profileDistance(a, b)
     + sidePenalty;
 }
 
-function buildRolePairs(players: FieldPlayer[], role: AssignedSubRole): Array<[FieldPlayer, FieldPlayer?]> {
-  const remaining = [...players].sort((a, b) => comparePlayersForSubRole(role, a, b));
+function buildGroupPairs(players: FieldPlayer[], group: PositionGroup): Array<[FieldPlayer, FieldPlayer?]> {
+  const remaining = [...players].sort((a, b) => comparePlayersForPairingGroup(group, a, b));
   const pairs: Array<[FieldPlayer, FieldPlayer?]> = [];
 
   while (remaining.length > 0) {
@@ -351,7 +377,7 @@ function buildRolePairs(players: FieldPlayer[], role: AssignedSubRole): Array<[F
     let bestIndex = 0;
     let bestCost = Number.POSITIVE_INFINITY;
     remaining.forEach((candidate, index) => {
-      const cost = pairSimilarityCost(role, first, candidate);
+      const cost = pairSimilarityCost(group, first, candidate);
       if (cost < bestCost) {
         bestCost = cost;
         bestIndex = index;
@@ -392,6 +418,24 @@ function lateralBalancePenalty(
   return Math.abs(a.LB - b.LB) + Math.abs(a.RB - b.RB);
 }
 
+function assignedGroupCountDiff(
+  teamA: Array<FieldPlayer | AssignedFieldPlayer>,
+  teamB: Array<FieldPlayer | AssignedFieldPlayer>,
+  assignments?: Map<string, SlotAssignment>,
+): number {
+  const counts = (players: Array<FieldPlayer | AssignedFieldPlayer>) => {
+    const result: RoleTargets = { ATTACK: 0, MID: 0, DEFENSE: 0 };
+    players.forEach((player) => {
+      const group = assignments?.get(player.id)?.group ?? ("assignedGroup" in player ? player.assignedGroup : undefined);
+      if (group) result[group] += 1;
+    });
+    return result;
+  };
+  const a = counts(teamA);
+  const b = counts(teamB);
+  return POSITION_GROUPS.reduce((sum, group) => sum + Math.abs(a[group] - b[group]), 0);
+}
+
 function pairCostByAssignments(
   teamA: FieldPlayer[],
   teamB: FieldPlayer[],
@@ -419,6 +463,7 @@ function pairCostByAssignments(
        + Math.abs(aAct - bAct) * ACTIVITY_BALANCE_WEIGHT
        + Math.abs(aCoach - bCoach) * COACH_BALANCE_PENALTY
        + Math.abs(aMulti - bMulti) * MULTI_POSITION_BALANCE_PENALTY
+       + assignedGroupCountDiff(teamA, teamB, assignments) * 120
        + lateralBalancePenalty(teamA, teamB, assignments) * 8
        + Math.abs(total)
        + relationPenaltyForSplit(teamA, teamB, relations);
@@ -447,11 +492,11 @@ function pairSplitPools(
   const allPlayers = [...attPool, ...midPool, ...defPool];
   let pairSequence = 0;
 
-  for (const role of PAIRING_SUBROLE_ORDER) {
+  for (const group of PAIRING_GROUP_ORDER) {
     const sortedPool = allPlayers
-      .filter((player) => assignments.get(player.id)?.subRole === role)
-      .sort((a, b) => comparePlayersForSubRole(role, a, b));
-    const pairs = buildRolePairs(sortedPool, role);
+      .filter((player) => pairingGroupForPlayer(player, assignments) === group)
+      .sort((a, b) => comparePlayersForPairingGroup(group, a, b));
+    const pairs = buildGroupPairs(sortedPool, group);
 
     for (const [stronger, weaker] of pairs) {
 
@@ -472,7 +517,7 @@ function pairSplitPools(
       const cost1 = pairCostByAssignments([...teamA, stronger], [...teamB, weaker], assignments, relations);
       const cost2 = pairCostByAssignments([...teamA, weaker], [...teamB, stronger], assignments, relations);
       const preferFlipped = ((variant >> (pairSequence % 12)) & 1) === 1;
-      const variantTolerance = role === "MID" ? 120 : 48;
+      const variantTolerance = group === "MID" ? 120 : 48;
       const useFlipped = cost2 < cost1 || (preferFlipped && Math.abs(cost1 - cost2) <= variantTolerance);
       pairSequence += 1;
       if (!useFlipped) {
@@ -894,6 +939,7 @@ function multiStrengthDiff(result: TeamBalanceResult): number {
 
 function fitPenaltyForResult(result: TeamBalanceResult): number {
   return assignmentFitPenalty([...(result.teamA.players as AssignedFieldPlayer[]), ...(result.teamB.players as AssignedFieldPlayer[])])
+    + assignedGroupCountDiff(result.teamA.players as AssignedFieldPlayer[], result.teamB.players as AssignedFieldPlayer[]) * 500
     + lateralBalancePenalty(result.teamA.players as AssignedFieldPlayer[], result.teamB.players as AssignedFieldPlayer[]) * 8;
 }
 
@@ -951,13 +997,15 @@ function selectDiverseVariants(candidates: TeamBalanceResult[], maxVariants: num
 
   const bestTotalDiff = Math.min(...candidates.map((candidate) => detailedTotalDiff(candidate.summary)));
   const acceptableTotalDiff = Math.max(GOOD_TOTAL_DIFF_LIMIT, bestTotalDiff + VARIANT_TOTAL_DIFF_TOLERANCE);
+  const bestLineDiff = Math.min(...candidates.map((candidate) => roleBalanceDiff(candidate.summary)));
+  const acceptableLineDiff = Math.max(6, bestLineDiff + 4);
   const selected: TeamBalanceResult[] = [];
   const selectedKeys = new Set<string>();
   const selectedMidKeys = new Set<string>();
-  const add = (candidate: TeamBalanceResult): boolean => {
+  const add = (candidate: TeamBalanceResult, requireUniqueMid = true): boolean => {
     const key = teamVariantKey(candidate);
     const midKey = midVariantKey(candidate);
-    if (selectedKeys.has(key) || selectedMidKeys.has(midKey)) return false;
+    if (selectedKeys.has(key) || (requireUniqueMid && selectedMidKeys.has(midKey))) return false;
     selectedKeys.add(key);
     selectedMidKeys.add(midKey);
     selected.push(candidate);
@@ -970,6 +1018,7 @@ function selectDiverseVariants(candidates: TeamBalanceResult[], maxVariants: num
     for (const candidate of candidates) {
       if (selected.length >= maxVariants) break;
       if (detailedTotalDiff(candidate.summary) > acceptableTotalDiff) continue;
+      if (roleBalanceDiff(candidate.summary) > acceptableLineDiff) continue;
       if (selected.some((selectedCandidate) => midSimilarity(candidate, selectedCandidate) > maxSimilarity)) continue;
       add(candidate);
     }
@@ -977,7 +1026,16 @@ function selectDiverseVariants(candidates: TeamBalanceResult[], maxVariants: num
 
   for (const candidate of candidates) {
     if (selected.length >= maxVariants) break;
+    if (detailedTotalDiff(candidate.summary) > acceptableTotalDiff) continue;
+    if (roleBalanceDiff(candidate.summary) > acceptableLineDiff) continue;
     add(candidate);
+  }
+
+  for (const candidate of candidates) {
+    if (selected.length >= maxVariants) break;
+    if (detailedTotalDiff(candidate.summary) > acceptableTotalDiff) continue;
+    if (roleBalanceDiff(candidate.summary) > acceptableLineDiff) continue;
+    add(candidate, false);
   }
 
   for (const candidate of candidates) {
