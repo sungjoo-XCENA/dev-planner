@@ -22,6 +22,14 @@ import { makeHistoryInsightKey, normalizeHistoryName } from "@/lib/historyInsigh
 
 const SCORE_OPTIONS = Array.from({ length: 10 }, (_, index) => index + 1);
 type PlannerMode = "BALANCE" | "MATCH";
+type TeamScoreChipKey = "CF" | "W" | "M" | "CB" | "WB";
+const SCORE_CHIP_SUB_ROLES: Record<TeamScoreChipKey, AssignedSubRole> = {
+  CF: "CF",
+  W: "WING",
+  M: "MID",
+  CB: "CB",
+  WB: "WB",
+};
 const STAFF_SEARCH_PRIORITY: Partial<Record<StaffRole, number>> = {
   "단장": 0,
   "감독": 1,
@@ -30,6 +38,12 @@ const STAFF_SEARCH_PRIORITY: Partial<Record<StaffRole, number>> = {
 
 function staffSearchPriority(role: StaffRole | null): number {
   return role ? STAFF_SEARCH_PRIORITY[role] ?? 99 : 99;
+}
+
+function groupForAssignedSubRole(role: AssignedSubRole): PositionGroup {
+  if (role === "CF" || role === "WING") return "ATTACK";
+  if (role === "MID") return "MID";
+  return "DEFENSE";
 }
 
 type GuestForm = {
@@ -729,6 +743,26 @@ export default function Home() {
     }
   }
 
+  function handleSubRoleTarget(targetTeam: "A" | "B", playerId: string, targetSubRole: AssignedSubRole) {
+    if (!teamResult || teamsConfirmed) return;
+    const targetGroup = groupForAssignedSubRole(targetSubRole);
+    const updatePlayers = (players: TeamBalanceResult["teamA"]["players"]) => players.map((player) => {
+      if (player.id !== playerId) return player;
+      const reassigned = player.assignedGroup === targetGroup ? player : reassignPlayerGroup(player, targetGroup);
+      return { ...reassigned, assignedSubRole: targetSubRole };
+    });
+    const nextA = targetTeam === "A" ? updatePlayers(teamResult.teamA.players) : teamResult.teamA.players;
+    const nextB = targetTeam === "B" ? updatePlayers(teamResult.teamB.players) : teamResult.teamB.players;
+    try {
+      const next = summarizeTeams(nextA, nextB, relations);
+      setTeamResult(next);
+      setSwapSelection(null);
+      setLineupResult(null);
+    } catch (error) {
+      setErrors([error instanceof Error ? error.message : String(error)]);
+    }
+  }
+
   function handlePlayerClick(team: "A" | "B", playerId: string) {
     if (!teamResult || teamsConfirmed) return;
     if (!swapSelection) {
@@ -1057,6 +1091,7 @@ export default function Home() {
           onSelectVariant={selectVariant}
           onPlayerClick={handlePlayerClick}
           onGroupTarget={handleGroupTarget}
+          onSubRoleTarget={handleSubRoleTarget}
           onConfirm={handleConfirmTeams}
           onReadjust={handleReadjustTeams}
           onToggleRecordEntry={toggleRecordEntry}
@@ -1471,7 +1506,7 @@ function playerScoreLine(player: Player): string {
   return `CF${centerForwardScore(player)} · W${wingScore(player)} · MID${player.midScore} · CB${centerBackScore(player)} · WB${wingBackScore(player)} · ACT${activityDisplay(player)}`;
 }
 
-function appliedScoreKeyForSubRole(role?: AssignedSubRole): "CF" | "W" | "M" | "CB" | "WB" | null {
+function appliedScoreKeyForSubRole(role?: AssignedSubRole): TeamScoreChipKey | null {
   if (role === "CF") return "CF";
   if (role === "WING") return "W";
   if (role === "MID") return "M";
@@ -1480,7 +1515,7 @@ function appliedScoreKeyForSubRole(role?: AssignedSubRole): "CF" | "W" | "M" | "
   return null;
 }
 
-function appliedScoreKeys(player: Player & { assignedSubRole?: AssignedSubRole }, group: PositionGroup): Array<"CF" | "W" | "M" | "CB" | "WB"> {
+function appliedScoreKeys(player: Player & { assignedSubRole?: AssignedSubRole }, group: PositionGroup): TeamScoreChipKey[] {
   const assignedKey = appliedScoreKeyForSubRole(player.assignedSubRole);
   if (assignedKey) return [assignedKey];
   if (group === "MID") return ["M"];
@@ -1496,29 +1531,64 @@ function appliedScoreKeys(player: Player & { assignedSubRole?: AssignedSubRole }
   return cb > wb ? ["CB"] : ["WB"];
 }
 
-function TeamPlayerScoreChips({ player, group }: { player: Player; group: PositionGroup }) {
+function TeamPlayerScoreChips({
+  player,
+  group,
+  interactive = false,
+  onApplySubRole,
+}: {
+  player: Player & { assignedSubRole?: AssignedSubRole };
+  group: PositionGroup;
+  interactive?: boolean;
+  onApplySubRole?: (targetSubRole: AssignedSubRole) => void;
+}) {
   const activeKeys = new Set(appliedScoreKeys(player, group));
-  const items = [
-    { key: "CF", value: centerForwardScore(player), active: activeKeys.has("CF"), tone: "attack" },
-    { key: "W", value: wingScore(player), active: activeKeys.has("W"), tone: "attack" },
-    { key: "M", value: player.midScore, active: activeKeys.has("M"), tone: "mid" },
-    { key: "CB", value: centerBackScore(player), active: activeKeys.has("CB"), tone: "defense" },
-    { key: "WB", value: wingBackScore(player), active: activeKeys.has("WB"), tone: "defense" },
+  const items: Array<{
+    key: TeamScoreChipKey | "ACT";
+    value: string | number;
+    active: boolean;
+    tone: "attack" | "mid" | "defense" | "activity";
+    role?: AssignedSubRole;
+  }> = [
+    { key: "CF", value: centerForwardScore(player), active: activeKeys.has("CF"), tone: "attack", role: SCORE_CHIP_SUB_ROLES.CF },
+    { key: "W", value: wingScore(player), active: activeKeys.has("W"), tone: "attack", role: SCORE_CHIP_SUB_ROLES.W },
+    { key: "M", value: player.midScore, active: activeKeys.has("M"), tone: "mid", role: SCORE_CHIP_SUB_ROLES.M },
+    { key: "CB", value: centerBackScore(player), active: activeKeys.has("CB"), tone: "defense", role: SCORE_CHIP_SUB_ROLES.CB },
+    { key: "WB", value: wingBackScore(player), active: activeKeys.has("WB"), tone: "defense", role: SCORE_CHIP_SUB_ROLES.WB },
     { key: "ACT", value: activityDisplay(player), active: false, tone: "activity" },
-  ] as const;
+  ];
 
   return (
-    <div className="mt-1 flex max-w-full flex-wrap items-center justify-center gap-px">
-      {items.map((item) => (
-        <span
-          key={item.key}
-          className={`inline-flex items-center rounded-md border px-0.5 py-0 text-[7px] font-black leading-[1.1] ${teamScoreChipClass(item.active, item.tone)}`}
-          title={`${item.key} ${item.value}`}
-        >
-          <span>{item.key}</span>
-          <span>{item.value}</span>
-        </span>
-      ))}
+    <div className="mt-1 flex max-w-full flex-wrap items-center justify-center gap-0.5">
+      {items.map((item) => {
+        const canApply = interactive && item.role != null && !item.active;
+        const apply = () => {
+          if (!canApply || !item.role) return;
+          onApplySubRole?.(item.role);
+        };
+        return (
+          <span
+            key={item.key}
+            role={canApply ? "button" : undefined}
+            tabIndex={canApply ? 0 : undefined}
+            className={`inline-flex items-center gap-0.5 rounded-md border px-1 py-0.5 text-[8px] font-black leading-none transition sm:text-[9px] ${teamScoreChipClass(item.active, item.tone)} ${canApply ? "cursor-pointer hover:-translate-y-px hover:border-slate-400 hover:bg-white focus:outline-none focus:ring-2 focus:ring-slate-300" : ""}`}
+            title={canApply ? `${item.key} ${item.value} score로 적용` : `${item.key} ${item.value}${item.active ? " 적용 중" : ""}`}
+            onClick={(event) => {
+              event.stopPropagation();
+              apply();
+            }}
+            onKeyDown={(event) => {
+              if (!canApply || (event.key !== "Enter" && event.key !== " ")) return;
+              event.preventDefault();
+              event.stopPropagation();
+              apply();
+            }}
+          >
+            <span>{item.key}</span>
+            <span>{item.value}</span>
+          </span>
+        );
+      })}
       <MultiPositionBadge player={player} compact />
     </div>
   );
@@ -1572,6 +1642,7 @@ function TeamResultView({
   onSelectVariant,
   onPlayerClick,
   onGroupTarget,
+  onSubRoleTarget,
   onConfirm,
   onReadjust,
   onToggleRecordEntry,
@@ -1585,6 +1656,7 @@ function TeamResultView({
   onSelectVariant: (idx: number) => void;
   onPlayerClick: (team: "A" | "B", playerId: string) => void;
   onGroupTarget: (targetTeam: "A" | "B", targetGroup: PositionGroup) => void;
+  onSubRoleTarget: (targetTeam: "A" | "B", playerId: string, targetSubRole: AssignedSubRole) => void;
   onConfirm: () => void;
   onReadjust: () => void;
   onToggleRecordEntry: () => void;
@@ -1734,6 +1806,7 @@ function TeamResultView({
           otherTeamPlayers={result.teamB.players}
           onPlayerClick={onPlayerClick}
           onGroupTarget={onGroupTarget}
+          onSubRoleTarget={onSubRoleTarget}
           interactive={!confirmed}
           groupScores={{ ATTACK: s.attackScoreA, MID: s.midScoreA, DEFENSE: s.defenseScoreA }}
         />
@@ -1745,6 +1818,7 @@ function TeamResultView({
           otherTeamPlayers={result.teamA.players}
           onPlayerClick={onPlayerClick}
           onGroupTarget={onGroupTarget}
+          onSubRoleTarget={onSubRoleTarget}
           interactive={!confirmed}
           groupScores={{ ATTACK: s.attackScoreB, MID: s.midScoreB, DEFENSE: s.defenseScoreB }}
         />
@@ -2524,6 +2598,7 @@ function TeamCard({
   otherTeamPlayers,
   onPlayerClick,
   onGroupTarget,
+  onSubRoleTarget,
   interactive,
   groupScores,
 }: {
@@ -2534,6 +2609,7 @@ function TeamCard({
   otherTeamPlayers: TeamBalanceResult["teamA"]["players"];
   onPlayerClick: (team: "A" | "B", playerId: string) => void;
   onGroupTarget: (targetTeam: "A" | "B", targetGroup: PositionGroup) => void;
+  onSubRoleTarget: (targetTeam: "A" | "B", playerId: string, targetSubRole: AssignedSubRole) => void;
   interactive: boolean;
   groupScores: Record<PositionGroup, number>;
 }) {
@@ -2612,7 +2688,12 @@ function TeamCard({
                           <InjuryBadge player={p} compact />
                         </span>
                       </div>
-                      <TeamPlayerScoreChips player={p} group={g} />
+                      <TeamPlayerScoreChips
+                        player={p}
+                        group={g}
+                        interactive={interactive}
+                        onApplySubRole={(targetSubRole) => onSubRoleTarget(team, p.id, targetSubRole)}
+                      />
                     </button>
                   );
                 })}
