@@ -413,7 +413,7 @@ export function generateLineups(
     rotation[callup.player.name] = [...(rotation[callup.player.name] ?? []), `${formatTeamName("B")} ${callup.quarter}Q`];
   });
   if (fieldWaiting.length > 0) {
-    warnings.push(`대기 ${fieldWaiting.length}명이 양 팀에 1Q씩 공용 출전합니다.`);
+    warnings.push(`대기 ${fieldWaiting.length}명이 양 팀에 1쿼터씩 공용 출전합니다.`);
   }
 
   return {
