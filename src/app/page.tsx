@@ -46,6 +46,79 @@ function groupForAssignedSubRole(role: AssignedSubRole): PositionGroup {
   return "DEFENSE";
 }
 
+function normalizeStoredPlayerName(name: string): string {
+  return name.replace(/\s+/g, "").trim();
+}
+
+function storedSheetIdName(id: string): string | null {
+  const match = id.match(/^sheet(?:_gk)?_\d+_(.+)$/);
+  return match?.[1] ?? null;
+}
+
+function uniqueItemsByName<T extends { name: string }>(items: T[]): Map<string, T> {
+  const byName = new Map<string, T>();
+  const duplicates = new Set<string>();
+  items.forEach((item) => {
+    const key = normalizeStoredPlayerName(item.name);
+    if (!key) return;
+    if (byName.has(key)) {
+      duplicates.add(key);
+      return;
+    }
+    byName.set(key, item);
+  });
+  duplicates.forEach((key) => byName.delete(key));
+  return byName;
+}
+
+function reconcileStoredPlayerIds(storedIds: string[], storedNames: string[], selectablePlayers: Player[]): string[] {
+  const byId = new Map(selectablePlayers.map((player) => [player.id, player]));
+  const byName = uniqueItemsByName(selectablePlayers);
+  const resolved: string[] = [];
+  const seen = new Set<string>();
+  const addPlayer = (player: Player | undefined) => {
+    if (!player || seen.has(player.id)) return;
+    seen.add(player.id);
+    resolved.push(player.id);
+  };
+
+  storedIds.forEach((id, index) => {
+    const direct = byId.get(id);
+    if (direct) {
+      addPlayer(direct);
+      return;
+    }
+    const fallbackName = storedSheetIdName(id) ?? storedNames[index] ?? "";
+    addPlayer(byName.get(normalizeStoredPlayerName(fallbackName)));
+  });
+  storedNames.forEach((name) => addPlayer(byName.get(normalizeStoredPlayerName(name))));
+  return resolved;
+}
+
+function reconcileStoredGoalkeepers(storedIds: string[], storedNames: string[], goalkeepers: DedicatedGoalkeeper[]): DedicatedGoalkeeper[] {
+  const byId = new Map(goalkeepers.map((goalkeeper) => [goalkeeper.id, goalkeeper]));
+  const byName = uniqueItemsByName(goalkeepers);
+  const resolved: DedicatedGoalkeeper[] = [];
+  const seen = new Set<string>();
+  const addGoalkeeper = (goalkeeper: DedicatedGoalkeeper | undefined) => {
+    if (!goalkeeper || seen.has(goalkeeper.id)) return;
+    seen.add(goalkeeper.id);
+    resolved.push(goalkeeper);
+  };
+
+  storedIds.forEach((id, index) => {
+    const direct = byId.get(id);
+    if (direct) {
+      addGoalkeeper(direct);
+      return;
+    }
+    const fallbackName = storedSheetIdName(id) ?? storedNames[index] ?? "";
+    addGoalkeeper(byName.get(normalizeStoredPlayerName(fallbackName)));
+  });
+  storedNames.forEach((name) => addGoalkeeper(byName.get(normalizeStoredPlayerName(name))));
+  return resolved;
+}
+
 type GuestForm = {
   name: string;
   primaryPosition: FieldPosition;
@@ -297,12 +370,18 @@ export default function Home() {
       const storedCsvUrl = loadStored<string>("csvUrl", appConfig.defaultSheetUrl);
       const storedMode = loadStored<PlannerMode>("plannerMode", "BALANCE");
       const storedFieldIds = loadStored<string[]>("fieldIds", []);
+      const storedFieldNames = loadStored<string[]>("fieldNames", []);
       const storedWaitingIds = loadStored<string[]>("waitingIds", []);
+      const storedWaitingNames = loadStored<string[]>("waitingNames", []);
       const storedGkIds = loadStored<string[]>("dedicatedGkIds", []);
+      const storedGkNames = loadStored<string[]>("dedicatedGkNames", []);
       const storedTempGuests = loadStored<Player[]>("tempGuests", []);
       const storedTempGks = loadStored<DedicatedGoalkeeper[]>("tempGks", []);
       const storedFieldIdSet = new Set(storedFieldIds);
-      const activeStoredTempGuests = storedTempGuests.filter((guestPlayer) => storedFieldIdSet.has(guestPlayer.id));
+      const storedFieldNameSet = new Set(storedFieldNames.map(normalizeStoredPlayerName));
+      const activeStoredTempGuests = storedTempGuests.filter((guestPlayer) => (
+        storedFieldIdSet.has(guestPlayer.id) || storedFieldNameSet.has(normalizeStoredPlayerName(guestPlayer.name))
+      ));
 
       setCsvUrl(storedCsvUrl);
       setPlannerMode(storedMode);
@@ -312,24 +391,34 @@ export default function Home() {
       const result = await loadPlayersFromCsv(storedCsvUrl);
       if (cancelled) return;
 
+      if (result.players.length === 0 && result.errors.length > 0) {
+        setPlayers([]);
+        setRelations([]);
+        setErrors(result.errors);
+        setWarnings(result.warnings);
+        setFieldIds(storedFieldIds);
+        setWaitingIds(storedWaitingIds);
+        setDedicatedGks(storedTempGks);
+        setHydrated(true);
+        return;
+      }
+
       const selectablePlayers: Player[] = [...result.players, ...activeStoredTempGuests];
       setPlayers(result.players);
       setRelations(result.relations);
       setErrors(result.errors);
       setWarnings(result.warnings);
 
-      const validFieldIds = storedFieldIds.filter((id) => selectablePlayers.some((p) => p.id === id));
+      const validFieldIds = reconcileStoredPlayerIds(storedFieldIds, storedFieldNames, selectablePlayers);
       setFieldIds(validFieldIds);
-      const validWaitingIds = storedWaitingIds.filter((id) => selectablePlayers.some((p) => p.id === id));
+      const validWaitingIds = reconcileStoredPlayerIds(storedWaitingIds, storedWaitingNames, selectablePlayers);
       setWaitingIds(validWaitingIds);
 
       const sheetGkPool: DedicatedGoalkeeper[] = result.players
         .filter((p) => p.primaryPosition === "GK")
         .map((p) => ({ id: p.id, source: "SHEET" as const, name: p.name, memo: p.memo }));
       const allGks = [...sheetGkPool, ...storedTempGks];
-      const validGks = storedGkIds
-        .map((id) => allGks.find((gk) => gk.id === id))
-        .filter((gk): gk is DedicatedGoalkeeper => Boolean(gk));
+      const validGks = reconcileStoredGoalkeepers(storedGkIds, storedGkNames, allGks);
       setDedicatedGks(validGks);
 
       setHydrated(true);
@@ -359,6 +448,7 @@ export default function Home() {
   useEffect(() => {
     if (!hydrated) return;
     saveStored("dedicatedGkIds", dedicatedGks.map((gk) => gk.id));
+    saveStored("dedicatedGkNames", dedicatedGks.map((gk) => gk.name));
   }, [dedicatedGks, hydrated]);
   useEffect(() => {
     if (!hydrated) return;
@@ -437,6 +527,19 @@ export default function Home() {
     () => players.filter((p) => p.source === "SHEET").sort((a, b) => a.name.localeCompare(b.name, "ko")),
     [players],
   );
+
+  useEffect(() => {
+    if (!hydrated) return;
+    if (fieldIds.length > 0 && fieldPlayers.length === 0) return;
+    saveStored("fieldNames", fieldPlayers.map((player) => player.name));
+  }, [fieldIds.length, fieldPlayers, hydrated]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    if (waitingIds.length > 0 && waitingPlayers.length === 0) return;
+    saveStored("waitingNames", waitingPlayers.map((player) => player.name));
+  }, [waitingIds.length, waitingPlayers, hydrated]);
+
   const staffFirstSheetPlayers = useMemo(
     () => [...sortedSheetPlayers].sort((a, b) => {
       const aPriority = staffSearchPriority(extractStaffRole(a.memo));
