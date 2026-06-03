@@ -22,6 +22,15 @@ import { makeHistoryInsightKey, normalizeHistoryName } from "@/lib/historyInsigh
 
 const SCORE_OPTIONS = Array.from({ length: 10 }, (_, index) => index + 1);
 type PlannerMode = "BALANCE" | "MATCH";
+const STAFF_SEARCH_PRIORITY: Partial<Record<StaffRole, number>> = {
+  "단장": 0,
+  "감독": 1,
+  "코치": 2,
+};
+
+function staffSearchPriority(role: StaffRole | null): number {
+  return role ? STAFF_SEARCH_PRIORITY[role] ?? 99 : 99;
+}
 
 type GuestForm = {
   name: string;
@@ -414,14 +423,23 @@ export default function Home() {
     () => players.filter((p) => p.source === "SHEET").sort((a, b) => a.name.localeCompare(b.name, "ko")),
     [players],
   );
+  const staffFirstSheetPlayers = useMemo(
+    () => [...sortedSheetPlayers].sort((a, b) => {
+      const aPriority = staffSearchPriority(extractStaffRole(a.memo));
+      const bPriority = staffSearchPriority(extractStaffRole(b.memo));
+      if (aPriority !== bPriority) return aPriority - bPriority;
+      return a.name.localeCompare(b.name, "ko");
+    }),
+    [sortedSheetPlayers],
+  );
   const searchedPlayers = useMemo(() => {
     const query = playerQuery.trim().toLowerCase();
     if (!query) return [];
-    if (query === ".") return sortedSheetPlayers;
+    if (query === ".") return staffFirstSheetPlayers;
     return sortedSheetPlayers
       .filter((player) => [player.name, player.primaryPosition, player.secondaryPositions.join(",")].join(" ").toLowerCase().includes(query))
       .slice(0, 20);
-  }, [playerQuery, sortedSheetPlayers]);
+  }, [playerQuery, sortedSheetPlayers, staffFirstSheetPlayers]);
   const recordPlayerOptions = useMemo(
     () => uniqueRecordNames([...selectablePlayers.map((player) => player.name), ...dedicatedGks.map((gk) => gk.name)]),
     [selectablePlayers, dedicatedGks],
