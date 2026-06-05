@@ -876,6 +876,10 @@ function detailSlotBalanceDiff(summary: TeamBalanceSummary): number {
     + Math.abs(summary.wingBackScoreA - summary.wingBackScoreB);
 }
 
+function multiPositionDiff(summary: TeamBalanceSummary): number {
+  return Math.abs(summary.multiPositionA - summary.multiPositionB);
+}
+
 function totalDiffPenalty(result: TeamBalanceResult): number {
   const diff = detailedTotalDiff(result.summary);
   if (diff <= GOOD_TOTAL_DIFF_LIMIT) return diff * 60;
@@ -959,6 +963,29 @@ function variantQualityScore(result: TeamBalanceResult): number {
     + fitPenaltyForResult(result);
 }
 
+function variantDisplayOrder(a: TeamBalanceResult, b: TeamBalanceResult): number {
+  const totalDiff = detailedTotalDiff(a.summary) - detailedTotalDiff(b.summary);
+  if (totalDiff !== 0) return totalDiff;
+
+  const roleDiff = roleBalanceDiff(a.summary) - roleBalanceDiff(b.summary);
+  if (roleDiff !== 0) return roleDiff;
+
+  const detailDiff = detailSlotBalanceDiff(a.summary) - detailSlotBalanceDiff(b.summary);
+  if (detailDiff !== 0) return detailDiff;
+
+  const multiDiff = multiPositionDiff(a.summary) - multiPositionDiff(b.summary);
+  if (multiDiff !== 0) return multiDiff;
+
+  const coachDiff = Math.abs(a.summary.coachA - a.summary.coachB)
+    - Math.abs(b.summary.coachA - b.summary.coachB);
+  if (coachDiff !== 0) return coachDiff;
+
+  const qualityDiff = variantQualityScore(a) - variantQualityScore(b);
+  if (qualityDiff !== 0) return qualityDiff;
+
+  return teamVariantKey(a).localeCompare(teamVariantKey(b));
+}
+
 function teamVariantKey(result: TeamBalanceResult): string {
   const aIds = result.teamA.players.map((p) => `${p.id}:${p.assignedGroup}:${p.assignedSubRole ?? ""}`).sort().join(",");
   const bIds = result.teamB.players.map((p) => `${p.id}:${p.assignedGroup}:${p.assignedSubRole ?? ""}`).sort().join(",");
@@ -995,12 +1022,13 @@ function midSimilarity(a: TeamBalanceResult, b: TeamBalanceResult): number {
 }
 
 function selectDiverseVariants(candidates: TeamBalanceResult[], maxVariants: number): TeamBalanceResult[] {
-  if (candidates.length <= maxVariants) return candidates;
+  if (candidates.length <= maxVariants) return [...candidates].sort(variantDisplayOrder);
 
   const bestTotalDiff = Math.min(...candidates.map((candidate) => detailedTotalDiff(candidate.summary)));
   const acceptableTotalDiff = Math.max(GOOD_TOTAL_DIFF_LIMIT, bestTotalDiff + VARIANT_TOTAL_DIFF_TOLERANCE);
   const bestLineDiff = Math.min(...candidates.map((candidate) => roleBalanceDiff(candidate.summary)));
   const acceptableLineDiff = Math.max(6, bestLineDiff + 4);
+  const acceptableMultiDiff = Math.min(...candidates.map((candidate) => multiPositionDiff(candidate.summary)));
   const selected: TeamBalanceResult[] = [];
   const selectedKeys = new Set<string>();
   const selectedMidKeys = new Set<string>();
@@ -1021,6 +1049,7 @@ function selectDiverseVariants(candidates: TeamBalanceResult[], maxVariants: num
       if (selected.length >= maxVariants) break;
       if (detailedTotalDiff(candidate.summary) > acceptableTotalDiff) continue;
       if (roleBalanceDiff(candidate.summary) > acceptableLineDiff) continue;
+      if (multiPositionDiff(candidate.summary) > acceptableMultiDiff) continue;
       if (selected.some((selectedCandidate) => midSimilarity(candidate, selectedCandidate) > maxSimilarity)) continue;
       add(candidate);
     }
@@ -1030,6 +1059,7 @@ function selectDiverseVariants(candidates: TeamBalanceResult[], maxVariants: num
     if (selected.length >= maxVariants) break;
     if (detailedTotalDiff(candidate.summary) > acceptableTotalDiff) continue;
     if (roleBalanceDiff(candidate.summary) > acceptableLineDiff) continue;
+    if (multiPositionDiff(candidate.summary) > acceptableMultiDiff) continue;
     add(candidate);
   }
 
@@ -1037,6 +1067,7 @@ function selectDiverseVariants(candidates: TeamBalanceResult[], maxVariants: num
     if (selected.length >= maxVariants) break;
     if (detailedTotalDiff(candidate.summary) > acceptableTotalDiff) continue;
     if (roleBalanceDiff(candidate.summary) > acceptableLineDiff) continue;
+    if (multiPositionDiff(candidate.summary) > acceptableMultiDiff) continue;
     add(candidate, false);
   }
 
@@ -1048,7 +1079,7 @@ function selectDiverseVariants(candidates: TeamBalanceResult[], maxVariants: num
     selected.push(candidate);
   }
 
-  return selected;
+  return selected.sort(variantDisplayOrder);
 }
 
 export function balanceTeamsVariants(players: Player[], maxVariants = 10, relations: PlayerRelation[] = []): TeamBalanceResult[] {
@@ -1070,11 +1101,7 @@ export function balanceTeamsVariants(players: Player[], maxVariants = 10, relati
   }
   if (candidates.length === 0) throw new Error("팀 분배 실패");
 
-  candidates.sort((a, b) => {
-    const qualityDiff = variantQualityScore(a) - variantQualityScore(b);
-    if (qualityDiff !== 0) return qualityDiff;
-    return teamVariantKey(a).localeCompare(teamVariantKey(b));
-  });
+  candidates.sort(variantDisplayOrder);
 
   return selectDiverseVariants(candidates, maxVariants);
 }
