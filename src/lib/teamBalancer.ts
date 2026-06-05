@@ -476,6 +476,91 @@ type SplitResult = {
   partnerById: Map<string, string>;
   assignments: Map<string, SlotAssignment>;
 };
+type PairChoice = {
+  group: PositionGroup;
+  stronger: FieldPlayer;
+  weaker?: FieldPlayer;
+};
+type PairPlan = {
+  pairs: PairChoice[];
+  assignments: Map<string, SlotAssignment>;
+};
+
+function buildPairPlan(attPool: FieldPlayer[], midPool: FieldPlayer[], defPool: FieldPlayer[]): PairPlan {
+  const assignments = buildSlotAssignments(attPool, midPool, defPool);
+  const allPlayers = [...attPool, ...midPool, ...defPool];
+  const pairs: PairChoice[] = [];
+
+  for (const group of PAIRING_GROUP_ORDER) {
+    const sortedPool = allPlayers
+      .filter((player) => pairingGroupForPlayer(player, assignments) === group)
+      .sort((a, b) => comparePlayersForPairingGroup(group, a, b));
+    buildGroupPairs(sortedPool, group).forEach(([stronger, weaker]) => {
+      pairs.push({ group, stronger, weaker });
+    });
+  }
+
+  return { pairs, assignments };
+}
+
+function pairPlanKey(pairPlan: PairPlan): string {
+  return pairPlan.pairs
+    .map(({ group, stronger, weaker }) => {
+      if (!weaker) return `${group}:${stronger.id}`;
+      const [a, b] = [stronger.id, weaker.id].sort();
+      return `${group}:${a}/${b}`;
+    })
+    .sort()
+    .join("|");
+}
+
+function assignedPlayersForPairPlan(pairPlan: PairPlan): AssignedFieldPlayer[] {
+  return pairPlan.pairs.flatMap(({ stronger, weaker }) => weaker ? [stronger, weaker] : [stronger]).map((player) => {
+    const assignment = pairPlan.assignments.get(player.id)!;
+    return buildAssigned(player, assignment.group, assignment.subRole);
+  });
+}
+
+function pairPlanFitScore(pairPlan: PairPlan): number {
+  const assigned = assignedPlayersForPairPlan(pairPlan);
+  const overridePenalty = assigned.filter((player) => player.isPositionOverride).length * 80;
+  const pairShapePenalty = pairPlan.pairs.reduce((sum, { group, stronger, weaker }) => {
+    if (!weaker) return sum;
+    return sum + pairSimilarityCost(group, stronger, weaker) * 0.1;
+  }, 0);
+  return assignmentFitPenalty(assigned) + overridePenalty + pairShapePenalty;
+}
+
+function chooseBasePairPlan(
+  fieldPlayers: FieldPlayer[],
+  teamTargets: RoleTargets,
+  relations: PlayerRelation[],
+  maxVariants: number,
+): PairPlan {
+  const probe = Math.max(maxVariants * 40, 400);
+  const seen = new Set<string>();
+  let best: { pairPlan: PairPlan; result: TeamBalanceResult; fitScore: number } | null = null;
+
+  for (let variant = 0; variant < probe; variant += 1) {
+    const { attPool, midPool, defPool } = buildPools(fieldPlayers, teamTargets, variant, relations);
+    const pairPlan = buildPairPlan(attPool, midPool, defPool);
+    const key = pairPlanKey(pairPlan);
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    const evaluated = evaluatePoolAssignment(attPool, midPool, defPool, relations, variant);
+    const result = buildResult(evaluated.teamA, evaluated.teamB, evaluated.summary, relations);
+    const fitScore = pairPlanFitScore(pairPlan);
+    if (!best || fitScore < best.fitScore
+        || (fitScore === best.fitScore && variantQualityScore(result) < variantQualityScore(best.result))
+        || (fitScore === best.fitScore && variantQualityScore(result) === variantQualityScore(best.result) && variantDisplayOrder(result, best.result) < 0)) {
+      best = { pairPlan, result, fitScore };
+    }
+  }
+
+  if (!best) throw new Error("팀 분배 실패");
+  return best.pairPlan;
+}
 
 function pairSplitPools(
   attPool: FieldPlayer[],
@@ -484,56 +569,82 @@ function pairSplitPools(
   relations: PlayerRelation[] = [],
   variant = 0,
 ): SplitResult {
-  const assignments = buildSlotAssignments(attPool, midPool, defPool);
+  const pairPlan = buildPairPlan(attPool, midPool, defPool);
+  const { assignments } = pairPlan;
 
   const teamA: FieldPlayer[] = [];
   const teamB: FieldPlayer[] = [];
   const partnerById = new Map<string, string>();
 
-  const allPlayers = [...attPool, ...midPool, ...defPool];
   let pairSequence = 0;
 
-  for (const group of PAIRING_GROUP_ORDER) {
-    const sortedPool = allPlayers
-      .filter((player) => pairingGroupForPlayer(player, assignments) === group)
-      .sort((a, b) => comparePlayersForPairingGroup(group, a, b));
-    const pairs = buildGroupPairs(sortedPool, group);
-
-    for (const [stronger, weaker] of pairs) {
-
-      if (!weaker) {
-        if (teamA.length < teamB.length) {
-          teamA.push(stronger);
-        } else if (teamB.length < teamA.length) {
-          teamB.push(stronger);
-        } else {
-          const costA = pairCostByAssignments([...teamA, stronger], teamB, assignments, relations);
-          const costB = pairCostByAssignments(teamA, [...teamB, stronger], assignments, relations);
-          if (costA <= costB) teamA.push(stronger);
-          else teamB.push(stronger);
-        }
-        continue;
-      }
-
-      const cost1 = pairCostByAssignments([...teamA, stronger], [...teamB, weaker], assignments, relations);
-      const cost2 = pairCostByAssignments([...teamA, weaker], [...teamB, stronger], assignments, relations);
-      const preferFlipped = ((variant >> (pairSequence % 12)) & 1) === 1;
-      const variantTolerance = group === "MID" ? 120 : 48;
-      const useFlipped = cost2 < cost1 || (preferFlipped && Math.abs(cost1 - cost2) <= variantTolerance);
-      pairSequence += 1;
-      if (!useFlipped) {
+  for (const { group, stronger, weaker } of pairPlan.pairs) {
+    if (!weaker) {
+      if (teamA.length < teamB.length) {
         teamA.push(stronger);
-        teamB.push(weaker);
-      } else {
-        teamA.push(weaker);
+      } else if (teamB.length < teamA.length) {
         teamB.push(stronger);
+      } else {
+        const costA = pairCostByAssignments([...teamA, stronger], teamB, assignments, relations);
+        const costB = pairCostByAssignments(teamA, [...teamB, stronger], assignments, relations);
+        if (costA <= costB) teamA.push(stronger);
+        else teamB.push(stronger);
       }
-      partnerById.set(stronger.id, weaker.id);
-      partnerById.set(weaker.id, stronger.id);
+      continue;
     }
+
+    const cost1 = pairCostByAssignments([...teamA, stronger], [...teamB, weaker], assignments, relations);
+    const cost2 = pairCostByAssignments([...teamA, weaker], [...teamB, stronger], assignments, relations);
+    const preferFlipped = Math.floor(variant / (2 ** (pairSequence % 20))) % 2 === 1;
+    const variantTolerance = group === "MID" ? 120 : 48;
+    const useFlipped = cost2 < cost1 || (preferFlipped && Math.abs(cost1 - cost2) <= variantTolerance);
+    pairSequence += 1;
+    if (!useFlipped) {
+      teamA.push(stronger);
+      teamB.push(weaker);
+    } else {
+      teamA.push(weaker);
+      teamB.push(stronger);
+    }
+    partnerById.set(stronger.id, weaker.id);
+    partnerById.set(weaker.id, stronger.id);
   }
 
   return { teamA, teamB, partnerById, assignments };
+}
+
+function evaluatePairMask(pairPlan: PairPlan, relations: PlayerRelation[], mask: number): { teamA: AssignedFieldPlayer[]; teamB: AssignedFieldPlayer[]; summary: TeamBalanceSummary } {
+  const teamA: FieldPlayer[] = [];
+  const teamB: FieldPlayer[] = [];
+
+  pairPlan.pairs.forEach(({ stronger, weaker }, index) => {
+    if (!weaker) {
+      const putA = teamA.length < teamB.length || (teamA.length === teamB.length && Math.floor(mask / (2 ** index)) % 2 === 0);
+      if (putA) teamA.push(stronger);
+      else teamB.push(stronger);
+      return;
+    }
+
+    const flipped = Math.floor(mask / (2 ** index)) % 2 === 1;
+    if (flipped) {
+      teamA.push(weaker);
+      teamB.push(stronger);
+    } else {
+      teamA.push(stronger);
+      teamB.push(weaker);
+    }
+  });
+
+  const assignedA = teamA.map((player) => {
+    const assignment = pairPlan.assignments.get(player.id)!;
+    return buildAssigned(player, assignment.group, assignment.subRole);
+  });
+  const assignedB = teamB.map((player) => {
+    const assignment = pairPlan.assignments.get(player.id)!;
+    return buildAssigned(player, assignment.group, assignment.subRole);
+  });
+
+  return { teamA: assignedA, teamB: assignedB, summary: calcSummary(assignedA, assignedB, relations) };
 }
 
 function relationPenaltyForSplit(teamA: Array<{ id: string }>, teamB: Array<{ id: string }>, relations: PlayerRelation[]): number {
@@ -1000,10 +1111,20 @@ function groupIds(result: TeamBalanceResult, team: "A" | "B", group: PositionGro
     .sort();
 }
 
-function midVariantKey(result: TeamBalanceResult): string {
-  const aIds = groupIds(result, "A", "MID").join(",");
-  const bIds = groupIds(result, "B", "MID").join(",");
-  return aIds < bIds ? `${aIds}|${bIds}` : `${bIds}|${aIds}`;
+function splitKey(aIds: string[], bIds: string[]): string {
+  const a = [...aIds].sort().join(",");
+  const b = [...bIds].sort().join(",");
+  return a < b ? `${a}|${b}` : `${b}|${a}`;
+}
+
+function groupVariantKey(result: TeamBalanceResult, group: PositionGroup): string {
+  return splitKey(groupIds(result, "A", group), groupIds(result, "B", group));
+}
+
+function multiVariantKey(result: TeamBalanceResult): string {
+  const aIds = result.teamA.players.filter(isMultiPositionPlayer).map((player) => player.id);
+  const bIds = result.teamB.players.filter(isMultiPositionPlayer).map((player) => player.id);
+  return splitKey(aIds, bIds);
 }
 
 function overlapCount(a: string[], b: string[]): number {
@@ -1011,14 +1132,71 @@ function overlapCount(a: string[], b: string[]): number {
   return a.reduce((count, id) => count + (bIds.has(id) ? 1 : 0), 0);
 }
 
-function midSimilarity(a: TeamBalanceResult, b: TeamBalanceResult): number {
-  const aMidA = groupIds(a, "A", "MID");
-  const aMidB = groupIds(a, "B", "MID");
-  const bMidA = groupIds(b, "A", "MID");
-  const bMidB = groupIds(b, "B", "MID");
-  const sameOrientation = overlapCount(aMidA, bMidA) + overlapCount(aMidB, bMidB);
-  const flippedOrientation = overlapCount(aMidA, bMidB) + overlapCount(aMidB, bMidA);
+function splitSimilarity(aA: string[], aB: string[], bA: string[], bB: string[]): number {
+  const sameOrientation = overlapCount(aA, bA) + overlapCount(aB, bB);
+  const flippedOrientation = overlapCount(aA, bB) + overlapCount(aB, bA);
   return Math.max(sameOrientation, flippedOrientation);
+}
+
+function groupSimilarity(a: TeamBalanceResult, b: TeamBalanceResult, group: PositionGroup): number {
+  return splitSimilarity(groupIds(a, "A", group), groupIds(a, "B", group), groupIds(b, "A", group), groupIds(b, "B", group));
+}
+
+function multiSimilarity(a: TeamBalanceResult, b: TeamBalanceResult): number {
+  const aA = a.teamA.players.filter(isMultiPositionPlayer).map((player) => player.id);
+  const aB = a.teamB.players.filter(isMultiPositionPlayer).map((player) => player.id);
+  const bA = b.teamA.players.filter(isMultiPositionPlayer).map((player) => player.id);
+  const bB = b.teamB.players.filter(isMultiPositionPlayer).map((player) => player.id);
+  return splitSimilarity(aA, aB, bA, bB);
+}
+
+function diversityOverlapScore(candidate: TeamBalanceResult, selected: TeamBalanceResult[]): number {
+  if (selected.length === 0) return 0;
+
+  let maxMid = 0;
+  let maxDefense = 0;
+  let maxAttack = 0;
+  let maxMulti = 0;
+  let totalMid = 0;
+  let totalDefense = 0;
+  let totalAttack = 0;
+  let totalMulti = 0;
+
+  selected.forEach((selectedCandidate) => {
+    const mid = groupSimilarity(candidate, selectedCandidate, "MID");
+    const defense = groupSimilarity(candidate, selectedCandidate, "DEFENSE");
+    const attack = groupSimilarity(candidate, selectedCandidate, "ATTACK");
+    const multi = multiSimilarity(candidate, selectedCandidate);
+    maxMid = Math.max(maxMid, mid);
+    maxDefense = Math.max(maxDefense, defense);
+    maxAttack = Math.max(maxAttack, attack);
+    maxMulti = Math.max(maxMulti, multi);
+    totalMid += mid;
+    totalDefense += defense;
+    totalAttack += attack;
+    totalMulti += multi;
+  });
+
+  const averageMid = totalMid / selected.length;
+  const averageDefense = totalDefense / selected.length;
+  const averageAttack = totalAttack / selected.length;
+  const averageMulti = totalMulti / selected.length;
+  return maxMid * 1000
+    + averageMid * 140
+    + maxMulti * 260
+    + averageMulti * 45
+    + maxDefense * 220
+    + averageDefense * 35
+    + maxAttack * 70
+    + averageAttack * 12;
+}
+
+function closeScoreTieBreaker(candidate: TeamBalanceResult, bestTotalDiff: number): number {
+  return (detailedTotalDiff(candidate.summary) - bestTotalDiff) * 90
+    + roleBalanceDiff(candidate.summary) * 12
+    + detailSlotBalanceDiff(candidate.summary) * 4
+    + multiPositionDiff(candidate.summary) * 40
+    + variantQualityScore(candidate) * 0.001;
 }
 
 function selectDiverseVariants(candidates: TeamBalanceResult[], maxVariants: number): TeamBalanceResult[] {
@@ -1032,73 +1210,90 @@ function selectDiverseVariants(candidates: TeamBalanceResult[], maxVariants: num
   const selected: TeamBalanceResult[] = [];
   const selectedKeys = new Set<string>();
   const selectedMidKeys = new Set<string>();
-  const add = (candidate: TeamBalanceResult, requireUniqueMid = true): boolean => {
-    const key = teamVariantKey(candidate);
-    const midKey = midVariantKey(candidate);
-    if (selectedKeys.has(key) || (requireUniqueMid && selectedMidKeys.has(midKey))) return false;
-    selectedKeys.add(key);
-    selectedMidKeys.add(midKey);
+  const selectedDefenseKeys = new Set<string>();
+  const selectedAttackKeys = new Set<string>();
+  const selectedMultiKeys = new Set<string>();
+  const add = (candidate: TeamBalanceResult): void => {
+    selectedKeys.add(teamVariantKey(candidate));
+    selectedMidKeys.add(groupVariantKey(candidate, "MID"));
+    selectedDefenseKeys.add(groupVariantKey(candidate, "DEFENSE"));
+    selectedAttackKeys.add(groupVariantKey(candidate, "ATTACK"));
+    selectedMultiKeys.add(multiVariantKey(candidate));
     selected.push(candidate);
-    return true;
   };
+  const eligible = candidates.filter((candidate) =>
+    detailedTotalDiff(candidate.summary) <= acceptableTotalDiff
+    && roleBalanceDiff(candidate.summary) <= acceptableLineDiff
+    && multiPositionDiff(candidate.summary) <= acceptableMultiDiff,
+  );
+  const pool = eligible.length >= maxVariants ? eligible : candidates;
 
-  add(candidates[0]);
+  while (selected.length < maxVariants) {
+    const unused = pool.filter((candidate) => !selectedKeys.has(teamVariantKey(candidate)));
+    if (unused.length === 0) break;
 
-  for (const maxSimilarity of [4, 6, 8]) {
+    const unseenMid = unused.filter((candidate) => !selectedMidKeys.has(groupVariantKey(candidate, "MID")));
+    const midPool = unseenMid.length > 0 ? unseenMid : unused;
+    const unseenMulti = midPool.filter((candidate) => !selectedMultiKeys.has(multiVariantKey(candidate)));
+    const multiPool = unseenMulti.length > 0 ? unseenMulti : midPool;
+    const unseenDefense = multiPool.filter((candidate) => !selectedDefenseKeys.has(groupVariantKey(candidate, "DEFENSE")));
+    const defensePool = unseenDefense.length > 0 ? unseenDefense : multiPool;
+    const unseenAttack = defensePool.filter((candidate) => !selectedAttackKeys.has(groupVariantKey(candidate, "ATTACK")));
+    const attackPool = unseenAttack.length > 0 ? unseenAttack : defensePool;
+
+    const next = attackPool.reduce((best, candidate) => {
+      const bestScore = diversityOverlapScore(best, selected) + closeScoreTieBreaker(best, bestTotalDiff);
+      const candidateScore = diversityOverlapScore(candidate, selected) + closeScoreTieBreaker(candidate, bestTotalDiff);
+      if (candidateScore !== bestScore) return candidateScore < bestScore ? candidate : best;
+      return variantDisplayOrder(candidate, best) < 0 ? candidate : best;
+    });
+    add(next);
+  }
+
+  if (selected.length < maxVariants) {
     for (const candidate of candidates) {
       if (selected.length >= maxVariants) break;
-      if (detailedTotalDiff(candidate.summary) > acceptableTotalDiff) continue;
-      if (roleBalanceDiff(candidate.summary) > acceptableLineDiff) continue;
-      if (multiPositionDiff(candidate.summary) > acceptableMultiDiff) continue;
-      if (selected.some((selectedCandidate) => midSimilarity(candidate, selectedCandidate) > maxSimilarity)) continue;
-      add(candidate);
+      if (!selectedKeys.has(teamVariantKey(candidate))) {
+        add(candidate);
+      }
     }
-  }
-
-  for (const candidate of candidates) {
-    if (selected.length >= maxVariants) break;
-    if (detailedTotalDiff(candidate.summary) > acceptableTotalDiff) continue;
-    if (roleBalanceDiff(candidate.summary) > acceptableLineDiff) continue;
-    if (multiPositionDiff(candidate.summary) > acceptableMultiDiff) continue;
-    add(candidate);
-  }
-
-  for (const candidate of candidates) {
-    if (selected.length >= maxVariants) break;
-    if (detailedTotalDiff(candidate.summary) > acceptableTotalDiff) continue;
-    if (roleBalanceDiff(candidate.summary) > acceptableLineDiff) continue;
-    if (multiPositionDiff(candidate.summary) > acceptableMultiDiff) continue;
-    add(candidate, false);
-  }
-
-  for (const candidate of candidates) {
-    if (selected.length >= maxVariants) break;
-    const key = teamVariantKey(candidate);
-    if (selectedKeys.has(key)) continue;
-    selectedKeys.add(key);
-    selected.push(candidate);
   }
 
   return selected.sort(variantDisplayOrder);
 }
 
 export function balanceTeamsVariants(players: Player[], maxVariants = 10, relations: PlayerRelation[] = []): TeamBalanceResult[] {
+  if (players.length < MIN_TEAM_SIZE * 2 || players.length > MAX_TEAM_SIZE * 2) {
+    throw new Error(`필드 참석자는 ${MIN_TEAM_SIZE * 2}명~${MAX_TEAM_SIZE * 2}명이어야 합니다. 현재 ${players.length}명입니다.`);
+  }
+
+  const gkPlayers = players.filter((p) => p.primaryPosition === "GK");
+  if (gkPlayers.length > 0) {
+    throw new Error(`GK는 필드 참석자에 포함할 수 없습니다: ${gkPlayers.map((p) => p.name).join(", ")}`);
+  }
+
+  const fieldPlayers = players.filter(isFieldPlayer);
+  const halfSize = Math.ceil(fieldPlayers.length / 2);
+  const teamTargets = targetForTeamSize(halfSize);
+  const pairPlan = chooseBasePairPlan(fieldPlayers, teamTargets, relations, maxVariants);
+  const maskCount = 2 ** pairPlan.pairs.length;
   const candidates: TeamBalanceResult[] = [];
   const seen = new Set<string>();
-  const probe = Math.max(maxVariants * 40, 400);
-  for (let v = 0; v < probe; v += 1) {
-    let r: TeamBalanceResult;
-    try {
-      r = balanceTeams(players, v, []);
-    } catch {
-      if (candidates.length === 0) throw new Error("팀 분배 실패");
-      break;
+
+  for (let mask = 0; mask < maskCount; mask += 1) {
+    const evaluated = evaluatePairMask(pairPlan, relations, mask);
+    if (evaluated.teamA.length < MIN_TEAM_SIZE || evaluated.teamA.length > MAX_TEAM_SIZE
+        || evaluated.teamB.length < MIN_TEAM_SIZE || evaluated.teamB.length > MAX_TEAM_SIZE) {
+      continue;
     }
-    const key = teamVariantKey(r);
+
+    const result = buildResult(evaluated.teamA, evaluated.teamB, evaluated.summary, relations);
+    const key = teamVariantKey(result);
     if (seen.has(key)) continue;
     seen.add(key);
-    candidates.push(r);
+    candidates.push(result);
   }
+
   if (candidates.length === 0) throw new Error("팀 분배 실패");
 
   candidates.sort(variantDisplayOrder);
