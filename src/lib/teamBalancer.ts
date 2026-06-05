@@ -3,13 +3,14 @@ import type { PlayerRelation, TeamRelationViolation } from "@/types/relation";
 import type { Team, TeamBalanceResult, TeamBalanceSummary } from "@/types/team";
 import { formatTeamName } from "@/lib/teamLabels";
 import { effectiveActivityScore } from "@/lib/injury";
-import { isMultiPositionPlayer } from "@/lib/multiPosition";
+import { isMultiPositionPlayer, multiPositionGroups } from "@/lib/multiPosition";
 import { centerBackScore, centerForwardScore, detailedTechnicalTotal, wingBackScore, wingScore } from "@/lib/playerScores";
 import { extractStaffRole } from "@/lib/staffRoles";
 import { getPositionGroup, hasGroup, scoreForGroup } from "./positions";
 
 const POSITION_GROUPS: PositionGroup[] = ["ATTACK", "MID", "DEFENSE"];
-const PAIRING_GROUP_ORDER: PositionGroup[] = ["MID", "DEFENSE", "ATTACK"];
+type PairingGroup = PositionGroup | "MULTI";
+const PAIRING_GROUP_ORDER: PairingGroup[] = ["MID", "MULTI", "DEFENSE", "ATTACK"];
 const MIN_TEAM_SIZE = 11;
 const MAX_TEAM_SIZE = 18;
 const STRONG_RESERVE_PER_TEAM = 2;
@@ -303,9 +304,16 @@ function buildSlotAssignments(
   return assignments;
 }
 
-function pairingGroupForPlayer(player: FieldPlayer, assignments: Map<string, SlotAssignment>): PositionGroup {
+function multiProfileStrength(player: FieldPlayer | AssignedFieldPlayer): number {
+  const groups = multiPositionGroups(player);
+  if (groups.length < 2) return 0;
+  return groups.length * 30 + groups.reduce((sum, group) => sum + scoreForGroup(group, player), 0);
+}
+
+function pairingGroupForPlayer(player: FieldPlayer, assignments: Map<string, SlotAssignment>): PairingGroup {
   const assignedGroup = assignments.get(player.id)?.group;
   if (assignedGroup === "MID") return "MID";
+  if (isMultiPositionPlayer(player)) return "MULTI";
 
   const attackScore = scoreForGroup("ATTACK", player);
   const defenseScore = scoreForGroup("DEFENSE", player);
@@ -317,7 +325,19 @@ function pairingGroupForPlayer(player: FieldPlayer, assignments: Map<string, Slo
   return "DEFENSE";
 }
 
-function comparePlayersForPairingGroup(group: PositionGroup, a: FieldPlayer, b: FieldPlayer): number {
+function comparePlayersForPairingGroup(group: PairingGroup, a: FieldPlayer, b: FieldPlayer): number {
+  if (group === "MULTI") {
+    const groupCountDiff = multiPositionGroups(b).length - multiPositionGroups(a).length;
+    if (groupCountDiff !== 0) return groupCountDiff;
+    const strengthDiff = multiProfileStrength(b) - multiProfileStrength(a);
+    if (strengthDiff !== 0) return strengthDiff;
+    const bestScoreDiff = scoreForGroup(bestScoringGroup(b), b) - scoreForGroup(bestScoringGroup(a), a);
+    if (bestScoreDiff !== 0) return bestScoreDiff;
+    const compositeDiff = compositeScore(b) - compositeScore(a);
+    if (compositeDiff !== 0) return compositeDiff;
+    return a.name.localeCompare(b.name, "ko");
+  }
+
   const groupDiff = scoreForGroup(group, b) - scoreForGroup(group, a);
   if (groupDiff !== 0) return groupDiff;
   const fitDiff = groupFitRank(a, group) - groupFitRank(b, group);
@@ -348,7 +368,24 @@ function profileDistance(a: FieldPlayer, b: FieldPlayer): number {
     + Math.abs(effectiveActivityScore(a) - effectiveActivityScore(b));
 }
 
-function pairSimilarityCost(group: PositionGroup, a: FieldPlayer, b: FieldPlayer): number {
+function multiGroupMismatchPenalty(a: FieldPlayer, b: FieldPlayer): number {
+  const aGroups = new Set(multiPositionGroups(a));
+  const bGroups = new Set(multiPositionGroups(b));
+  let overlap = 0;
+  aGroups.forEach((group) => {
+    if (bGroups.has(group)) overlap += 1;
+  });
+  return (Math.max(aGroups.size, bGroups.size) - overlap) * 20;
+}
+
+function pairSimilarityCost(group: PairingGroup, a: FieldPlayer, b: FieldPlayer): number {
+  if (group === "MULTI") {
+    return Math.abs(multiProfileStrength(a) - multiProfileStrength(b)) * 2
+      + profileDistance(a, b)
+      + Math.abs(compositeScore(a) - compositeScore(b))
+      + multiGroupMismatchPenalty(a, b);
+  }
+
   const sidePenalty = group === "DEFENSE" && lateralSide(a) !== "NEUTRAL" && lateralSide(b) !== "NEUTRAL" && lateralSide(a) !== lateralSide(b) ? 8 : 0;
   const detailDiff = group === "ATTACK"
     ? Math.abs(centerForwardScore(a) - centerForwardScore(b)) + Math.abs(wingScore(a) - wingScore(b))
@@ -363,7 +400,7 @@ function pairSimilarityCost(group: PositionGroup, a: FieldPlayer, b: FieldPlayer
     + sidePenalty;
 }
 
-function buildGroupPairs(players: FieldPlayer[], group: PositionGroup): Array<[FieldPlayer, FieldPlayer?]> {
+function buildGroupPairs(players: FieldPlayer[], group: PairingGroup): Array<[FieldPlayer, FieldPlayer?]> {
   const remaining = [...players].sort((a, b) => comparePlayersForPairingGroup(group, a, b));
   const pairs: Array<[FieldPlayer, FieldPlayer?]> = [];
 
