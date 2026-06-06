@@ -311,9 +311,11 @@ function pairingGroupForPlayer(player: FieldPlayer, assignments: Map<string, Slo
   const attackScore = scoreForGroup("ATTACK", player);
   const defenseScore = scoreForGroup("DEFENSE", player);
   if (attackScore !== defenseScore) return attackScore > defenseScore ? "ATTACK" : "DEFENSE";
-  if (assignedGroup === "ATTACK" || assignedGroup === "DEFENSE") return assignedGroup;
 
   const primaryGroup = getPositionGroup(player.primaryPosition);
+  if (Math.max(attackScore, defenseScore) >= PROFILE_OVERLAP_MIN_SCORE
+      && (primaryGroup === "ATTACK" || primaryGroup === "DEFENSE")) return primaryGroup;
+  if (assignedGroup === "ATTACK" || assignedGroup === "DEFENSE") return assignedGroup;
   if (primaryGroup === "ATTACK" || primaryGroup === "DEFENSE") return primaryGroup;
   return "DEFENSE";
 }
