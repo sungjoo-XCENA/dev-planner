@@ -313,10 +313,8 @@ function pairingGroupForPlayer(player: FieldPlayer, assignments: Map<string, Slo
   if (attackScore !== defenseScore) return attackScore > defenseScore ? "ATTACK" : "DEFENSE";
 
   const primaryGroup = getPositionGroup(player.primaryPosition);
-  if (Math.max(attackScore, defenseScore) >= PROFILE_OVERLAP_MIN_SCORE
-      && (primaryGroup === "ATTACK" || primaryGroup === "DEFENSE")) return primaryGroup;
-  if (assignedGroup === "ATTACK" || assignedGroup === "DEFENSE") return assignedGroup;
   if (primaryGroup === "ATTACK" || primaryGroup === "DEFENSE") return primaryGroup;
+  if (assignedGroup === "ATTACK" || assignedGroup === "DEFENSE") return assignedGroup;
   return "DEFENSE";
 }
 
@@ -391,6 +389,18 @@ function buildGroupPairs(players: FieldPlayer[], group: PositionGroup): Array<[F
   }
 
   return pairs;
+}
+
+function mergeAttackDefenseSingles(pairs: PairChoice[]): PairChoice[] {
+  const attackSingleIndex = pairs.findIndex((pair) => pair.group === "ATTACK" && !pair.weaker);
+  const defenseSingleIndex = pairs.findIndex((pair) => pair.group === "DEFENSE" && !pair.weaker);
+  if (attackSingleIndex < 0 || defenseSingleIndex < 0) return pairs;
+
+  const attackSingle = pairs[attackSingleIndex];
+  const defenseSingle = pairs[defenseSingleIndex];
+  return pairs
+    .filter((_, index) => index !== attackSingleIndex && index !== defenseSingleIndex)
+    .concat({ group: "ATTACK", stronger: attackSingle.stronger, weaker: defenseSingle.stronger });
 }
 
 function assignedPlayersForCost(team: FieldPlayer[], assignments: Map<string, SlotAssignment>): AssignedFieldPlayer[] {
@@ -502,7 +512,7 @@ function buildPairPlan(attPool: FieldPlayer[], midPool: FieldPlayer[], defPool: 
     });
   }
 
-  return { pairs, assignments };
+  return { pairs: mergeAttackDefenseSingles(pairs), assignments };
 }
 
 function pairPlanKey(pairPlan: PairPlan): string {
