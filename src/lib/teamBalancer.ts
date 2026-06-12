@@ -25,7 +25,7 @@ const PROFILE_STACK_VARIANT_WEIGHT = 6;
 const MULTI_POSITION_BALANCE_PENALTY = 16;
 const COACH_BALANCE_PENALTY = 80;
 const LINE_BALANCE_WEIGHT = 8;
-const DETAIL_SLOT_BALANCE_WEIGHT = 1.5;
+const DETAIL_SLOT_BALANCE_WEIGHT = 4;
 const ACTIVITY_BALANCE_WEIGHT = 2;
 const MULTI_POSITION_VARIANT_PENALTY = 600;
 const GOOD_TOTAL_DIFF_LIMIT = 3;
@@ -1018,6 +1018,12 @@ function detailSlotBalanceDiff(summary: TeamBalanceSummary): number {
     + Math.abs(summary.wingBackScoreA - summary.wingBackScoreB);
 }
 
+function scoreCardBalanceDiff(summary: TeamBalanceSummary): number {
+  return detailSlotBalanceDiff(summary)
+    + Math.abs(summary.midScoreA - summary.midScoreB)
+    + Math.abs(summary.activityA - summary.activityB);
+}
+
 function multiPositionDiff(summary: TeamBalanceSummary): number {
   return Math.abs(summary.multiPositionA - summary.multiPositionB);
 }
@@ -1105,26 +1111,29 @@ function variantQualityScore(result: TeamBalanceResult): number {
   return coachPenalty
     + totalDiffPenalty(result)
     + roleBalanceDiff(summary) * 140
+    + scoreCardBalanceDiff(summary) * 90
     + profileStackPenalty(result) * PROFILE_STACK_VARIANT_WEIGHT
     + Math.abs(summary.multiPositionA - summary.multiPositionB) * MULTI_POSITION_VARIANT_PENALTY
     + multiStrengthDiff(result) * 2
     + detailedTotalDiff(summary) * 20
-    + detailSlotBalanceDiff(summary) * 10
     + fitPenaltyForResult(result);
 }
 
 function variantDisplayOrder(a: TeamBalanceResult, b: TeamBalanceResult): number {
-  const totalDiff = detailedTotalDiff(a.summary) - detailedTotalDiff(b.summary);
-  if (totalDiff !== 0) return totalDiff;
-
-  const roleDiff = roleBalanceDiff(a.summary) - roleBalanceDiff(b.summary);
-  if (roleDiff !== 0) return roleDiff;
-
   const coachDiff = staffBalanceDiff(a.summary) - staffBalanceDiff(b.summary);
   if (coachDiff !== 0) return coachDiff;
 
   const guestDiff = guestBalanceDiff(a.summary) - guestBalanceDiff(b.summary);
   if (guestDiff !== 0) return guestDiff;
+
+  const scoreCardDiff = scoreCardBalanceDiff(a.summary) - scoreCardBalanceDiff(b.summary);
+  if (scoreCardDiff !== 0) return scoreCardDiff;
+
+  const totalDiff = detailedTotalDiff(a.summary) - detailedTotalDiff(b.summary);
+  if (totalDiff !== 0) return totalDiff;
+
+  const roleDiff = roleBalanceDiff(a.summary) - roleBalanceDiff(b.summary);
+  if (roleDiff !== 0) return roleDiff;
 
   const detailDiff = detailSlotBalanceDiff(a.summary) - detailSlotBalanceDiff(b.summary);
   if (detailDiff !== 0) return detailDiff;
@@ -1234,10 +1243,10 @@ function diversityOverlapScore(candidate: TeamBalanceResult, selected: TeamBalan
 
 function closeScoreTieBreaker(candidate: TeamBalanceResult, bestTotalDiff: number): number {
   return (detailedTotalDiff(candidate.summary) - bestTotalDiff) * 90
+    + scoreCardBalanceDiff(candidate.summary) * 80
     + roleBalanceDiff(candidate.summary) * 12
     + staffBalanceDiff(candidate.summary) * 240
     + guestBalanceDiff(candidate.summary) * 220
-    + detailSlotBalanceDiff(candidate.summary) * 4
     + multiPositionDiff(candidate.summary) * 40
     + variantQualityScore(candidate) * 0.001;
 }
@@ -1251,6 +1260,8 @@ function selectDiverseVariants(candidates: TeamBalanceResult[], maxVariants: num
   const acceptableLineDiff = Math.max(6, bestLineDiff + 4);
   const acceptableStaffDiff = Math.min(...candidates.map((candidate) => staffBalanceDiff(candidate.summary)));
   const acceptableGuestDiff = Math.min(...candidates.map((candidate) => guestBalanceDiff(candidate.summary)));
+  const bestScoreCardDiff = Math.min(...candidates.map((candidate) => scoreCardBalanceDiff(candidate.summary)));
+  const acceptableScoreCardDiff = Math.max(18, bestScoreCardDiff + 10);
   const acceptableMultiDiff = Math.min(...candidates.map((candidate) => multiPositionDiff(candidate.summary)));
   const selected: TeamBalanceResult[] = [];
   const selectedKeys = new Set<string>();
@@ -1271,6 +1282,7 @@ function selectDiverseVariants(candidates: TeamBalanceResult[], maxVariants: num
     && roleBalanceDiff(candidate.summary) <= acceptableLineDiff
     && staffBalanceDiff(candidate.summary) <= acceptableStaffDiff
     && guestBalanceDiff(candidate.summary) <= acceptableGuestDiff
+    && scoreCardBalanceDiff(candidate.summary) <= acceptableScoreCardDiff
     && multiPositionDiff(candidate.summary) <= acceptableMultiDiff,
   );
   const pool = eligible.length >= maxVariants ? eligible : candidates;
