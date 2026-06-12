@@ -53,4 +53,8 @@ export type AssignedPlayer = Player & {
   assignedSubRole?: AssignedSubRole;
   assignmentReason: string;
   isPositionOverride: boolean;
+  balancePairKey?: string;
+  balancePairOrder?: number;
+  balancePairPartnerName?: string;
+  balancePairGroup?: PositionGroup;
 };

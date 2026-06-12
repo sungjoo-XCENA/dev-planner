@@ -2736,7 +2736,12 @@ function TeamCard({
       <div className="px-2 pb-3 pt-1 sm:p-4 sm:pt-1">
         {(["ATTACK", "MID", "DEFENSE"] as PositionGroup[]).map((g) => {
           const score = groupScores[g];
-          const groupPlayers = players.filter((p) => p.assignedGroup === g);
+          const groupPlayers = players
+            .filter((p) => p.assignedGroup === g)
+            .sort((a, b) =>
+              (a.balancePairOrder ?? Number.MAX_SAFE_INTEGER) - (b.balancePairOrder ?? Number.MAX_SAFE_INTEGER)
+              || a.name.localeCompare(b.name, "ko"),
+            );
           const selectedSameTeam = selection?.team === team;
           const canTargetGroup = showGroupTargets && (!selectedSameTeam || selectedPlayer?.assignedGroup !== g);
           return (
@@ -2764,6 +2769,7 @@ function TeamCard({
                   const composite = detailedTechnicalTotal(p) + effectiveActivityScore(p);
                   const isSwapHint = showSwapHints && selectedComposite != null && Math.abs(composite - selectedComposite) <= 3;
                   const staffRole = extractStaffRole(p.memo);
+                  const pairTitle = p.balancePairPartnerName ? `페어 ${p.balancePairPartnerName} · ` : "";
                   const baseClass = "min-h-[3.65rem] min-w-0 rounded-lg border px-0.5 py-1.5 text-center transition";
                   const stateClass = isSelected
                     ? teamSelectedPlayerClass(team)
@@ -2776,7 +2782,7 @@ function TeamCard({
                     <button
                       key={p.id}
                       type="button"
-                      title={`${staffRole ? `${staffRole} · ` : ""}${p.assignmentReason} · ${playerScoreLine(p)}`}
+                      title={`${pairTitle}${staffRole ? `${staffRole} · ` : ""}${p.assignmentReason} · ${playerScoreLine(p)}`}
                       className={`${baseClass} ${stateClass}`}
                       disabled={!interactive}
                       onClick={() => onPlayerClick(team, p.id)}

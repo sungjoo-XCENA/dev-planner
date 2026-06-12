@@ -487,11 +487,18 @@ type SplitResult = {
   teamB: FieldPlayer[];
   partnerById: Map<string, string>;
   assignments: Map<string, SlotAssignment>;
+  pairMetaById: Map<string, BalancePairMeta>;
 };
 type PairChoice = {
   group: PositionGroup;
   stronger: FieldPlayer;
   weaker?: FieldPlayer;
+};
+type BalancePairMeta = {
+  balancePairKey: string;
+  balancePairOrder: number;
+  balancePairPartnerName?: string;
+  balancePairGroup: PositionGroup;
 };
 type PairPlan = {
   pairs: PairChoice[];
@@ -531,6 +538,33 @@ function assignedPlayersForPairPlan(pairPlan: PairPlan): AssignedFieldPlayer[] {
     const assignment = pairPlan.assignments.get(player.id)!;
     return buildAssigned(player, assignment.group, assignment.subRole);
   });
+}
+
+function balancePairKey(stronger: FieldPlayer, weaker?: FieldPlayer): string {
+  if (!weaker) return stronger.id;
+  return [stronger.id, weaker.id].sort().join("|");
+}
+
+function pairMetaMap(pairPlan: PairPlan): Map<string, BalancePairMeta> {
+  const meta = new Map<string, BalancePairMeta>();
+  pairPlan.pairs.forEach(({ group, stronger, weaker }, index) => {
+    const key = balancePairKey(stronger, weaker);
+    meta.set(stronger.id, {
+      balancePairKey: key,
+      balancePairOrder: index,
+      balancePairPartnerName: weaker?.name,
+      balancePairGroup: group,
+    });
+    if (weaker) {
+      meta.set(weaker.id, {
+        balancePairKey: key,
+        balancePairOrder: index,
+        balancePairPartnerName: stronger.name,
+        balancePairGroup: group,
+      });
+    }
+  });
+  return meta;
 }
 
 function pairPlanFitScore(pairPlan: PairPlan): number {
@@ -583,6 +617,7 @@ function pairSplitPools(
 ): SplitResult {
   const pairPlan = buildPairPlan(attPool, midPool, defPool);
   const { assignments } = pairPlan;
+  const pairMetaById = pairMetaMap(pairPlan);
 
   const teamA: FieldPlayer[] = [];
   const teamB: FieldPlayer[] = [];
@@ -622,12 +657,13 @@ function pairSplitPools(
     partnerById.set(weaker.id, stronger.id);
   }
 
-  return { teamA, teamB, partnerById, assignments };
+  return { teamA, teamB, partnerById, assignments, pairMetaById };
 }
 
 function evaluatePairMask(pairPlan: PairPlan, relations: PlayerRelation[], mask: number): { teamA: AssignedFieldPlayer[]; teamB: AssignedFieldPlayer[]; summary: TeamBalanceSummary } {
   const teamA: FieldPlayer[] = [];
   const teamB: FieldPlayer[] = [];
+  const pairMetaById = pairMetaMap(pairPlan);
 
   pairPlan.pairs.forEach(({ stronger, weaker }, index) => {
     if (!weaker) {
@@ -649,11 +685,11 @@ function evaluatePairMask(pairPlan: PairPlan, relations: PlayerRelation[], mask:
 
   const assignedA = teamA.map((player) => {
     const assignment = pairPlan.assignments.get(player.id)!;
-    return buildAssigned(player, assignment.group, assignment.subRole);
+    return { ...buildAssigned(player, assignment.group, assignment.subRole), ...pairMetaById.get(player.id) };
   });
   const assignedB = teamB.map((player) => {
     const assignment = pairPlan.assignments.get(player.id)!;
-    return buildAssigned(player, assignment.group, assignment.subRole);
+    return { ...buildAssigned(player, assignment.group, assignment.subRole), ...pairMetaById.get(player.id) };
   });
 
   return { teamA: assignedA, teamB: assignedB, summary: calcSummary(assignedA, assignedB, relations) };
@@ -805,11 +841,11 @@ function evaluatePoolAssignment(
   const split = pairSplitPools(attPool, midPool, defPool, relations, variant);
   const teamA = split.teamA.map((p) => {
     const assignment = split.assignments.get(p.id)!;
-    return buildAssigned(p, assignment.group, assignment.subRole);
+    return { ...buildAssigned(p, assignment.group, assignment.subRole), ...split.pairMetaById.get(p.id) };
   });
   const teamB = split.teamB.map((p) => {
     const assignment = split.assignments.get(p.id)!;
-    return buildAssigned(p, assignment.group, assignment.subRole);
+    return { ...buildAssigned(p, assignment.group, assignment.subRole), ...split.pairMetaById.get(p.id) };
   });
   const summary = calcSummary(teamA, teamB, relations);
   const mismatchCount = [...teamA, ...teamB].filter((p) => {
@@ -1003,6 +1039,10 @@ function multiPositionDiff(summary: TeamBalanceSummary): number {
   return Math.abs(summary.multiPositionA - summary.multiPositionB);
 }
 
+function staffBalanceDiff(summary: TeamBalanceSummary): number {
+  return Math.abs(summary.coachA - summary.coachB);
+}
+
 function totalDiffPenalty(result: TeamBalanceResult): number {
   const diff = detailedTotalDiff(result.summary);
   if (diff <= GOOD_TOTAL_DIFF_LIMIT) return diff * 60;
@@ -1093,15 +1133,14 @@ function variantDisplayOrder(a: TeamBalanceResult, b: TeamBalanceResult): number
   const roleDiff = roleBalanceDiff(a.summary) - roleBalanceDiff(b.summary);
   if (roleDiff !== 0) return roleDiff;
 
+  const coachDiff = staffBalanceDiff(a.summary) - staffBalanceDiff(b.summary);
+  if (coachDiff !== 0) return coachDiff;
+
   const detailDiff = detailSlotBalanceDiff(a.summary) - detailSlotBalanceDiff(b.summary);
   if (detailDiff !== 0) return detailDiff;
 
   const multiDiff = multiPositionDiff(a.summary) - multiPositionDiff(b.summary);
   if (multiDiff !== 0) return multiDiff;
-
-  const coachDiff = Math.abs(a.summary.coachA - a.summary.coachB)
-    - Math.abs(b.summary.coachA - b.summary.coachB);
-  if (coachDiff !== 0) return coachDiff;
 
   const qualityDiff = variantQualityScore(a) - variantQualityScore(b);
   if (qualityDiff !== 0) return qualityDiff;
@@ -1206,6 +1245,7 @@ function diversityOverlapScore(candidate: TeamBalanceResult, selected: TeamBalan
 function closeScoreTieBreaker(candidate: TeamBalanceResult, bestTotalDiff: number): number {
   return (detailedTotalDiff(candidate.summary) - bestTotalDiff) * 90
     + roleBalanceDiff(candidate.summary) * 12
+    + staffBalanceDiff(candidate.summary) * 240
     + detailSlotBalanceDiff(candidate.summary) * 4
     + multiPositionDiff(candidate.summary) * 40
     + variantQualityScore(candidate) * 0.001;
@@ -1218,6 +1258,7 @@ function selectDiverseVariants(candidates: TeamBalanceResult[], maxVariants: num
   const acceptableTotalDiff = Math.max(GOOD_TOTAL_DIFF_LIMIT, bestTotalDiff + VARIANT_TOTAL_DIFF_TOLERANCE);
   const bestLineDiff = Math.min(...candidates.map((candidate) => roleBalanceDiff(candidate.summary)));
   const acceptableLineDiff = Math.max(6, bestLineDiff + 4);
+  const acceptableStaffDiff = Math.min(...candidates.map((candidate) => staffBalanceDiff(candidate.summary)));
   const acceptableMultiDiff = Math.min(...candidates.map((candidate) => multiPositionDiff(candidate.summary)));
   const selected: TeamBalanceResult[] = [];
   const selectedKeys = new Set<string>();
@@ -1236,6 +1277,7 @@ function selectDiverseVariants(candidates: TeamBalanceResult[], maxVariants: num
   const eligible = candidates.filter((candidate) =>
     detailedTotalDiff(candidate.summary) <= acceptableTotalDiff
     && roleBalanceDiff(candidate.summary) <= acceptableLineDiff
+    && staffBalanceDiff(candidate.summary) <= acceptableStaffDiff
     && multiPositionDiff(candidate.summary) <= acceptableMultiDiff,
   );
   const pool = eligible.length >= maxVariants ? eligible : candidates;
