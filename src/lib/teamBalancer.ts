@@ -194,54 +194,41 @@ function assignmentFitPenalty(players: AssignedFieldPlayer[]): number {
   return players.reduce((sum, player) => sum + offBestGroupPenalty(player, player.assignedGroup), 0);
 }
 
-function subRoleTargets(group: "ATTACK" | "DEFENSE", count: number): { firstRole: AssignedSubRole; firstCount: number; secondRole: AssignedSubRole } {
-  if (group === "ATTACK") {
-    const centerForwardCount = Math.max(1, Math.min(count, Math.round(count * 0.35)));
-    return { firstRole: "CF", firstCount: centerForwardCount, secondRole: "WING" };
-  }
-
-  const wingBackCount = Math.max(1, Math.min(count - 1, Math.round(count * 0.4)));
-  return { firstRole: "WB", firstCount: wingBackCount, secondRole: "CB" };
-}
-
 function assignGroupSubRoles<T extends (FieldPlayer | AssignedFieldPlayer) & { assignedGroup: PositionGroup; assignedSubRole?: AssignedSubRole }>(
   players: T[],
   group: "ATTACK" | "DEFENSE",
-  firstCountOverride?: number,
 ): Array<T & { assignedSubRole: AssignedSubRole }> {
   if (players.length === 0) return [];
   if (players.every((player) => isSubRoleForGroup(player.assignedSubRole, group))) {
     return players as Array<T & { assignedSubRole: AssignedSubRole }>;
   }
-  if (players.length === 1) {
-    const role = group === "ATTACK"
-      ? centerForwardScore(players[0]) >= wingScore(players[0]) ? "CF" : "WING"
-      : centerBackScore(players[0]) >= wingBackScore(players[0]) ? "CB" : "WB";
-    return [{ ...players[0], assignedSubRole: role }];
-  }
-
-  const { firstRole, firstCount: defaultFirstCount, secondRole } = subRoleTargets(group, players.length);
-  const firstCount = firstCountOverride ?? defaultFirstCount;
-  const firstRoleIds = new Set(
-    [...players]
-      .sort((a, b) => {
-        const aDelta = subRoleScore(a, firstRole) - subRoleScore(a, secondRole);
-        const bDelta = subRoleScore(b, firstRole) - subRoleScore(b, secondRole);
-        if (aDelta !== bDelta) return bDelta - aDelta;
-        const firstRoleScoreDiff = subRoleScore(b, firstRole) - subRoleScore(a, firstRole);
-        if (firstRoleScoreDiff !== 0) return firstRoleScoreDiff;
-        const bestScoreDiff = bestSubRoleScore(b, group) - bestSubRoleScore(a, group);
-        if (bestScoreDiff !== 0) return bestScoreDiff;
-        return a.name.localeCompare(b.name, "ko");
-      })
-      .slice(0, firstCount)
-      .map((player) => player.id),
-  );
 
   return players.map((player) => ({
     ...player,
-    assignedSubRole: firstRoleIds.has(player.id) ? firstRole : secondRole,
+    assignedSubRole: preferredSubRole(player, group),
   }));
+}
+
+function preferredSubRole(player: FieldPlayer | AssignedFieldPlayer, group: "ATTACK" | "DEFENSE"): AssignedSubRole {
+  if (group === "ATTACK") {
+    const cf = centerForwardScore(player);
+    const wing = wingScore(player);
+    if (cf !== wing) return cf > wing ? "CF" : "WING";
+    if (player.primaryPosition === "CF") return "CF";
+    if (player.primaryPosition === "LW" || player.primaryPosition === "RW") return "WING";
+    if (player.secondaryPositions.includes("CF")) return "CF";
+    if (player.secondaryPositions.includes("LW") || player.secondaryPositions.includes("RW")) return "WING";
+    return "CF";
+  }
+
+  const cb = centerBackScore(player);
+  const wb = wingBackScore(player);
+  if (cb !== wb) return cb > wb ? "CB" : "WB";
+  if (player.primaryPosition === "CB") return "CB";
+  if (player.primaryPosition === "LB" || player.primaryPosition === "RB") return "WB";
+  if (player.secondaryPositions.includes("CB")) return "CB";
+  if (player.secondaryPositions.includes("LB") || player.secondaryPositions.includes("RB")) return "WB";
+  return "CB";
 }
 
 function assignDetailedSubRoles<T extends (FieldPlayer | AssignedFieldPlayer) & { assignedGroup: PositionGroup; assignedSubRole?: AssignedSubRole }>(players: T[]): Array<T & { assignedSubRole: AssignedSubRole }> {
@@ -276,11 +263,6 @@ function subRoleScores(players: Array<FieldPlayer & { assignedGroup: PositionGro
   }, { centerForward: 0, wing: 0, attack: 0, mid: 0, centerBack: 0, wingBack: 0, defense: 0 });
 }
 
-function splitFirstRoleCount(group: "ATTACK" | "DEFENSE", poolSize: number): number {
-  const teamCount = Math.max(1, Math.floor(poolSize / 2));
-  return Math.min(poolSize, subRoleTargets(group, teamCount).firstCount * 2);
-}
-
 function buildSlotAssignments(
   attPool: FieldPlayer[],
   midPool: FieldPlayer[],
@@ -290,12 +272,10 @@ function buildSlotAssignments(
   const attackers = assignGroupSubRoles(
     attPool.map((player) => ({ ...player, assignedGroup: "ATTACK" as const })),
     "ATTACK",
-    splitFirstRoleCount("ATTACK", attPool.length),
   );
   const defenders = assignGroupSubRoles(
     defPool.map((player) => ({ ...player, assignedGroup: "DEFENSE" as const })),
     "DEFENSE",
-    splitFirstRoleCount("DEFENSE", defPool.length),
   );
 
   attackers.forEach((player) => assignments.set(player.id, { group: "ATTACK", subRole: player.assignedSubRole }));
