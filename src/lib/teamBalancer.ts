@@ -330,6 +330,9 @@ function profileDistance(a: FieldPlayer, b: FieldPlayer): number {
 }
 
 function pairSimilarityCost(group: PositionGroup, a: FieldPlayer, b: FieldPlayer): number {
+  const detailRoleMismatchPenalty = group === "ATTACK" || group === "DEFENSE"
+    ? preferredSubRole(a, group) === preferredSubRole(b, group) ? 0 : 80
+    : 0;
   const sidePenalty = group === "DEFENSE" && lateralSide(a) !== "NEUTRAL" && lateralSide(b) !== "NEUTRAL" && lateralSide(a) !== lateralSide(b) ? 8 : 0;
   const detailDiff = group === "ATTACK"
     ? Math.abs(centerForwardScore(a) - centerForwardScore(b)) + Math.abs(wingScore(a) - wingScore(b))
@@ -341,6 +344,7 @@ function pairSimilarityCost(group: PositionGroup, a: FieldPlayer, b: FieldPlayer
     + detailDiff * 2
     + Math.abs(compositeScore(a) - compositeScore(b))
     + profileDistance(a, b)
+    + detailRoleMismatchPenalty
     + sidePenalty;
 }
 
@@ -1120,6 +1124,9 @@ function variantQualityScore(result: TeamBalanceResult): number {
 }
 
 function variantDisplayOrder(a: TeamBalanceResult, b: TeamBalanceResult): number {
+  const coachDiff = staffBalanceDiff(a.summary) - staffBalanceDiff(b.summary);
+  if (coachDiff !== 0) return coachDiff;
+
   const totalDiff = detailedTotalDiff(a.summary) - detailedTotalDiff(b.summary);
   if (totalDiff !== 0) return totalDiff;
 
@@ -1128,9 +1135,6 @@ function variantDisplayOrder(a: TeamBalanceResult, b: TeamBalanceResult): number
 
   const roleDiff = roleBalanceDiff(a.summary) - roleBalanceDiff(b.summary);
   if (roleDiff !== 0) return roleDiff;
-
-  const coachDiff = staffBalanceDiff(a.summary) - staffBalanceDiff(b.summary);
-  if (coachDiff !== 0) return coachDiff;
 
   const guestDiff = guestBalanceDiff(a.summary) - guestBalanceDiff(b.summary);
   if (guestDiff !== 0) return guestDiff;
@@ -1310,15 +1314,25 @@ function selectDiverseVariants(candidates: TeamBalanceResult[], maxVariants: num
   }
 
   if (selected.length < maxVariants) {
-    for (const candidate of candidates) {
-      if (selected.length >= maxVariants) break;
-      if (!selectedKeys.has(teamVariantKey(candidate))) {
-        add(candidate);
+    const fallbackTiers = [
+      candidates.filter((candidate) => staffBalanceDiff(candidate.summary) <= acceptableStaffDiff),
+      candidates,
+    ];
+    for (const fallbackCandidates of fallbackTiers) {
+      for (const candidate of fallbackCandidates) {
+        if (selected.length >= maxVariants) break;
+        if (!selectedKeys.has(teamVariantKey(candidate))) {
+          add(candidate);
+        }
       }
+      if (selected.length >= maxVariants) break;
     }
   }
 
   return selected.sort((a, b) => {
+    const staffDiff = staffBalanceDiff(a.summary) - staffBalanceDiff(b.summary);
+    if (staffDiff !== 0) return staffDiff;
+
     const aIsPreferred = scoreCardBalanceDiff(a.summary) <= acceptableScoreCardDiff;
     const bIsPreferred = scoreCardBalanceDiff(b.summary) <= acceptableScoreCardDiff;
     if (aIsPreferred !== bIsPreferred) return aIsPreferred ? -1 : 1;
