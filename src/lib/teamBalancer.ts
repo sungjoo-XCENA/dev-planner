@@ -1120,20 +1120,20 @@ function variantQualityScore(result: TeamBalanceResult): number {
 }
 
 function variantDisplayOrder(a: TeamBalanceResult, b: TeamBalanceResult): number {
+  const totalDiff = detailedTotalDiff(a.summary) - detailedTotalDiff(b.summary);
+  if (totalDiff !== 0) return totalDiff;
+
+  const scoreCardDiff = scoreCardBalanceDiff(a.summary) - scoreCardBalanceDiff(b.summary);
+  if (scoreCardDiff !== 0) return scoreCardDiff;
+
+  const roleDiff = roleBalanceDiff(a.summary) - roleBalanceDiff(b.summary);
+  if (roleDiff !== 0) return roleDiff;
+
   const coachDiff = staffBalanceDiff(a.summary) - staffBalanceDiff(b.summary);
   if (coachDiff !== 0) return coachDiff;
 
   const guestDiff = guestBalanceDiff(a.summary) - guestBalanceDiff(b.summary);
   if (guestDiff !== 0) return guestDiff;
-
-  const scoreCardDiff = scoreCardBalanceDiff(a.summary) - scoreCardBalanceDiff(b.summary);
-  if (scoreCardDiff !== 0) return scoreCardDiff;
-
-  const totalDiff = detailedTotalDiff(a.summary) - detailedTotalDiff(b.summary);
-  if (totalDiff !== 0) return totalDiff;
-
-  const roleDiff = roleBalanceDiff(a.summary) - roleBalanceDiff(b.summary);
-  if (roleDiff !== 0) return roleDiff;
 
   const detailDiff = detailSlotBalanceDiff(a.summary) - detailSlotBalanceDiff(b.summary);
   if (detailDiff !== 0) return detailDiff;
@@ -1261,7 +1261,7 @@ function selectDiverseVariants(candidates: TeamBalanceResult[], maxVariants: num
   const acceptableStaffDiff = Math.min(...candidates.map((candidate) => staffBalanceDiff(candidate.summary)));
   const acceptableGuestDiff = Math.min(...candidates.map((candidate) => guestBalanceDiff(candidate.summary)));
   const bestScoreCardDiff = Math.min(...candidates.map((candidate) => scoreCardBalanceDiff(candidate.summary)));
-  const acceptableScoreCardDiff = Math.max(18, bestScoreCardDiff + 10);
+  const acceptableScoreCardDiff = bestScoreCardDiff + 6;
   const acceptableMultiDiff = Math.min(...candidates.map((candidate) => multiPositionDiff(candidate.summary)));
   const selected: TeamBalanceResult[] = [];
   const selectedKeys = new Set<string>();
@@ -1285,7 +1285,7 @@ function selectDiverseVariants(candidates: TeamBalanceResult[], maxVariants: num
     && scoreCardBalanceDiff(candidate.summary) <= acceptableScoreCardDiff
     && multiPositionDiff(candidate.summary) <= acceptableMultiDiff,
   );
-  const pool = eligible.length >= maxVariants ? eligible : candidates;
+  const pool = eligible.length > 0 ? eligible : candidates;
 
   while (selected.length < maxVariants) {
     const unused = pool.filter((candidate) => !selectedKeys.has(teamVariantKey(candidate)));
@@ -1318,7 +1318,12 @@ function selectDiverseVariants(candidates: TeamBalanceResult[], maxVariants: num
     }
   }
 
-  return selected.sort(variantDisplayOrder);
+  return selected.sort((a, b) => {
+    const aIsPreferred = scoreCardBalanceDiff(a.summary) <= acceptableScoreCardDiff;
+    const bIsPreferred = scoreCardBalanceDiff(b.summary) <= acceptableScoreCardDiff;
+    if (aIsPreferred !== bIsPreferred) return aIsPreferred ? -1 : 1;
+    return variantDisplayOrder(a, b);
+  });
 }
 
 export function balanceTeamsVariants(players: Player[], maxVariants = 10, relations: PlayerRelation[] = []): TeamBalanceResult[] {
