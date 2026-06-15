@@ -355,6 +355,10 @@ function pairSimilarityCost(group: PositionGroup, a: FieldPlayer, b: FieldPlayer
 }
 
 function buildGroupPairs(players: FieldPlayer[], group: PositionGroup): Array<[FieldPlayer, FieldPlayer?]> {
+  if (group === "ATTACK" || group === "DEFENSE") {
+    return buildSubRolePairs(players, group);
+  }
+
   const remaining = [...players].sort((a, b) => comparePlayersForPairingGroup(group, a, b));
   const pairs: Array<[FieldPlayer, FieldPlayer?]> = [];
 
@@ -377,6 +381,47 @@ function buildGroupPairs(players: FieldPlayer[], group: PositionGroup): Array<[F
     const [second] = remaining.splice(bestIndex, 1);
     pairs.push([first, second]);
   }
+
+  return pairs;
+}
+
+function comparePlayersForPairingSubRole(role: AssignedSubRole, a: FieldPlayer, b: FieldPlayer): number {
+  const roleDiff = subRoleScore(b, role) - subRoleScore(a, role);
+  if (roleDiff !== 0) return roleDiff;
+  const group = groupForSubRole(role);
+  const groupDiff = scoreForGroup(group, b) - scoreForGroup(group, a);
+  if (groupDiff !== 0) return groupDiff;
+  const actDiff = effectiveActivityScore(b) - effectiveActivityScore(a);
+  if (actDiff !== 0) return actDiff;
+  return a.name.localeCompare(b.name, "ko");
+}
+
+function buildSubRolePairs(players: FieldPlayer[], group: "ATTACK" | "DEFENSE"): Array<[FieldPlayer, FieldPlayer?]> {
+  const roles: AssignedSubRole[] = group === "ATTACK" ? ["CF", "WING"] : ["CB", "WB"];
+  const singles: FieldPlayer[] = [];
+  const pairs: Array<[FieldPlayer, FieldPlayer?]> = [];
+
+  roles.forEach((role) => {
+    const bucket = players
+      .filter((player) => preferredSubRole(player, group) === role)
+      .sort((a, b) => comparePlayersForPairingSubRole(role, a, b));
+
+    while (bucket.length >= 2) {
+      pairs.push([bucket.shift()!, bucket.shift()!]);
+    }
+    if (bucket.length === 1) singles.push(bucket[0]);
+  });
+
+  singles
+    .sort((a, b) => comparePlayersForPairingGroup(group, a, b))
+    .forEach((player) => {
+      const last = pairs[pairs.length - 1];
+      if (last && !last[1]) {
+        last[1] = player;
+      } else {
+        pairs.push([player]);
+      }
+    });
 
   return pairs;
 }
