@@ -181,11 +181,21 @@ type SharedLineupPayload = {
   version: 1;
   lineup: LineupResult;
   teamResult?: TeamBalanceResult | null;
+  teamVariants?: TeamBalanceResult[];
+  selectedVariantIdx?: number;
 };
 
 type SharedLineupData = {
   lineup: LineupResult;
   teamResult?: TeamBalanceResult | null;
+  teamVariants?: TeamBalanceResult[];
+  selectedVariantIdx?: number;
+};
+
+type LineupShareTeamContext = {
+  teamResult?: TeamBalanceResult | null;
+  teamVariants?: TeamBalanceResult[];
+  selectedVariantIdx?: number;
 };
 
 type SharedMatchLineupPayload = {
@@ -238,8 +248,30 @@ async function gunzip(bytes: Uint8Array): Promise<Uint8Array> {
   return new Uint8Array(await new Response(stream).arrayBuffer());
 }
 
-async function encodeSharedLineup(lineup: LineupResult, teamResult?: TeamBalanceResult | null): Promise<string> {
-  const payload: SharedLineupPayload = teamResult ? { version: 1, lineup, teamResult } : { version: 1, lineup };
+function normalizeSharedVariants(payload: Partial<SharedLineupPayload>): SharedLineupData {
+  const variants = Array.isArray(payload.teamVariants) ? payload.teamVariants.filter(Boolean) : [];
+  const fallbackVariants = variants.length > 0 ? variants : (payload.teamResult ? [payload.teamResult] : []);
+  const maxIdx = Math.max(0, fallbackVariants.length - 1);
+  const selectedVariantIdx = Math.min(Math.max(Number(payload.selectedVariantIdx ?? 0) || 0, 0), maxIdx);
+  return {
+    lineup: payload.lineup as LineupResult,
+    teamResult: payload.teamResult ?? fallbackVariants[selectedVariantIdx] ?? null,
+    teamVariants: fallbackVariants,
+    selectedVariantIdx,
+  };
+}
+
+async function encodeSharedLineup(lineup: LineupResult, teamContext?: LineupShareTeamContext): Promise<string> {
+  const variants = Array.isArray(teamContext?.teamVariants) ? teamContext.teamVariants.filter(Boolean) : [];
+  const selectedVariantIdx = variants.length > 0
+    ? Math.min(Math.max(Number(teamContext?.selectedVariantIdx ?? 0) || 0, 0), variants.length - 1)
+    : 0;
+  const payload: SharedLineupPayload = {
+    version: 1,
+    lineup,
+    ...(teamContext?.teamResult ? { teamResult: teamContext.teamResult } : {}),
+    ...(variants.length > 0 ? { teamVariants: variants, selectedVariantIdx } : {}),
+  };
   const bytes = new TextEncoder().encode(JSON.stringify(payload));
   if (typeof CompressionStream === "undefined") {
     return `${RAW_LINEUP_PREFIX}${bytesToBase64Url(bytes)}`;
@@ -254,7 +286,7 @@ async function decodeSharedLineup(value: string): Promise<SharedLineupData> {
     if (payload.version !== 1 || !payload.lineup || !Array.isArray(payload.lineup.quarters)) {
       throw new Error("라인업 공유 데이터 형식이 올바르지 않습니다.");
     }
-    return { lineup: payload.lineup, teamResult: payload.teamResult ?? null };
+    return normalizeSharedVariants(payload);
   }
 
   if (!value.startsWith(COMPRESSED_LINEUP_PREFIX)) {
@@ -266,7 +298,7 @@ async function decodeSharedLineup(value: string): Promise<SharedLineupData> {
   if (payload.version !== 1 || !payload.lineup || !Array.isArray(payload.lineup.quarters)) {
     throw new Error("라인업 공유 데이터 형식이 올바르지 않습니다.");
   }
-  return { lineup: payload.lineup, teamResult: payload.teamResult ?? null };
+  return normalizeSharedVariants(payload);
 }
 
 async function encodeSharedMatchLineup(match: MatchPlanResult): Promise<string> {
@@ -297,12 +329,12 @@ async function decodeSharedMatchLineup(value: string): Promise<MatchPlanResult> 
   return parsePayload(new TextDecoder().decode(await gunzip(compressed)));
 }
 
-async function buildLineupShareUrl(lineup: LineupResult, teamResult?: TeamBalanceResult | null): Promise<string | null> {
+async function buildLineupShareUrl(lineup: LineupResult, teamContext?: LineupShareTeamContext): Promise<string | null> {
   if (typeof window === "undefined") return null;
   const url = new URL(window.location.href);
   url.search = "";
   const params = new URLSearchParams();
-  params.set(LINEUP_SHARE_HASH_KEY, await encodeSharedLineup(lineup, teamResult));
+  params.set(LINEUP_SHARE_HASH_KEY, await encodeSharedLineup(lineup, teamContext));
   url.hash = params.toString();
   return url.toString();
 }
@@ -486,10 +518,14 @@ export default function Home() {
         if (!encoded) return;
         const shared = await decodeSharedLineup(encoded);
         if (cancelled) return;
+        const sharedVariants = shared.teamVariants ?? (shared.teamResult ? [shared.teamResult] : []);
+        const sharedVariantIdx = sharedVariants.length > 0
+          ? Math.min(Math.max(shared.selectedVariantIdx ?? 0, 0), sharedVariants.length - 1)
+          : 0;
         setPlannerMode("BALANCE");
-        setTeamResult(shared.teamResult ?? null);
-        setTeamVariants(shared.teamResult ? [shared.teamResult] : []);
-        setSelectedVariantIdx(0);
+        setTeamResult(shared.teamResult ?? sharedVariants[sharedVariantIdx] ?? null);
+        setTeamVariants(sharedVariants);
+        setSelectedVariantIdx(sharedVariantIdx);
         setLineupResult(shared.lineup);
         setMatchResult(null);
         setTeamsConfirmed(true);
@@ -977,11 +1013,11 @@ export default function Home() {
     });
   }, []);
 
-  async function copyLineupShareUrl(lineup: LineupResult, sharedTeamResult?: TeamBalanceResult | null, prebuiltUrl?: string | null) {
+  async function copyLineupShareUrl(lineup: LineupResult, teamContext?: LineupShareTeamContext, prebuiltUrl?: string | null) {
     try {
-      const url = prebuiltUrl ?? await buildLineupShareUrl(lineup, sharedTeamResult);
+      const url = prebuiltUrl ?? await buildLineupShareUrl(lineup, teamContext);
       if (!url) return;
-      const shareData = { title: "DEV FC 라인업", text: "DEV FC 라인업 공유", url };
+      const shareData = { title: "DEV FC 라인업", text: "DEV FC 라인업/팀분배 공유", url };
       if (typeof navigator.share === "function" && (!navigator.canShare || navigator.canShare(shareData))) {
         try {
           await navigator.share(shareData);
@@ -1204,6 +1240,8 @@ export default function Home() {
         <LineupResultView
           result={lineupResult}
           teamResult={plannerMode === "BALANCE" ? teamResult : null}
+          teamVariants={plannerMode === "BALANCE" ? teamVariants : []}
+          selectedVariantIdx={plannerMode === "BALANCE" ? selectedVariantIdx : 0}
           copied={copied}
           recordEntryOpen={showRecordEntry}
           onCopyShareUrl={copyLineupShareUrl}
@@ -1927,7 +1965,7 @@ function TeamResultView({
         />
       </div>
       <p className="mt-4 text-xs text-slate-500"><span className="font-bold">*</span> 부포지션으로 배정된 선수 · <span className="font-bold">**</span> 인원 균형을 위해 주·부와 무관한 포지션으로 강제 배정된 선수 · <span className="inline-flex rounded-md border border-fuchsia-200 bg-fuchsia-50 px-1 py-0 text-[10px] font-black leading-none text-fuchsia-700">멀티</span> 공격/미드/수비 중 7점 이상이 2개 이상인 선수</p>
-      {variantCount > 1 && !confirmed && (
+      {variantCount > 1 && (
         <div className="mt-5 flex flex-wrap items-center gap-2 rounded-2xl bg-slate-50 px-3 py-3">
           <span className="text-xs font-semibold text-slate-500">버전</span>
           {Array.from({ length: variantCount }, (_, i) => (
@@ -3093,6 +3131,8 @@ function swapInsideQuarter<T extends SwappableQuarter>(q: T, sec1: LineupSection
 function LineupResultView({
   result,
   teamResult,
+  teamVariants = [],
+  selectedVariantIdx = 0,
   copied,
   recordEntryOpen,
   onCopyShareUrl,
@@ -3101,9 +3141,11 @@ function LineupResultView({
 }: {
   result: LineupResult;
   teamResult?: TeamBalanceResult | null;
+  teamVariants?: TeamBalanceResult[];
+  selectedVariantIdx?: number;
   copied: boolean;
   recordEntryOpen: boolean;
-  onCopyShareUrl: (result: LineupResult, teamResult?: TeamBalanceResult | null, prebuiltUrl?: string | null) => void;
+  onCopyShareUrl: (result: LineupResult, teamContext?: LineupShareTeamContext, prebuiltUrl?: string | null) => void;
   onQuartersChange: (quarters: LineupResult["quarters"]) => void;
   onToggleRecordEntry: () => void;
 }) {
@@ -3145,7 +3187,7 @@ function LineupResultView({
     let active = true;
     setShareUrl(null);
     setShareUrlError(null);
-    void buildLineupShareUrl(currentLineup, teamResult)
+    void buildLineupShareUrl(currentLineup, { teamResult, teamVariants, selectedVariantIdx })
       .then((url) => {
         if (active) setShareUrl(url);
       })
@@ -3155,7 +3197,7 @@ function LineupResultView({
     return () => {
       active = false;
     };
-  }, [currentLineup, teamResult]);
+  }, [currentLineup, teamResult, teamVariants, selectedVariantIdx]);
 
   function handleQuarterSwap(key: string) {
     if (!quarterSwapKey) {
@@ -3364,14 +3406,14 @@ function LineupResultView({
           </button>
           <button
             className="min-h-11 w-full rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 disabled:cursor-wait disabled:opacity-60 sm:w-auto"
-            onClick={() => onCopyShareUrl(currentLineup, teamResult, shareUrl)}
+            onClick={() => onCopyShareUrl(currentLineup, { teamResult, teamVariants, selectedVariantIdx }, shareUrl)}
             disabled={!shareUrl && !shareUrlError}
           >
-            {copied ? "공유 링크 복사됨" : !shareUrl && !shareUrlError ? "공유 링크 준비 중" : "라인업 공유"}
+            {copied ? "공유 링크 복사됨" : !shareUrl && !shareUrlError ? "공유 링크 준비 중" : "라인업/팀분배 공유"}
           </button>
         </div>
       </div>
-      <p className="mt-2 text-xs text-slate-500">같은 쿼터 안에서는 <span className="font-bold">필드, GK, 대기</span> 어디든 서로 자리를 바꿀 수 있어요. 쿼터 순서는 각 피치 아래 <span className="font-bold">쿼터 순서 바꾸기</span> 버튼으로 조정하면 위에서부터 1~4Q로 다시 정렬됩니다. 코치별 미세조정은 <span className="font-bold">라인업 공유</span>로 현재 상태를 공유하세요.</p>
+      <p className="mt-2 text-xs text-slate-500">같은 쿼터 안에서는 <span className="font-bold">필드, GK, 대기</span> 어디든 서로 자리를 바꿀 수 있어요. 쿼터 순서는 각 피치 아래 <span className="font-bold">쿼터 순서 바꾸기</span> 버튼으로 조정하면 위에서부터 1~4Q로 다시 정렬됩니다. 코치별 미세조정과 팀분배 1~10 버전은 <span className="font-bold">라인업/팀분배 공유</span>로 현재 상태를 공유하세요.</p>
       {result.warnings.length > 0 && <div className="mt-4"><MessageBox title="라인업 경고" items={result.warnings} tone="warning" /></div>}
       {recordEntryOpen && <div className="mt-4" data-mrw-panel-mount />}
 
