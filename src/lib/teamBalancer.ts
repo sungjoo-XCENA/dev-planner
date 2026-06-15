@@ -397,31 +397,31 @@ function comparePlayersForPairingSubRole(role: AssignedSubRole, a: FieldPlayer, 
 }
 
 function buildSubRolePairs(players: FieldPlayer[], group: "ATTACK" | "DEFENSE"): Array<[FieldPlayer, FieldPlayer?]> {
-  const roles: AssignedSubRole[] = group === "ATTACK" ? ["CF", "WING"] : ["CB", "WB"];
-  const singles: FieldPlayer[] = [];
+  const remaining = [...players].sort((a, b) => comparePlayersForPairingGroup(group, a, b));
   const pairs: Array<[FieldPlayer, FieldPlayer?]> = [];
 
-  roles.forEach((role) => {
-    const bucket = players
-      .filter((player) => preferredSubRole(player, group) === role)
-      .sort((a, b) => comparePlayersForPairingSubRole(role, a, b));
-
-    while (bucket.length >= 2) {
-      pairs.push([bucket.shift()!, bucket.shift()!]);
+  while (remaining.length > 0) {
+    const first = remaining.shift()!;
+    if (remaining.length === 0) {
+      pairs.push([first]);
+      break;
     }
-    if (bucket.length === 1) singles.push(bucket[0]);
-  });
 
-  singles
-    .sort((a, b) => comparePlayersForPairingGroup(group, a, b))
-    .forEach((player) => {
-      const last = pairs[pairs.length - 1];
-      if (last && !last[1]) {
-        last[1] = player;
-      } else {
-        pairs.push([player]);
+    let bestIndex = 0;
+    let bestCost = Number.POSITIVE_INFINITY;
+    remaining.forEach((candidate, index) => {
+      const sameRolePenalty = preferredSubRole(first, group) === preferredSubRole(candidate, group) ? 0 : 3;
+      const cost = Math.abs(scoreForGroup(group, first) - scoreForGroup(group, candidate)) * 100
+        + sameRolePenalty
+        + Math.abs(subRoleScore(first, preferredSubRole(first, group)) - subRoleScore(candidate, preferredSubRole(candidate, group)));
+      if (cost < bestCost) {
+        bestCost = cost;
+        bestIndex = index;
       }
     });
+    const [second] = remaining.splice(bestIndex, 1);
+    pairs.push([first, second]);
+  }
 
   return pairs;
 }
