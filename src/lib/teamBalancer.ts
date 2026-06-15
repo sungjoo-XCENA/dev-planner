@@ -99,6 +99,12 @@ function compareForMidPool(a: FieldPlayer, b: FieldPlayer): number {
 }
 
 function compareForStrongPool(group: PositionGroup, a: FieldPlayer, b: FieldPlayer): number {
+  const aBestGroup = bestScoringGroup(a);
+  const bBestGroup = bestScoringGroup(b);
+  const aBestFitsGroup = aBestGroup === group;
+  const bBestFitsGroup = bBestGroup === group;
+  if (aBestFitsGroup !== bBestFitsGroup) return aBestFitsGroup ? -1 : 1;
+
   const aFitRank = groupFitRank(a, group);
   const bFitRank = groupFitRank(b, group);
   const forcedRankDiff = (aFitRank >= 4 ? 1 : 0) - (bFitRank >= 4 ? 1 : 0);
