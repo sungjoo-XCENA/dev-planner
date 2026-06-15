@@ -19,7 +19,26 @@ export const runtime = "nodejs";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
+  const list = searchParams.get("list") === "1";
   const matchId = searchParams.get("matchId")?.trim() ?? "";
+
+  if (list) {
+    const limit = Math.min(Math.max(Number(searchParams.get("limit") ?? 240) || 240, 1), 500);
+    try {
+      const records = await firebaseGetJson(["MatchInfo"]);
+      return NextResponse.json(matchRecordListResponse(records, limit), {
+        headers: { "cache-control": "no-store" },
+      });
+    } catch (error) {
+      return NextResponse.json(
+        {
+          error: "Failed to list match records",
+          detail: error instanceof Error ? error.message : String(error),
+        },
+        { status: 502 },
+      );
+    }
+  }
 
   if (!matchId || !/^[A-Za-z0-9_-]{6,40}$/.test(matchId)) {
     return NextResponse.json({ error: "Invalid matchId" }, { status: 400 });
@@ -43,6 +62,44 @@ export async function GET(request: Request) {
       { status: 502 },
     );
   }
+}
+
+function matchRecordListResponse(records: unknown, limit: number) {
+  const root = records && typeof records === "object" ? (records as Record<string, unknown>) : {};
+  const items = Object.entries(root)
+    .map(([matchId, value]) => {
+      const record = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+      const planner = record.PlannerQuarterInfo && typeof record.PlannerQuarterInfo === "object"
+        ? (record.PlannerQuarterInfo as Record<string, unknown>)
+        : {};
+      return {
+        matchId,
+        matchDate: stringValue(record.MatchDate) || matchId,
+        matchTime: stringValue(record.MatchTime),
+        matchKind: plannerMatchKind(planner.matchKind) ?? legacyMatchKind(record.MatchType),
+        venueName: stringValue(planner.venueName) || stringValue(record.Comment),
+        homeTeamName: stringValue(record.HomeTeamName),
+        awayTeamName: stringValue(record.AwayTeamName),
+        homeGoal: numberValue(record.HomeGoal),
+        awayGoal: numberValue(record.AwayGoal),
+        hasPlannerQuarterInfo: Boolean(record.PlannerQuarterInfo),
+        recordMode: plannerRecordMode(planner.recordMode),
+      };
+    })
+    .filter((item) => /^[A-Za-z0-9_-]{6,40}$/.test(item.matchId))
+    .sort((a, b) => compactDateForSort(b.matchDate || b.matchId).localeCompare(compactDateForSort(a.matchDate || a.matchId)))
+    .slice(0, limit);
+
+  return {
+    ok: true,
+    count: items.length,
+    items,
+  };
+}
+
+function compactDateForSort(value: unknown): string {
+  const digits = String(value ?? "").replace(/\D/g, "").slice(0, 8);
+  return digits.padEnd(8, "0");
 }
 
 export async function DELETE(request: Request) {
