@@ -115,6 +115,10 @@ export async function DELETE(request: Request) {
   try {
     const existing = await firebaseGetJson(["MatchInfo", matchId]);
     await firebaseDeleteJson(["MatchInfo", matchId]);
+    const remaining = await firebaseGetJson(["MatchInfo", matchId]);
+    if (remaining) {
+      throw new Error(`Firebase delete verification failed for ${path}`);
+    }
 
     return NextResponse.json(
       {

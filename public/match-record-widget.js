@@ -1036,6 +1036,9 @@
     var refreshAction = canRefreshCurrentLineup()
       ? "<button type=\"button\" class=\"mrw-button mrw-secondary\" data-mrw-action=\"refresh-lineup\">라인업 갱신</button>"
       : "";
+    var deleteAction = state.editingMatchId
+      ? "<button type=\"button\" class=\"mrw-button mrw-danger\" data-mrw-action=\"delete-record\">삭제</button>"
+      : "";
 
     var panel = existing || document.createElement("div");
     panel.id = PANEL_ID;
@@ -1072,7 +1075,7 @@
       "</div>",
       renderRecentLog(score),
       "</div>",
-      "<div class=\"mrw-actions\"><button type=\"button\" class=\"mrw-button mrw-secondary\" data-mrw-action=\"preview\">기록 확인</button><button type=\"button\" class=\"mrw-button mrw-primary\" data-mrw-action=\"save\">기록 저장</button>" + refreshAction + "<button type=\"button\" class=\"mrw-button mrw-danger\" data-mrw-action=\"delete-record\">삭제</button></div>",
+      "<div class=\"mrw-actions\"><button type=\"button\" class=\"mrw-button mrw-secondary\" data-mrw-action=\"preview\">기록 확인</button><button type=\"button\" class=\"mrw-button mrw-primary\" data-mrw-action=\"save\">기록 저장</button>" + refreshAction + deleteAction + "</div>",
       state.status ? "<div class=\"mrw-status\">" + escapeHtml(state.status) + "</div>" : "",
       state.editModalOpen ? renderEditModal(form) : "",
     ].join("");
@@ -1809,6 +1812,18 @@
     return data.record || null;
   }
 
+  function removeRecordIndexItem(matchId) {
+    var targetId = String(matchId || "");
+    var targetDate = compactDate(targetId);
+    state.recordIndex.items = (Array.isArray(state.recordIndex.items) ? state.recordIndex.items : []).filter(function (item) {
+      if (!item) return false;
+      var itemId = String(item.matchId || "");
+      var itemDate = compactDate(item.matchDate || item.matchId);
+      return itemId !== targetId && itemDate !== targetDate;
+    });
+    state.recordIndex.loaded = false;
+  }
+
   function resetToTeamRecordMatch(matchId, record, status) {
     resetRecordEntryState();
     state.editingRecordOnly = true;
@@ -1965,14 +1980,25 @@
       });
       var data = await response.json().catch(function () { return {}; });
       if (!response.ok) throw new Error(data.detail || data.error || "경기 기록 삭제에 실패했습니다.");
-      state.recordIndex.loaded = false;
+      removeRecordIndexItem(data.matchId || matchId);
 
-      resetToEmptyMatch(matchId, [
-        data.message || "해당 날짜 기록을 삭제했습니다.",
-        "기록 키: " + (data.matchId || matchId),
-        "저장된 기록 기준으로 빈 상태를 보여줍니다.",
-        "필요한 내용을 입력한 뒤 기록 저장을 눌러 새 기록으로 저장할 수 있습니다.",
-      ].join("\n"), true);
+      var deletedMatchId = data.matchId || matchId;
+      var deletedDate = dateInputFromFirebase(deletedMatchId) || state.editDate || todayInputValue();
+      var teamRecord = await fetchTeamRecord(deletedDate).catch(function () { return null; });
+      if (teamRecord) {
+        resetToTeamRecordMatch(deletedMatchId, teamRecord, [
+          data.message || "해당 날짜 경기 기록을 삭제했습니다.",
+          "기록 키: " + deletedMatchId,
+          "팀 확정 기록은 남아 있어 기록 미입력 상태로 전환했습니다.",
+        ].join("\n"));
+      } else {
+        resetToEmptyMatch(deletedMatchId, [
+          data.message || "해당 날짜 기록을 삭제했습니다.",
+          "기록 키: " + deletedMatchId,
+          "해당 날짜에 남은 팀 확정 기록이 없습니다.",
+        ].join("\n"), true);
+      }
+      loadRecordIndex(true);
     } catch (error) {
       state.status = error && error.message ? error.message : String(error);
       renderPanel();
