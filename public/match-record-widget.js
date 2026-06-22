@@ -27,7 +27,10 @@
     recordLoading: false,
     editModalOpen: false,
     editDate: todayInputValue(),
-    recordIndex: { loaded: false, loading: false, error: "", items: [] },
+    recordIndex: { loaded: false, loading: false, error: "", teamError: "", items: [], teamItems: [] },
+    selectedTeamRecord: null,
+    selectedTeamRecordLoading: false,
+    selectedTeamRecordError: "",
     options: { loaded: false, stadiums: [], teams: [], error: "" },
   };
 
@@ -137,20 +140,36 @@
       ".mrw-calendar-day[disabled]{cursor:default;opacity:.35;background:#f8fafc}",
       ".mrw-calendar-day.mrw-has-record{border-color:#bfdbfe;background:#eff6ff;color:#1d4ed8}",
       ".mrw-calendar-day.mrw-has-record:after{content:\"\";position:absolute;left:50%;bottom:5px;width:5px;height:5px;border-radius:999px;background:#2563eb;transform:translateX(-50%)}",
+      ".mrw-calendar-day.mrw-has-team-record{border-color:#bbf7d0;background:#f0fdf4;color:#166534}",
+      ".mrw-calendar-day.mrw-has-team-record:before{content:\"\";position:absolute;left:calc(50% - 5px);bottom:5px;width:5px;height:5px;border-radius:999px;background:#16a34a;transform:translateX(-50%)}",
+      ".mrw-calendar-day.mrw-has-record.mrw-has-team-record{background:linear-gradient(135deg,#eff6ff 0 50%,#f0fdf4 50% 100%)}",
       ".mrw-calendar-day.mrw-selected{border-color:#0f172a;background:#0f172a;color:#fff}",
-      ".mrw-calendar-day.mrw-selected:after{background:#fff}",
+      ".mrw-calendar-day.mrw-selected:after,.mrw-calendar-day.mrw-selected:before{background:#fff}",
       ".mrw-record-list{display:grid;gap:7px}",
       ".mrw-record-list-title{display:flex;align-items:center;justify-content:space-between;gap:8px;color:#0f172a;font-size:13px;font-weight:950}",
       ".mrw-record-chip{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px;border:1px solid #e2e8f0;border-radius:14px;background:#fff;padding:9px 10px;text-align:left;color:#0f172a;cursor:pointer}",
       ".mrw-record-chip:hover{border-color:#94a3b8;background:#f8fafc}",
+      ".mrw-team-record-chip{border-color:#bbf7d0;background:#f0fdf4}",
       ".mrw-record-chip-main{min-width:0}",
       ".mrw-record-date{font-size:13px;font-weight:950}",
       ".mrw-record-sub{margin-top:2px;color:#64748b;font-size:11px;font-weight:850;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
       ".mrw-record-score{border-radius:999px;background:#e2e8f0;color:#0f172a;padding:5px 8px;font-size:11px;font-weight:950;white-space:nowrap}",
+      ".mrw-team-detail{display:grid;gap:10px;border:1px solid #bbf7d0;border-radius:16px;background:#f0fdf4;padding:12px}",
+      ".mrw-team-detail-head{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;flex-wrap:wrap}",
+      ".mrw-team-detail-title{font-size:13px;font-weight:950;color:#14532d}",
+      ".mrw-team-detail-sub{margin-top:2px;color:#166534;font-size:11px;font-weight:850}",
+      ".mrw-team-actions{display:flex;gap:6px;flex-wrap:wrap}",
+      ".mrw-team-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}",
+      ".mrw-team-box{border:1px solid #d9f99d;border-radius:14px;background:#fff;padding:9px}",
+      ".mrw-team-box-title{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:7px;font-size:12px;font-weight:950;color:#0f172a}",
+      ".mrw-team-group{display:grid;gap:4px;margin-top:6px}",
+      ".mrw-team-group-label{font-size:10px;font-weight:950;color:#64748b}",
+      ".mrw-team-player-list{display:flex;flex-wrap:wrap;gap:4px}",
+      ".mrw-team-player{border-radius:999px;background:#f1f5f9;padding:3px 6px;color:#334155;font-size:10px;font-weight:900}",
       ".mrw-modal-foot{display:flex;gap:8px;justify-content:flex-end;background:#fff;border-top:1px solid #e2e8f0;padding:12px 14px}",
       ".mrw-icon-close{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;border:0;border-radius:999px;background:#e2e8f0;color:#334155;font-size:20px;font-weight:950;line-height:1;cursor:pointer}",
       ".mrw-empty{color:#94a3b8;font-size:12px;font-weight:800}",
-      "@media(max-width:760px){.mrw-card{padding:14px;border-radius:18px}.mrw-title{font-size:18px}.mrw-meta{grid-template-columns:1fr}.mrw-wide{grid-column:1/-1}.mrw-summary{grid-template-columns:1fr}.mrw-summary-item:last-child{grid-column:auto}.mrw-field{max-width:100%;overflow:hidden}.mrw-field input,.mrw-field select,.mrw-field textarea,.mrw-fixed{min-height:42px;width:100%;max-width:100%;min-width:0;min-inline-size:0}.mrw-field input[type=date],.mrw-field input[type=time]{appearance:none;-webkit-appearance:none;text-align:left}.mrw-mode-head{align-items:stretch}.mrw-scope{width:100%}.mrw-scope select{flex:1}.mrw-layout{grid-template-columns:1fr}.mrw-scoreboard{padding:10px}.mrw-score-num{font-size:40px}.mrw-score-row{grid-template-columns:1fr;gap:10px}.mrw-side{min-height:76px;padding:12px 38px}.mrw-team-name{font-size:12px}.mrw-score-minus{right:6px;top:6px;width:28px;height:28px;font-size:17px}.mrw-stats{grid-template-columns:1fr}.mrw-stat-list{gap:5px}.mrw-stat-row{grid-template-columns:minmax(68px,1fr) auto auto;gap:4px;padding:6px}.mrw-stat-name{font-size:12px;line-height:1.2}.mrw-name{white-space:normal}.mrw-role{padding:1px 5px;font-size:9px}.mrw-player-remove{padding:3px 6px;font-size:9px}.mrw-counter{grid-template-columns:18px 20px 14px 20px;gap:1px;padding:3px;min-width:76px}.mrw-counter-label{font-size:9px;line-height:1}.mrw-counter button{width:20px;height:20px;font-size:12px}.mrw-counter-value{font-size:12px}.mrw-add-team,.mrw-add-player,.mrw-edit-load-row{grid-template-columns:1fr}.mrw-add-team button,.mrw-add-player button,.mrw-edit-load-row button{min-height:38px}.mrw-events{max-height:none}.mrw-actions .mrw-button{flex:1 1 100%}.mrw-modal-backdrop{align-items:flex-end;padding:0}.mrw-modal{width:100%;border-radius:22px 22px 0 0;max-height:84vh}}",
+      "@media(max-width:760px){.mrw-card{padding:14px;border-radius:18px}.mrw-title{font-size:18px}.mrw-meta{grid-template-columns:1fr}.mrw-wide{grid-column:1/-1}.mrw-summary{grid-template-columns:1fr}.mrw-summary-item:last-child{grid-column:auto}.mrw-field{max-width:100%;overflow:hidden}.mrw-field input,.mrw-field select,.mrw-field textarea,.mrw-fixed{min-height:42px;width:100%;max-width:100%;min-width:0;min-inline-size:0}.mrw-field input[type=date],.mrw-field input[type=time]{appearance:none;-webkit-appearance:none;text-align:left}.mrw-mode-head{align-items:stretch}.mrw-scope{width:100%}.mrw-scope select{flex:1}.mrw-layout{grid-template-columns:1fr}.mrw-scoreboard{padding:10px}.mrw-score-num{font-size:40px}.mrw-score-row{grid-template-columns:1fr;gap:10px}.mrw-side{min-height:76px;padding:12px 38px}.mrw-team-name{font-size:12px}.mrw-score-minus{right:6px;top:6px;width:28px;height:28px;font-size:17px}.mrw-stats{grid-template-columns:1fr}.mrw-stat-list{gap:5px}.mrw-stat-row{grid-template-columns:minmax(68px,1fr) auto auto;gap:4px;padding:6px}.mrw-stat-name{font-size:12px;line-height:1.2}.mrw-name{white-space:normal}.mrw-role{padding:1px 5px;font-size:9px}.mrw-player-remove{padding:3px 6px;font-size:9px}.mrw-counter{grid-template-columns:18px 20px 14px 20px;gap:1px;padding:3px;min-width:76px}.mrw-counter-label{font-size:9px;line-height:1}.mrw-counter button{width:20px;height:20px;font-size:12px}.mrw-counter-value{font-size:12px}.mrw-add-team,.mrw-add-player,.mrw-edit-load-row{grid-template-columns:1fr}.mrw-add-team button,.mrw-add-player button,.mrw-edit-load-row button{min-height:38px}.mrw-events{max-height:none}.mrw-actions .mrw-button{flex:1 1 100%}.mrw-team-grid{grid-template-columns:1fr}.mrw-modal-backdrop{align-items:flex-end;padding:0}.mrw-modal{width:100%;border-radius:22px 22px 0 0;max-height:84vh}}",
     ].join("\n");
     document.head.appendChild(style);
   }
@@ -779,6 +798,9 @@
     state.recordLoading = false;
     state.editingMatchId = "";
     state.selectedScope = "";
+    state.selectedTeamRecord = null;
+    state.selectedTeamRecordLoading = false;
+    state.selectedTeamRecordError = "";
   }
 
   function emptyFormForMatch(matchId) {
@@ -844,26 +866,43 @@
   async function loadRecordIndex(force) {
     if (state.recordIndex.loading) return;
     if (state.recordIndex.loaded && !force) return;
-    state.recordIndex = { loaded: false, loading: true, error: "", items: state.recordIndex.items || [] };
+    state.recordIndex = {
+      loaded: false,
+      loading: true,
+      error: "",
+      teamError: "",
+      items: state.recordIndex.items || [],
+      teamItems: state.recordIndex.teamItems || [],
+    };
     renderPanel();
+    var matchItems = [];
+    var teamItems = [];
+    var matchError = "";
+    var teamError = "";
     try {
       var response = await fetch("/api/match-record?list=1&limit=240", { method: "GET", headers: { accept: "application/json" }, cache: "no-store" });
       var data = await response.json().catch(function () { return {}; });
       if (!response.ok) throw new Error(data.detail || data.error || "기록 목록을 불러오지 못했습니다.");
-      state.recordIndex = {
-        loaded: true,
-        loading: false,
-        error: "",
-        items: Array.isArray(data.items) ? data.items : [],
-      };
+      matchItems = Array.isArray(data.items) ? data.items : [];
     } catch (error) {
-      state.recordIndex = {
-        loaded: true,
-        loading: false,
-        error: error && error.message ? error.message : String(error),
-        items: [],
-      };
+      matchError = error && error.message ? error.message : String(error);
     }
+    try {
+      var teamResponse = await fetch("/api/team-records", { method: "GET", headers: { accept: "application/json" }, cache: "no-store" });
+      var teamData = await teamResponse.json().catch(function () { return {}; });
+      if (!teamResponse.ok) throw new Error(teamData.detail || teamData.error || "팀 확정 기록을 불러오지 못했습니다.");
+      teamItems = Array.isArray(teamData.records) ? teamData.records : [];
+    } catch (error) {
+      teamError = error && error.message ? error.message : String(error);
+    }
+    state.recordIndex = {
+      loaded: true,
+      loading: false,
+      error: matchError,
+      teamError: teamError,
+      items: matchItems,
+      teamItems: teamItems,
+    };
     renderPanel();
   }
 
@@ -1245,6 +1284,102 @@
     return item && item.matchKind === "MATCH" ? "A매치" : "자체전";
   }
 
+  function teamRecordItems() {
+    var items = Array.isArray(state.recordIndex.teamItems) ? state.recordIndex.teamItems : [];
+    return items.slice().sort(function (a, b) {
+      return String(b.date || "").localeCompare(String(a.date || ""));
+    });
+  }
+
+  function teamRecordDateInput(item) {
+    var date = String((item && item.date) || "");
+    return /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : "";
+  }
+
+  function teamRecordSize(groups) {
+    groups = groups || {};
+    return ["attack", "mid", "defense"].reduce(function (total, key) {
+      return total + (Array.isArray(groups[key]) ? groups[key].length : 0);
+    }, 0);
+  }
+
+  function teamRecordPlayers(groups) {
+    groups = groups || {};
+    return uniqueNames(["attack", "mid", "defense"].reduce(function (acc, key) {
+      return acc.concat((Array.isArray(groups[key]) ? groups[key] : []).map(function (player) {
+        if (player && typeof player === "object") {
+          rememberRole(player.name, player.staffRole || roleFromText(player.name));
+          return player.name;
+        }
+        return player;
+      }));
+    }, []));
+  }
+
+  function loadedPlayersFromTeamRecord(record) {
+    var teams = (record && record.teams) || {};
+    return {
+      A: teamRecordPlayers(teams.A),
+      B: teamRecordPlayers(teams.B),
+    };
+  }
+
+  function teamRecordGroupLabel(key) {
+    if (key === "attack") return "공격";
+    if (key === "mid") return "미드";
+    return "수비";
+  }
+
+  function renderTeamRecordGroup(groups, key) {
+    var players = Array.isArray(groups && groups[key]) ? groups[key] : [];
+    return [
+      "<div class=\"mrw-team-group\"><div class=\"mrw-team-group-label\">" + teamRecordGroupLabel(key) + " " + players.length + "명</div>",
+      "<div class=\"mrw-team-player-list\">",
+      players.length ? players.map(function (player) {
+        var name = player && typeof player === "object" ? player.name : player;
+        return "<span class=\"mrw-team-player\">" + escapeHtml(name || "") + "</span>";
+      }).join("") : "<span class=\"mrw-team-player\">없음</span>",
+      "</div></div>",
+    ].join("");
+  }
+
+  function renderTeamRecordTeam(record, team) {
+    var groups = record && record.teams ? record.teams[team] : null;
+    var total = teamRecordSize(groups);
+    return [
+      "<div class=\"mrw-team-box\"><div class=\"mrw-team-box-title\"><span>" + teamLabel(team) + "</span><span>" + total + "명</span></div>",
+      renderTeamRecordGroup(groups, "attack"),
+      renderTeamRecordGroup(groups, "mid"),
+      renderTeamRecordGroup(groups, "defense"),
+      "</div>",
+    ].join("");
+  }
+
+  function renderSelectedTeamRecord() {
+    if (state.selectedTeamRecordLoading) {
+      return "<div class=\"mrw-team-detail\"><div class=\"mrw-empty\">팀 확정 기록을 불러오는 중입니다.</div></div>";
+    }
+    if (state.selectedTeamRecordError) {
+      return "<div class=\"mrw-team-detail\"><div class=\"mrw-empty\">" + escapeHtml(state.selectedTeamRecordError) + "</div></div>";
+    }
+    var record = state.selectedTeamRecord;
+    if (!record) return "";
+    var aCount = teamRecordSize(record.teams && record.teams.A);
+    var bCount = teamRecordSize(record.teams && record.teams.B);
+    var shareUrl = String(record.shareUrl || "");
+    var openAction = shareUrl
+      ? "<a class=\"mrw-small-btn\" href=\"" + escapeHtml(shareUrl) + "\" target=\"_blank\" rel=\"noreferrer\">라인업 열기</a><button type=\"button\" class=\"mrw-small-btn\" data-mrw-action=\"copy-team-record-url\">URL 복사</button>"
+      : "";
+    return [
+      "<div class=\"mrw-team-detail\">",
+      "<div class=\"mrw-team-detail-head\"><div><div class=\"mrw-team-detail-title\">" + escapeHtml(record.date) + " 팀 확정 기록</div>",
+      "<div class=\"mrw-team-detail-sub\">형광 " + aCount + "명 · 주황 " + bCount + "명 · 이 팀 기준으로 스코어/골 도움 입력 가능</div></div>",
+      "<div class=\"mrw-team-actions\">" + openAction + "<button type=\"button\" class=\"mrw-small-btn\" data-mrw-action=\"use-team-record\">이 팀으로 입력</button></div></div>",
+      "<div class=\"mrw-team-grid\">" + renderTeamRecordTeam(record, "A") + renderTeamRecordTeam(record, "B") + "</div>",
+      "</div>",
+    ].join("");
+  }
+
   function renderRecordCalendar(form) {
     var selected = state.editDate || form.date || todayInputValue();
     var selectedDate = new Date(selected + "T00:00:00");
@@ -1259,6 +1394,11 @@
       var date = recordDateInput(item);
       if (date) byDate[date] = item;
     });
+    var teamByDate = {};
+    teamRecordItems().forEach(function (item) {
+      var date = teamRecordDateInput(item);
+      if (date) teamByDate[date] = item;
+    });
     var cells = ["일", "월", "화", "수", "목", "금", "토"].map(function (label) {
       return "<div class=\"mrw-calendar-dow\">" + label + "</div>";
     });
@@ -1268,10 +1408,16 @@
     for (var day = 1; day <= daysInMonth; day += 1) {
       var dateValue = year + "-" + String(month + 1).padStart(2, "0") + "-" + String(day).padStart(2, "0");
       var item = byDate[dateValue];
-      var cls = "mrw-calendar-day" + (item ? " mrw-has-record" : "") + (dateValue === selected ? " mrw-selected" : "");
-      var title = item ? recordTeamTitle(item) + " " + recordScoreText(item) : "기록 없음";
+      var teamItem = teamByDate[dateValue];
+      var cls = "mrw-calendar-day" + (item ? " mrw-has-record" : "") + (teamItem ? " mrw-has-team-record" : "") + (dateValue === selected ? " mrw-selected" : "");
+      var title = item
+        ? recordTeamTitle(item) + " " + recordScoreText(item)
+        : teamItem
+          ? "팀 확정 기록"
+          : "기록 없음";
       var attrs = " data-mrw-calendar-date=\"" + dateValue + "\"";
       if (item) attrs += " data-mrw-record-id=\"" + escapeHtml(item.matchId) + "\"";
+      if (teamItem) attrs += " data-mrw-team-record-date=\"" + escapeHtml(dateValue) + "\"";
       cells.push("<button type=\"button\" class=\"" + cls + "\"" + attrs + " title=\"" + escapeHtml(title) + "\">" + day + "</button>");
     }
     return [
@@ -1284,40 +1430,70 @@
 
   function renderRecentRecordList() {
     if (state.recordIndex.loading) return "<div class=\"mrw-record-list\"><div class=\"mrw-empty\">저장된 기록을 불러오는 중입니다.</div></div>";
-    if (state.recordIndex.error) return "<div class=\"mrw-record-list\"><div class=\"mrw-empty\">" + escapeHtml(state.recordIndex.error) + "</div></div>";
     var items = recordItems().slice(0, 10);
-    if (!items.length) return "<div class=\"mrw-record-list\"><div class=\"mrw-empty\">아직 저장된 기록이 없습니다.</div></div>";
-    return [
-      "<div class=\"mrw-record-list\"><div class=\"mrw-record-list-title\"><span>최근 저장 기록</span><span>" + state.recordIndex.items.length + "경기</span></div>",
-      items.map(function (item) {
-        var date = recordDateInput(item);
-        return [
-          "<button type=\"button\" class=\"mrw-record-chip\" data-mrw-load-record-id=\"" + escapeHtml(item.matchId) + "\" data-mrw-load-record-date=\"" + escapeHtml(date) + "\">",
-          "<span class=\"mrw-record-chip-main\"><span class=\"mrw-record-date\">" + escapeHtml(recordDateLabel(item.matchDate || item.matchId)) + " · " + recordKindText(item) + "</span>",
-          "<span class=\"mrw-record-sub\">" + escapeHtml(recordTeamTitle(item)) + (item.venueName ? " · " + escapeHtml(item.venueName) : "") + "</span></span>",
-          "<span class=\"mrw-record-score\">" + escapeHtml(recordScoreText(item)) + "</span>",
-          "</button>",
-        ].join("");
-      }).join(""),
-      "</div>",
-    ].join("");
+    var teamItems = teamRecordItems().slice(0, 10);
+    var sections = [];
+    if (state.recordIndex.error) {
+      sections.push("<div class=\"mrw-record-list\"><div class=\"mrw-empty\">" + escapeHtml(state.recordIndex.error) + "</div></div>");
+    } else if (items.length) {
+      sections.push([
+        "<div class=\"mrw-record-list\"><div class=\"mrw-record-list-title\"><span>최근 저장 기록</span><span>" + state.recordIndex.items.length + "경기</span></div>",
+        items.map(function (item) {
+          var date = recordDateInput(item);
+          return [
+            "<button type=\"button\" class=\"mrw-record-chip\" data-mrw-load-record-id=\"" + escapeHtml(item.matchId) + "\" data-mrw-load-record-date=\"" + escapeHtml(date) + "\">",
+            "<span class=\"mrw-record-chip-main\"><span class=\"mrw-record-date\">" + escapeHtml(recordDateLabel(item.matchDate || item.matchId)) + " · " + recordKindText(item) + "</span>",
+            "<span class=\"mrw-record-sub\">" + escapeHtml(recordTeamTitle(item)) + (item.venueName ? " · " + escapeHtml(item.venueName) : "") + "</span></span>",
+            "<span class=\"mrw-record-score\">" + escapeHtml(recordScoreText(item)) + "</span>",
+            "</button>",
+          ].join("");
+        }).join(""),
+        "</div>",
+      ].join(""));
+    }
+    if (state.recordIndex.teamError) {
+      sections.push("<div class=\"mrw-record-list\"><div class=\"mrw-empty\">" + escapeHtml(state.recordIndex.teamError) + "</div></div>");
+    } else if (teamItems.length) {
+      sections.push([
+        "<div class=\"mrw-record-list\"><div class=\"mrw-record-list-title\"><span>팀 확정 기록</span><span>" + state.recordIndex.teamItems.length + "건</span></div>",
+        teamItems.map(function (item) {
+          var date = teamRecordDateInput(item);
+          var aCount = Number(item.teamAPlayers) || 0;
+          var bCount = Number(item.teamBPlayers) || 0;
+          return [
+            "<button type=\"button\" class=\"mrw-record-chip mrw-team-record-chip\" data-mrw-load-team-record-date=\"" + escapeHtml(date) + "\">",
+            "<span class=\"mrw-record-chip-main\"><span class=\"mrw-record-date\">" + escapeHtml(recordDateLabel(date)) + " · 팀확정</span>",
+            "<span class=\"mrw-record-sub\">마지막 확정본 · 형광 " + aCount + "명 · 주황 " + bCount + "명</span></span>",
+            "<span class=\"mrw-record-score\">" + aCount + " : " + bCount + "</span>",
+            "</button>",
+          ].join("");
+        }).join(""),
+        "</div>",
+      ].join(""));
+    }
+    if (!sections.length) return "<div class=\"mrw-record-list\"><div class=\"mrw-empty\">아직 저장된 기록이 없습니다.</div></div>";
+    return sections.join("");
   }
 
   function renderRecordOverview(form) {
     var items = recordItems();
+    var teamItems = teamRecordItems();
     var latest = items[0];
     var summary = state.recordIndex.loading
       ? "저장된 기록을 확인하는 중"
       : state.recordIndex.error
         ? "기록 목록을 불러오지 못했습니다"
         : items.length
-          ? "최근 기록 " + escapeHtml(recordDateLabel(latest.matchDate || latest.matchId)) + " · 총 " + items.length + "경기"
-          : "저장된 기록 없음";
+          ? "최근 기록 " + escapeHtml(recordDateLabel(latest.matchDate || latest.matchId)) + " · 경기 " + items.length + "건 · 팀확정 " + teamItems.length + "건"
+          : teamItems.length
+            ? "팀확정 기록 " + teamItems.length + "건"
+            : "저장된 기록 없음";
     return [
       "<div class=\"mrw-record-overview\">",
       "<div class=\"mrw-record-summary\"><span>" + summary + "</span><button type=\"button\" class=\"mrw-small-btn\" data-mrw-action=\"refresh-record-index\">새로고침</button></div>",
       renderRecordCalendar(form),
       renderRecentRecordList(),
+      renderSelectedTeamRecord(),
       "</div>",
     ].join("");
   }
@@ -1450,6 +1626,16 @@
     Array.prototype.forEach.call(panel.querySelectorAll("[data-mrw-calendar-date]"), function (button) {
       button.addEventListener("click", function () {
         state.editDate = button.getAttribute("data-mrw-calendar-date") || state.editDate || todayInputValue();
+        var recordId = button.getAttribute("data-mrw-record-id");
+        var teamDate = button.getAttribute("data-mrw-team-record-date");
+        if (recordId) {
+          loadRecord(recordId);
+          return;
+        }
+        if (teamDate) {
+          loadTeamRecordForEdit(teamDate);
+          return;
+        }
         renderPanel();
       });
     });
@@ -1459,8 +1645,20 @@
         loadRecord(button.getAttribute("data-mrw-load-record-id"));
       });
     });
+    Array.prototype.forEach.call(panel.querySelectorAll("[data-mrw-load-team-record-date]"), function (button) {
+      button.addEventListener("click", function () {
+        loadTeamRecordForEdit(button.getAttribute("data-mrw-load-team-record-date") || state.editDate || todayInputValue());
+      });
+    });
     var refreshRecordIndex = panel.querySelector("[data-mrw-action=refresh-record-index]");
     if (refreshRecordIndex) refreshRecordIndex.addEventListener("click", function () { loadRecordIndex(true); });
+    var useTeamRecord = panel.querySelector("[data-mrw-action=use-team-record]");
+    if (useTeamRecord) useTeamRecord.addEventListener("click", function () {
+      if (!state.selectedTeamRecord) return;
+      loadTeamRecordForEdit(state.selectedTeamRecord.date);
+    });
+    var copyTeamRecordUrl = panel.querySelector("[data-mrw-action=copy-team-record-url]");
+    if (copyTeamRecordUrl) copyTeamRecordUrl.addEventListener("click", copySelectedTeamRecordUrl);
     var loadEditDate = panel.querySelector("[data-mrw-action=load-edit-date]");
     if (loadEditDate) loadEditDate.addEventListener("click", loadEditRecordByDate);
     var refreshLineup = panel.querySelector("[data-mrw-action=refresh-lineup]");
@@ -1584,6 +1782,71 @@
     return lines.length ? "개인기록:\n" + lines.join("\n") : "개인기록: 입력 없음";
   }
 
+  async function fetchTeamRecord(date) {
+    var response = await fetch("/api/team-records?date=" + encodeURIComponent(date), { method: "GET", headers: { accept: "application/json" }, cache: "no-store" });
+    var data = await response.json().catch(function () { return {}; });
+    if (!response.ok) throw new Error(data.detail || data.error || "팀 확정 기록을 불러오지 못했습니다.");
+    return data.record || null;
+  }
+
+  function resetToTeamRecordMatch(matchId, record, status) {
+    resetRecordEntryState();
+    state.editingRecordOnly = true;
+    state.loadedPlayers = loadedPlayersFromTeamRecord(record);
+    state.loadedForm = emptyFormForMatch(matchId);
+    state.loadedForm.matchKind = "SELF";
+    state.matchKind = "SELF";
+    state.selectedTeamRecord = record;
+    state.editModalOpen = false;
+    state.status = status;
+    removeExistingPanel();
+    renderPanel();
+  }
+
+  async function loadTeamRecordForEdit(date) {
+    if (!date) return;
+    try {
+      state.editDate = date;
+      state.selectedTeamRecordLoading = true;
+      state.selectedTeamRecordError = "";
+      renderPanel();
+      var record = await fetchTeamRecord(date);
+      state.selectedTeamRecordLoading = false;
+      if (!record) {
+        state.selectedTeamRecord = null;
+        state.selectedTeamRecordError = "선택한 날짜의 팀 확정 기록이 없습니다.";
+        renderPanel();
+        return;
+      }
+      var matchId = compactDate(date);
+      resetToTeamRecordMatch(matchId, record, [
+        "팀 확정 기록을 불러왔습니다.",
+        "기록 키: " + matchId,
+        "이 팀 구성으로 스코어와 개인 골/도움을 입력한 뒤 기록 저장을 누르세요.",
+      ].join("\n"));
+    } catch (error) {
+      state.selectedTeamRecordLoading = false;
+      state.selectedTeamRecordError = error && error.message ? error.message : String(error);
+      renderPanel();
+    }
+  }
+
+  async function copySelectedTeamRecordUrl() {
+    var record = state.selectedTeamRecord;
+    if (!record || !record.shareUrl) return;
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(record.shareUrl);
+      } else {
+        window.prompt("기록 URL을 복사하세요.", record.shareUrl);
+      }
+      state.status = "팀 확정 기록 URL을 복사했습니다.";
+    } catch (error) {
+      state.status = error && error.message ? error.message : String(error);
+    }
+    renderPanel();
+  }
+
   async function loadRecord(matchIdOverride) {
     try {
       var loadSeq = state.recordLoadSeq + 1;
@@ -1609,6 +1872,16 @@
       state.recordLoading = false;
       if (!response.ok) {
         if (response.status === 404 || data.error === "MATCH_NOT_FOUND") {
+          var teamRecordDate = dateInputFromFirebase(matchId) || state.editDate;
+          var teamRecord = teamRecordDate ? await fetchTeamRecord(teamRecordDate).catch(function () { return null; }) : null;
+          if (teamRecord) {
+            resetToTeamRecordMatch(matchId, teamRecord, [
+              "해당 날짜의 경기 기록은 없고 팀 확정 기록을 불러왔습니다.",
+              "기록 키: " + matchId,
+              "이 팀 구성으로 스코어와 개인 골/도움을 입력한 뒤 기록 저장을 누르세요.",
+            ].join("\n"));
+            return;
+          }
           resetToEmptyMatch(matchId, [
             "해당 날짜의 기존 기록이 없습니다.",
             "기록 키: " + matchId,

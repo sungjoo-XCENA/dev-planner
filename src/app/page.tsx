@@ -6,7 +6,7 @@ import type { PlayerRelation } from "@/types/relation";
 import type { LineupResult, LineupRole, Quarter } from "@/types/lineup";
 import type { TeamBalanceResult, TeamName } from "@/types/team";
 import type { HistoryDefenseForm, HistoryInsightResponse, HistoryPairInsight, HistoryPlayerForm, TeamHistoryInsight } from "@/types/history";
-import type { TeamRecord, TeamRecordGroups, TeamRecordPlayer, TeamRecordSummary } from "@/types/teamRecord";
+import type { TeamRecord, TeamRecordGroups, TeamRecordPlayer } from "@/types/teamRecord";
 import { appConfig } from "@/config/appConfig";
 import { loadPlayersFromCsv } from "@/lib/loadPlayersFromCsv";
 import { POSITIONS, getPositionGroup, hasGroup } from "@/lib/positions";
@@ -177,9 +177,6 @@ const LINEUP_SHARE_HASH_KEY = "lineup";
 const MATCH_LINEUP_SHARE_HASH_KEY = "matchLineup";
 const COMPRESSED_LINEUP_PREFIX = "gz.";
 const RAW_LINEUP_PREFIX = "raw.";
-const TEAM_RECORD_QUERY_KEY = "recordDate";
-const TEAM_RECORD_GROUPS = ["ATTACK", "MID", "DEFENSE"] as const;
-const WEEKDAY_LABELS = ["일", "월", "화", "수", "목", "금", "토"];
 
 type SharedLineupPayload = {
   version: 1;
@@ -207,7 +204,6 @@ type SharedMatchLineupPayload = {
   match: MatchPlanResult;
 };
 
-type TeamRecordSaveStatus = "idle" | "saving" | "saved" | "error";
 type TeamRecordSourcePlayer = TeamBalanceResult["teamA"]["players"][number];
 
 function bytesToBase64Url(bytes: Uint8Array): string {
@@ -374,41 +370,6 @@ function formatLocalDate(date = new Date()): string {
   return `${year}-${month}-${day}`;
 }
 
-function currentMonthKey(date = new Date()): string {
-  return formatLocalDate(date).slice(0, 7);
-}
-
-function addMonths(monthKey: string, delta: number): string {
-  const [year, month] = monthKey.split("-").map(Number);
-  const date = new Date(year, month - 1 + delta, 1);
-  return currentMonthKey(date);
-}
-
-function monthLabel(monthKey: string): string {
-  const [year, month] = monthKey.split("-");
-  return `${year}년 ${Number(month)}월`;
-}
-
-function formatDateTime(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString("ko-KR", {
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
-function buildTeamRecordShareUrl(date: string): string {
-  if (typeof window === "undefined") return `/?${TEAM_RECORD_QUERY_KEY}=${encodeURIComponent(date)}`;
-  const url = new URL(window.location.href);
-  url.search = "";
-  url.hash = "";
-  url.searchParams.set(TEAM_RECORD_QUERY_KEY, date);
-  return url.toString();
-}
-
 function toRecordPlayer(player: TeamRecordSourcePlayer): TeamRecordPlayer {
   const staffRole = extractStaffRole(player.memo);
   return {
@@ -436,7 +397,7 @@ function toRecordGroups(players: TeamRecordSourcePlayer[]): TeamRecordGroups {
   return groups;
 }
 
-function buildTeamRecord(result: TeamBalanceResult, date: string): TeamRecord {
+function buildTeamRecord(result: TeamBalanceResult, date: string, shareUrl: string): TeamRecord {
   const now = new Date().toISOString();
   return {
     date,
@@ -444,23 +405,9 @@ function buildTeamRecord(result: TeamBalanceResult, date: string): TeamRecord {
       A: toRecordGroups(result.teamA.players),
       B: toRecordGroups(result.teamB.players),
     },
-    shareUrl: buildTeamRecordShareUrl(date),
+    shareUrl,
     createdAt: now,
     updatedAt: now,
-  };
-}
-
-function teamRecordSize(groups: TeamRecordGroups): number {
-  return groups.attack.length + groups.mid.length + groups.defense.length;
-}
-
-function toRecordSummary(record: TeamRecord): TeamRecordSummary {
-  return {
-    date: record.date,
-    shareUrl: record.shareUrl,
-    updatedAt: record.updatedAt,
-    teamAPlayers: teamRecordSize(record.teams.A),
-    teamBPlayers: teamRecordSize(record.teams.B),
   };
 }
 
@@ -477,35 +424,6 @@ async function upsertTeamRecord(record: TeamRecord): Promise<TeamRecord> {
   return body.record as TeamRecord;
 }
 
-async function fetchTeamRecord(date: string): Promise<TeamRecord | null> {
-  const response = await fetch(`/api/team-records?date=${encodeURIComponent(date)}`, { cache: "no-store" });
-  const body = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw new Error(typeof body?.error === "string" ? body.error : `HTTP ${response.status}`);
-  }
-  return (body.record ?? null) as TeamRecord | null;
-}
-
-async function fetchTeamRecordSummaries(month: string): Promise<TeamRecordSummary[]> {
-  const response = await fetch(`/api/team-records?month=${encodeURIComponent(month)}`, { cache: "no-store" });
-  const body = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw new Error(typeof body?.error === "string" ? body.error : `HTTP ${response.status}`);
-  }
-  return (body.records ?? []) as TeamRecordSummary[];
-}
-
-function calendarDates(monthKey: string): Array<string | null> {
-  const [year, month] = monthKey.split("-").map(Number);
-  const first = new Date(year, month - 1, 1);
-  const daysInMonth = new Date(year, month, 0).getDate();
-  const cells: Array<string | null> = Array.from({ length: first.getDay() }, () => null);
-  for (let day = 1; day <= daysInMonth; day += 1) {
-    cells.push(`${monthKey}-${String(day).padStart(2, "0")}`);
-  }
-  while (cells.length % 7 !== 0) cells.push(null);
-  return cells;
-}
 
 type SwapSelection = { team: "A" | "B"; playerId: string } | null;
 
@@ -534,24 +452,12 @@ export default function Home() {
   const [teamsConfirmed, setTeamsConfirmed] = useState(false);
   const [swapSelection, setSwapSelection] = useState<SwapSelection>(null);
   const [hydrated, setHydrated] = useState(false);
-  const [showRecordEntry, setShowRecordEntry] = useState(false);
   const [showRecordEdit, setShowRecordEdit] = useState(false);
-  const [teamRecordStatus, setTeamRecordStatus] = useState<TeamRecordSaveStatus>("idle");
-  const [teamRecordMessage, setTeamRecordMessage] = useState("");
-  const [lastSavedRecord, setLastSavedRecord] = useState<TeamRecord | null>(null);
-  const [teamRecordPanelOpen, setTeamRecordPanelOpen] = useState(false);
-  const [teamRecordsMonth, setTeamRecordsMonth] = useState(currentMonthKey);
-  const [teamRecordSummaries, setTeamRecordSummaries] = useState<TeamRecordSummary[]>([]);
-  const [teamRecordsLoading, setTeamRecordsLoading] = useState(false);
-  const [teamRecordsError, setTeamRecordsError] = useState<string | null>(null);
-  const [selectedTeamRecordDate, setSelectedTeamRecordDate] = useState<string | null>(null);
-  const [selectedTeamRecord, setSelectedTeamRecord] = useState<TeamRecord | null>(null);
-  const [selectedTeamRecordLoading, setSelectedTeamRecordLoading] = useState(false);
 
   useEffect(() => {
     if (new URLSearchParams(window.location.search).get("record") !== "1") return;
-    setShowRecordEntry(true);
-    window.setTimeout(() => document.getElementById("lineup-result")?.scrollIntoView({ block: "start" }), 0);
+    setShowRecordEdit(true);
+    window.setTimeout(() => document.querySelector("[data-mrw-active='true']")?.scrollIntoView({ block: "start" }), 0);
   }, []);
 
   useEffect(() => {
@@ -702,47 +608,6 @@ export default function Home() {
     };
   }, [hydrated]);
 
-  const refreshTeamRecords = useCallback(async (month: string) => {
-    setTeamRecordsLoading(true);
-    setTeamRecordsError(null);
-    try {
-      setTeamRecordSummaries(await fetchTeamRecordSummaries(month));
-    } catch (error) {
-      setTeamRecordsError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setTeamRecordsLoading(false);
-    }
-  }, []);
-
-  const loadSelectedTeamRecord = useCallback(async (date: string) => {
-    setSelectedTeamRecordDate(date);
-    setSelectedTeamRecordLoading(true);
-    setTeamRecordsError(null);
-    try {
-      setSelectedTeamRecord(await fetchTeamRecord(date));
-    } catch (error) {
-      setSelectedTeamRecord(null);
-      setTeamRecordsError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setSelectedTeamRecordLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!teamRecordPanelOpen) return;
-    refreshTeamRecords(teamRecordsMonth);
-  }, [teamRecordPanelOpen, teamRecordsMonth, refreshTeamRecords]);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    const params = new URLSearchParams(window.location.search);
-    const recordDate = params.get(TEAM_RECORD_QUERY_KEY);
-    if (!recordDate || !/^\d{4}-\d{2}-\d{2}$/.test(recordDate)) return;
-    setTeamRecordsMonth(recordDate.slice(0, 7));
-    setTeamRecordPanelOpen(true);
-    loadSelectedTeamRecord(recordDate);
-  }, [hydrated, loadSelectedTeamRecord]);
-
   const selectablePlayers = useMemo(() => [...players, ...tempGuests], [players, tempGuests]);
   const fieldPlayers = useMemo(() => selectablePlayers.filter((p) => fieldIds.includes(p.id)), [selectablePlayers, fieldIds]);
   const isWaitingPlayer = useMemo(() => {
@@ -811,10 +676,6 @@ export default function Home() {
     setCopied(false);
     setTeamsConfirmed(false);
     setSwapSelection(null);
-    setShowRecordEntry(false);
-    setTeamRecordStatus("idle");
-    setTeamRecordMessage("");
-    setLastSavedRecord(null);
   }
 
   function changePlannerMode(nextMode: PlannerMode) {
@@ -829,27 +690,12 @@ export default function Home() {
     setCopied(false);
     setTeamsConfirmed(false);
     setSwapSelection(null);
-    setShowRecordEntry(false);
-  }
-
-  function toggleRecordEntry() {
-    setShowRecordEntry((value) => {
-      const next = !value;
-      if (next) {
-        setShowRecordEdit(false);
-        window.setTimeout(() => document.getElementById("lineup-result")?.scrollIntoView({ block: "start" }), 0);
-      }
-      return next;
-    });
   }
 
   function toggleRecordEdit() {
     setShowRecordEdit((value) => {
       const next = !value;
-      if (next) {
-        setShowRecordEntry(false);
-        window.setTimeout(() => document.querySelector("[data-mrw-active='true']")?.scrollIntoView({ block: "start" }), 0);
-      }
+      if (next) window.setTimeout(() => document.querySelector("[data-mrw-active='true']")?.scrollIntoView({ block: "start" }), 0);
       return next;
     });
   }
@@ -1028,45 +874,6 @@ export default function Home() {
     setSwapSelection(null);
     setLineupResult(null);
     setTeamsConfirmed(false);
-    setTeamRecordStatus("idle");
-    setTeamRecordMessage("");
-    setLastSavedRecord(null);
-  }
-
-  function openTeamRecordPanel(date?: string) {
-    setTeamRecordPanelOpen(true);
-    if (!date) return;
-    setTeamRecordsMonth(date.slice(0, 7));
-    loadSelectedTeamRecord(date);
-  }
-
-  function closeTeamRecordPanel() {
-    setTeamRecordPanelOpen(false);
-    if (typeof window === "undefined") return;
-    const url = new URL(window.location.href);
-    if (!url.searchParams.has(TEAM_RECORD_QUERY_KEY)) return;
-    url.searchParams.delete(TEAM_RECORD_QUERY_KEY);
-    window.history.replaceState(null, "", url.toString());
-  }
-
-  async function selectTeamRecordDate(date: string) {
-    if (typeof window !== "undefined") {
-      window.history.replaceState(null, "", buildTeamRecordShareUrl(date));
-    }
-    await loadSelectedTeamRecord(date);
-  }
-
-  async function copyTeamRecordUrl(record: TeamRecord) {
-    try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(record.shareUrl);
-      } else {
-        window.prompt("기록 URL을 복사하세요.", record.shareUrl);
-      }
-      setTeamRecordMessage(`${record.date} 기록 링크를 복사했습니다.`);
-    } catch (error) {
-      setTeamRecordMessage(error instanceof Error ? error.message : String(error));
-    }
   }
 
   async function handleConfirmTeams() {
@@ -1078,25 +885,19 @@ export default function Home() {
       setSwapSelection(null);
 
       const recordDate = formatLocalDate();
-      const record = buildTeamRecord(teamResult, recordDate);
-      setTeamRecordStatus("saving");
-      setTeamRecordMessage(`${recordDate} 기록 저장 중...`);
+      let shareUrl = typeof window !== "undefined" ? window.location.href : "/";
       try {
-        const saved = await upsertTeamRecord(record);
-        setTeamRecordStatus("saved");
-        setTeamRecordMessage(`${recordDate} 팀 확정 기록을 최신본으로 저장했습니다.`);
-        setLastSavedRecord(saved);
-        setSelectedTeamRecordDate(saved.date);
-        setSelectedTeamRecord(saved);
-        setTeamRecordsMonth(saved.date.slice(0, 7));
-        setTeamRecordSummaries((prev) => {
-          const next = prev.filter((item) => item.date !== saved.date);
-          next.push(toRecordSummary(saved));
-          return next.sort((a, b) => a.date.localeCompare(b.date));
-        });
+        shareUrl = await buildLineupShareUrl(lineup, { teamResult, teamVariants, selectedVariantIdx }) ?? shareUrl;
+      } catch {
+        // 기록 저장은 공유 URL 압축 지원 여부와 별개로 진행한다.
+      }
+      const record = buildTeamRecord(teamResult, recordDate, shareUrl);
+      try {
+        await upsertTeamRecord(record);
+        setWarnings((prev) => prev.filter((item) => !item.startsWith("팀 확정 기록 저장 실패:")));
       } catch (error) {
-        setTeamRecordStatus("error");
-        setTeamRecordMessage(`라인업은 생성됐지만 기록 저장은 실패했습니다: ${error instanceof Error ? error.message : String(error)}`);
+        const message = `팀 확정 기록 저장 실패: ${error instanceof Error ? error.message : String(error)}`;
+        setWarnings((prev) => [...prev.filter((item) => !item.startsWith("팀 확정 기록 저장 실패:")), message]);
       }
     } catch (error) {
       setErrors([error instanceof Error ? error.message : String(error)]);
@@ -1106,8 +907,6 @@ export default function Home() {
   function handleReadjustTeams() {
     setLineupResult(null);
     setTeamsConfirmed(false);
-    setTeamRecordStatus("idle");
-    setTeamRecordMessage("다시 확정하면 오늘 기록을 새 확정본으로 덮어씁니다.");
   }
 
   function handleGroupTarget(targetTeam: "A" | "B", targetGroup: PositionGroup) {
@@ -1481,34 +1280,16 @@ export default function Home() {
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
-            <button className="rounded-xl border border-slate-300 bg-white px-5 py-3 font-semibold text-slate-700" onClick={() => openTeamRecordPanel()}>팀 기록 보기</button>
             <button className="rounded-xl bg-slate-900 px-5 py-3 font-semibold text-white disabled:bg-slate-300" onClick={runPlanner} disabled={!canGenerate}>자동 생성</button>
           </div>
         </div>
       </section>
-
-      {teamRecordPanelOpen && (
-        <TeamRecordsPanel
-          month={teamRecordsMonth}
-          summaries={teamRecordSummaries}
-          loading={teamRecordsLoading}
-          error={teamRecordsError}
-          selectedDate={selectedTeamRecordDate}
-          selectedRecord={selectedTeamRecord}
-          selectedRecordLoading={selectedTeamRecordLoading}
-          onClose={closeTeamRecordPanel}
-          onMonthChange={setTeamRecordsMonth}
-          onSelectDate={selectTeamRecordDate}
-          onCopyUrl={copyTeamRecordUrl}
-        />
-      )}
 
       {plannerMode === "BALANCE" && teamResult && (
         <TeamResultView
           result={teamResult}
           confirmed={teamsConfirmed}
           selection={swapSelection}
-          recordEntryOpen={showRecordEntry}
           variantCount={teamVariants.length}
           selectedVariantIdx={selectedVariantIdx}
           onSelectVariant={selectVariant}
@@ -1517,12 +1298,6 @@ export default function Home() {
           onSubRoleTarget={handleSubRoleTarget}
           onConfirm={handleConfirmTeams}
           onReadjust={handleReadjustTeams}
-          onToggleRecordEntry={toggleRecordEntry}
-          recordStatus={teamRecordStatus}
-          recordMessage={teamRecordMessage}
-          lastSavedRecord={lastSavedRecord}
-          onOpenTeamRecords={() => openTeamRecordPanel(lastSavedRecord?.date)}
-          onCopyTeamRecordUrl={copyTeamRecordUrl}
         />
       )}
       {lineupResult && (
@@ -1532,47 +1307,16 @@ export default function Home() {
           teamVariants={plannerMode === "BALANCE" ? teamVariants : []}
           selectedVariantIdx={plannerMode === "BALANCE" ? selectedVariantIdx : 0}
           copied={copied}
-          recordEntryOpen={showRecordEntry}
           onCopyShareUrl={copyLineupShareUrl}
           onQuartersChange={handleLineupQuartersChange}
-          onToggleRecordEntry={toggleRecordEntry}
-        />
-      )}
-      {showRecordEntry && !lineupResult && plannerMode === "BALANCE" && teamResult && (
-        <RecordEntryAnchor
-          title="팀 분배 기준 기록 입력"
-          description="현재 나뉜 형광/주황팀 선수 기준으로 팀 점수와 개인 골/도움을 입력합니다."
-          matchKind="SELF"
-          records={balanceRecordEntryRecords(teamResult)}
-          staffRoles={balanceRecordStaffRoles(teamResult)}
-          playerOptions={fieldPlayers.map((player) => player.name)}
-          allowEdit={false}
-          allowPlayerEdit
-          onClose={() => setShowRecordEntry(false)}
-        />
-      )}
-      {showRecordEntry && !lineupResult && plannerMode === "MATCH" && matchResult && (
-        <RecordEntryAnchor
-          title="매치 인원 기준 기록 입력"
-          description="현재 매치 라인업 추천에 포함된 DevUtd 선수 기준으로 개인 골/도움을 입력합니다."
-          matchKind="MATCH"
-          records={matchRecordEntryRecords(matchResult)}
-          staffRoles={matchRecordStaffRoles(matchResult, matchFieldPlayers, dedicatedGks)}
-          playerOptions={[...matchFieldPlayers.map((player) => player.name), ...dedicatedGks.map((gk) => gk.name)]}
-          awayTeamName="상대팀"
-          allowEdit={false}
-          allowPlayerEdit
-          onClose={() => setShowRecordEntry(false)}
         />
       )}
       {plannerMode === "MATCH" && matchResult && (
         <MatchResultView
           result={matchResult}
           copied={copied}
-          recordEntryOpen={showRecordEntry}
           onCopyShareUrl={copyMatchLineupShareUrl}
           onQuartersChange={handleMatchQuartersChange}
-          onToggleRecordEntry={toggleRecordEntry}
         />
       )}
 
@@ -1655,58 +1399,6 @@ function RecordEntryAnchor({
   );
 }
 
-function balanceRecordEntryRecords(result: TeamBalanceResult): RecordEntryRecord[] {
-  return [
-    recordEntryRecord("A", result.teamA.players.map((player) => player.name)),
-    recordEntryRecord("B", result.teamB.players.map((player) => player.name)),
-  ];
-}
-
-function matchRecordEntryRecords(result: MatchPlanResult): RecordEntryRecord[] {
-  return [
-    recordEntryRecord("B", uniqueRecordNames([
-      ...result.playerSummaries.map((summary) => summary.playerName),
-      result.starters.gk?.name ?? "",
-    ])),
-  ];
-}
-
-function lineupRecordEntryRecords(result: LineupResult): RecordEntryRecord[] {
-  return result.quarters.map((quarter) => ({
-    quarter: quarter.quarter,
-    team: quarter.team,
-    attack: quarter.attack,
-    mid: quarter.mid,
-    defense: quarter.defense,
-    gk: quarter.gk,
-    bench: quarter.bench,
-  }));
-}
-
-function lineupRecordStaffRoles(result: LineupResult): Partial<Record<string, StaffRole>> {
-  const roles: Partial<Record<string, StaffRole>> = { ...(result.staffRoles ?? {}) };
-
-  result.playerSummaries.forEach((summary) => {
-    if (summary.staffRole) {
-      roles[summary.playerName] = summary.staffRole;
-    }
-  });
-
-  return roles;
-}
-
-function recordEntryRecord(team: TeamName, names: string[]): RecordEntryRecord {
-  return {
-    quarter: 1,
-    team,
-    attack: uniqueRecordNames(names),
-    mid: [],
-    defense: [],
-    gk: "없음",
-    bench: [],
-  };
-}
-
 function recordEntryKey(matchKind: "SELF" | "MATCH", records: RecordEntryRecord[]): string {
   return `${matchKind}:${records
     .map((record) =>
@@ -1721,24 +1413,6 @@ function recordEntryKey(matchKind: "SELF" | "MATCH", records: RecordEntryRecord[
       ].join(":"),
     )
     .join("::")}`;
-}
-
-function balanceRecordStaffRoles(result: TeamBalanceResult): Partial<Record<string, StaffRole>> {
-  return staffRolesFromPlayers([...result.teamA.players, ...result.teamB.players]);
-}
-
-function matchRecordStaffRoles(result: MatchPlanResult, players: Player[], gks: DedicatedGoalkeeper[]): Partial<Record<string, StaffRole>> {
-  const visibleNames = new Set(matchRecordEntryRecords(result).flatMap((record) => record.attack));
-  return staffRolesFromPlayers([...players, ...gks].filter((player) => visibleNames.has(player.name)));
-}
-
-function staffRolesFromPlayers(players: Array<Pick<Player, "name" | "memo"> | Pick<DedicatedGoalkeeper, "name" | "memo">>): Partial<Record<string, StaffRole>> {
-  const roles: Partial<Record<string, StaffRole>> = {};
-  players.forEach((player) => {
-    const role = extractStaffRole(player.memo);
-    if (role) roles[player.name] = role;
-  });
-  return roles;
 }
 
 function uniqueRecordNames(names: string[]): string[] {
@@ -2062,171 +1736,10 @@ function MetricCard({ label, a, b, highlight }: { label: string; a: number; b: n
   );
 }
 
-function TeamRecordsPanel({
-  month,
-  summaries,
-  loading,
-  error,
-  selectedDate,
-  selectedRecord,
-  selectedRecordLoading,
-  onClose,
-  onMonthChange,
-  onSelectDate,
-  onCopyUrl,
-}: {
-  month: string;
-  summaries: TeamRecordSummary[];
-  loading: boolean;
-  error: string | null;
-  selectedDate: string | null;
-  selectedRecord: TeamRecord | null;
-  selectedRecordLoading: boolean;
-  onClose: () => void;
-  onMonthChange: (month: string) => void;
-  onSelectDate: (date: string) => void;
-  onCopyUrl: (record: TeamRecord) => void;
-}) {
-  const today = formatLocalDate();
-  const days = useMemo(() => calendarDates(month), [month]);
-  const summaryByDate = useMemo(() => new Map(summaries.map((summary) => [summary.date, summary])), [summaries]);
-  const selectedSummary = selectedDate ? summaryByDate.get(selectedDate) : undefined;
-
-  return (
-    <section className="mb-6 rounded-3xl bg-white p-6 shadow-sm">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-        <div>
-          <h2 className="text-xl font-bold">팀 기록</h2>
-          <p className="mt-1 text-sm text-slate-600">팀 확정 시 오늘 날짜 기록은 마지막 확정본으로 덮어써집니다. 저장 내용은 팀별 공격·미드·수비 배정입니다.</p>
-        </div>
-        <button className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-bold text-slate-700" onClick={onClose}>닫기</button>
-      </div>
-
-      {error && <div className="mt-4"><MessageBox title="팀 기록 오류" items={[error]} tone="error" /></div>}
-
-      <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
-        <div>
-          <div className="flex items-center justify-between gap-2">
-            <button className="rounded-xl border border-slate-300 px-3 py-2 text-sm font-bold text-slate-700" onClick={() => onMonthChange(addMonths(month, -1))}>이전</button>
-            <div className="text-center">
-              <p className="text-lg font-black text-slate-900">{monthLabel(month)}</p>
-              <p className="text-xs font-semibold text-slate-500">{loading ? "불러오는 중" : `저장 ${summaries.length}건`}</p>
-            </div>
-            <button className="rounded-xl border border-slate-300 px-3 py-2 text-sm font-bold text-slate-700" onClick={() => onMonthChange(addMonths(month, 1))}>다음</button>
-          </div>
-
-          <div className="mt-4 grid grid-cols-7 gap-1">
-            {WEEKDAY_LABELS.map((day) => (
-              <div key={day} className="py-1 text-center text-xs font-black text-slate-500">{day}</div>
-            ))}
-            {days.map((date, index) => {
-              if (!date) return <div key={`empty-${index}`} className="h-16 rounded-xl bg-slate-50" />;
-              const day = Number(date.slice(-2));
-              const summary = summaryByDate.get(date);
-              const isSelected = selectedDate === date;
-              const isToday = today === date;
-              const baseClass = "h-16 rounded-xl border px-1.5 py-1.5 text-left transition";
-              const stateClass = summary
-                ? "border-emerald-200 bg-emerald-50 text-emerald-950 hover:bg-emerald-100"
-                : "border-slate-100 bg-slate-50 text-slate-400 hover:bg-slate-100";
-              return (
-                <button
-                  key={date}
-                  type="button"
-                  className={`${baseClass} ${stateClass} ${isSelected ? "ring-2 ring-slate-900" : ""}`}
-                  onClick={() => onSelectDate(date)}
-                >
-                  <span className="text-sm font-black">{day}</span>
-                  {isToday && <span className="ml-1 rounded-full bg-slate-900 px-1.5 py-0.5 text-[9px] font-black text-white">오늘</span>}
-                  {summary && (
-                    <span className="mt-2 block truncate text-[10px] font-bold">
-                      {summary.teamAPlayers}:{summary.teamBPlayers}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-          {!selectedDate ? (
-            <div className="flex min-h-64 items-center justify-center text-sm font-semibold text-slate-500">날짜를 선택하면 저장된 팀 배정을 볼 수 있습니다.</div>
-          ) : selectedRecordLoading ? (
-            <div className="flex min-h-64 items-center justify-center text-sm font-semibold text-slate-500">기록을 불러오는 중입니다.</div>
-          ) : selectedRecord ? (
-            <div>
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div>
-                  <p className="text-lg font-black text-slate-900">{selectedRecord.date} 팀 배정</p>
-                  <p className="mt-1 text-xs font-semibold text-slate-500">마지막 저장 {formatDateTime(selectedRecord.updatedAt)}</p>
-                </div>
-                <button className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-bold text-white" onClick={() => onCopyUrl(selectedRecord)}>URL 복사</button>
-              </div>
-              <input className="mt-3 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs text-slate-600" value={selectedRecord.shareUrl} readOnly />
-              <div className="mt-4 grid gap-4 md:grid-cols-2">
-                <TeamRecordSnapshot team="A" groups={selectedRecord.teams.A} />
-                <TeamRecordSnapshot team="B" groups={selectedRecord.teams.B} />
-              </div>
-            </div>
-          ) : (
-            <div className="flex min-h-64 flex-col items-center justify-center text-center">
-              <p className="text-base font-black text-slate-800">{selectedDate} 기록 없음</p>
-              <p className="mt-1 text-sm text-slate-500">{selectedSummary ? "기록을 다시 불러오지 못했습니다." : "이 날짜에는 팀 확정 기록이 없습니다."}</p>
-            </div>
-          )}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function TeamRecordSnapshot({ team, groups }: { team: TeamName; groups: TeamRecordGroups }) {
-  return (
-    <div className={`overflow-hidden rounded-2xl border bg-white ${teamBorderClass(team)}`}>
-      <div className={`h-2 ${teamAccentClass(team)}`} />
-      <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
-        <span className={`rounded-full px-3 py-1 text-sm font-black ${teamPillClass(team)}`}>{formatTeamName(team)}</span>
-        <span className="text-xs font-black text-slate-500">{teamRecordSize(groups)}명</span>
-      </div>
-      <div className="space-y-3 p-4">
-        {TEAM_RECORD_GROUPS.map((group) => {
-          const players = group === "ATTACK" ? groups.attack : group === "MID" ? groups.mid : groups.defense;
-          return <TeamRecordGroup key={group} group={group} players={players} />;
-        })}
-      </div>
-    </div>
-  );
-}
-
-function TeamRecordGroup({ group, players }: { group: PositionGroup; players: TeamRecordPlayer[] }) {
-  return (
-    <div>
-      <div className="flex items-center justify-between gap-2">
-        <GroupBadge group={group} />
-        <span className="text-xs font-bold text-slate-500">{players.length}명</span>
-      </div>
-      <div className="mt-2 flex flex-wrap gap-1.5">
-        {players.length === 0 ? (
-          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-400">없음</span>
-        ) : (
-          players.map((player) => (
-            <span key={player.id} className="inline-flex min-w-0 max-w-full items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-700" title={player.assignmentReason}>
-              <span className="truncate">{player.name}{overrideMark(player.assignmentReason)}</span>
-              <StaffRoleBadge role={player.staffRole} compact />
-            </span>
-          ))
-        )}
-      </div>
-    </div>
-  );
-}
-
 function TeamResultView({
   result,
   confirmed,
   selection,
-  recordEntryOpen,
   variantCount,
   selectedVariantIdx,
   onSelectVariant,
@@ -2235,17 +1748,10 @@ function TeamResultView({
   onSubRoleTarget,
   onConfirm,
   onReadjust,
-  onToggleRecordEntry,
-  recordStatus,
-  recordMessage,
-  lastSavedRecord,
-  onOpenTeamRecords,
-  onCopyTeamRecordUrl,
 }: {
   result: TeamBalanceResult;
   confirmed: boolean;
   selection: SwapSelection;
-  recordEntryOpen: boolean;
   variantCount: number;
   selectedVariantIdx: number;
   onSelectVariant: (idx: number) => void;
@@ -2254,12 +1760,6 @@ function TeamResultView({
   onSubRoleTarget: (targetTeam: "A" | "B", playerId: string, targetSubRole: AssignedSubRole) => void;
   onConfirm: () => void;
   onReadjust: () => void;
-  onToggleRecordEntry: () => void;
-  recordStatus: TeamRecordSaveStatus;
-  recordMessage: string;
-  lastSavedRecord: TeamRecord | null;
-  onOpenTeamRecords: () => void;
-  onCopyTeamRecordUrl: (record: TeamRecord) => void;
 }) {
   const s = result.summary;
   const totalA = s.centerForwardScoreA + s.wingScoreA + s.midScoreA + s.centerBackScoreA + s.wingBackScoreA + s.activityA;
@@ -2443,33 +1943,8 @@ function TeamResultView({
         {confirmed ? (
           <button className="w-full rounded-xl border border-slate-300 px-5 py-3 text-sm font-semibold sm:w-auto" onClick={onReadjust}>팀 다시 조정</button>
         ) : (
-          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
-            <button className="whitespace-nowrap rounded-xl border border-slate-300 bg-white px-5 py-3 text-base font-bold text-slate-800 hover:bg-slate-50" onClick={onToggleRecordEntry}>{recordEntryOpen ? "기록 입력 닫기" : "기록 입력"}</button>
-            <button className="rounded-xl bg-emerald-600 px-5 py-3 text-base font-bold text-white" onClick={onConfirm}>팀 확정 → 라인업 생성</button>
-          </div>
+          <button className="w-full rounded-xl bg-emerald-600 px-5 py-3 text-base font-bold text-white sm:w-auto" onClick={onConfirm}>팀 확정 → 라인업 생성</button>
         )}
-      </div>
-      <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <p className={`text-sm font-black ${recordStatus === "error" ? "text-red-700" : recordStatus === "saved" ? "text-emerald-700" : "text-slate-800"}`}>
-            {recordStatus === "saving"
-              ? "팀 기록 저장 중"
-              : recordStatus === "saved"
-                ? "오늘 기록 저장됨"
-                : recordStatus === "error"
-                  ? "기록 저장 실패"
-                  : "팀 확정 시 오늘 기록 저장"}
-          </p>
-          <p className="mt-1 text-xs text-slate-600">
-            {recordMessage || "같은 날짜에 여러 번 확정해도 달력에는 마지막 공격·미드·수비 배정만 남습니다."}
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {lastSavedRecord && (
-            <button className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700" onClick={() => onCopyTeamRecordUrl(lastSavedRecord)}>기록 링크 복사</button>
-          )}
-          <button className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700" onClick={onOpenTeamRecords}>팀 기록 보기</button>
-        </div>
       </div>
       {historyOpen && history && (
         <HistoryInsightModal
@@ -3615,20 +3090,16 @@ function LineupResultView({
   teamVariants = [],
   selectedVariantIdx = 0,
   copied,
-  recordEntryOpen,
   onCopyShareUrl,
   onQuartersChange,
-  onToggleRecordEntry,
 }: {
   result: LineupResult;
   teamResult?: TeamBalanceResult | null;
   teamVariants?: TeamBalanceResult[];
   selectedVariantIdx?: number;
   copied: boolean;
-  recordEntryOpen: boolean;
   onCopyShareUrl: (result: LineupResult, teamContext?: LineupShareTeamContext, prebuiltUrl?: string | null) => void;
   onQuartersChange: (quarters: LineupResult["quarters"]) => void;
-  onToggleRecordEntry: () => void;
 }) {
   const [quarters, setQuarters] = useState(result.quarters);
   const [selection, setSelection] = useState<{ key: string; section: LineupSection; name: string } | null>(null);
@@ -3637,26 +3108,6 @@ function LineupResultView({
   const [shareUrlError, setShareUrlError] = useState<string | null>(null);
   const refs = useRef<Map<string, HTMLDivElement | null>>(new Map());
   const currentLineup = useMemo(() => ({ ...result, quarters }), [result, quarters]);
-  const recordEntryRecords = useMemo(() => lineupRecordEntryRecords(currentLineup), [currentLineup]);
-  const recordPayload = useMemo(() => ({
-    key: recordEntryKey("SELF", recordEntryRecords),
-    matchKind: "SELF",
-    records: recordEntryRecords,
-    staffRoles: lineupRecordStaffRoles(result),
-    playerOptions: uniqueRecordNames([
-      ...result.playerSummaries.map((summary) => summary.playerName),
-      ...recordEntryRecords.flatMap((record) => [
-        ...record.attack,
-        ...record.mid,
-        ...record.defense,
-        record.gk,
-        ...record.bench,
-      ]),
-    ]),
-    allowEdit: false,
-    allowPlayerEdit: true,
-    canRefreshLineup: true,
-  }), [recordEntryRecords, result]);
 
   useEffect(() => {
     setQuarters(result.quarters);
@@ -3863,28 +3314,10 @@ function LineupResultView({
   };
 
   return (
-    <section
-      id="lineup-result"
-      data-mrw-standalone={recordEntryOpen ? "true" : undefined}
-      data-mrw-active={recordEntryOpen ? "true" : undefined}
-      className="mb-6 rounded-3xl bg-white p-6 shadow-sm"
-    >
-      {recordEntryOpen && (
-        <script
-          type="application/json"
-          data-mrw-records
-          dangerouslySetInnerHTML={{ __html: safeJson(recordPayload) }}
-        />
-      )}
+    <section id="lineup-result" className="mb-6 rounded-3xl bg-white p-6 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-xl font-bold">라인업 결과</h2>
         <div className="flex w-full flex-wrap gap-2 sm:w-auto">
-          <button
-            className="min-h-11 w-full rounded-xl bg-slate-900 px-4 py-2 text-sm font-bold text-white hover:bg-slate-800 sm:w-auto"
-            onClick={onToggleRecordEntry}
-          >
-            {recordEntryOpen ? "결과 입력 닫기" : "결과 입력"}
-          </button>
           <button
             className="min-h-11 w-full rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 disabled:cursor-wait disabled:opacity-60 sm:w-auto"
             onClick={() => onCopyShareUrl(currentLineup, { teamResult, teamVariants, selectedVariantIdx }, shareUrl)}
@@ -3896,7 +3329,6 @@ function LineupResultView({
       </div>
       <p className="mt-2 text-xs text-slate-500">같은 쿼터 안에서는 <span className="font-bold">필드, GK, 대기</span> 어디든 서로 자리를 바꿀 수 있어요. 쿼터 순서는 각 피치 아래 <span className="font-bold">쿼터 순서 바꾸기</span> 버튼으로 조정하면 위에서부터 1~4Q로 다시 정렬됩니다. 코치별 미세조정과 팀분배 1~10 버전은 <span className="font-bold">라인업/팀분배 공유</span>로 현재 상태를 공유하세요.</p>
       {result.warnings.length > 0 && <div className="mt-4"><MessageBox title="라인업 경고" items={result.warnings} tone="warning" /></div>}
-      {recordEntryOpen && <div className="mt-4" data-mrw-panel-mount />}
 
       <div className="mt-4 rounded-2xl border-2 border-slate-300 bg-white p-2 sm:p-5">
         <div className="mb-2 flex items-baseline justify-center gap-2 sm:mb-3">
@@ -3987,17 +3419,13 @@ function TeamLineupImage({
 function MatchResultView({
   result,
   copied,
-  recordEntryOpen,
   onCopyShareUrl,
   onQuartersChange,
-  onToggleRecordEntry,
 }: {
   result: MatchPlanResult;
   copied: boolean;
-  recordEntryOpen: boolean;
   onCopyShareUrl: (result: MatchPlanResult, prebuiltUrl?: string | null) => void;
   onQuartersChange: (quarters: MatchPlanResult["quarters"]) => void;
-  onToggleRecordEntry: () => void;
 }) {
   const [quarters, setQuarters] = useState(result.quarters);
   const [selection, setSelection] = useState<{ key: string; section: LineupSection; name: string } | null>(null);
@@ -4109,7 +3537,6 @@ function MatchResultView({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-xl font-bold">매치 라인업 추천</h2>
         <div className="flex flex-wrap gap-2">
-          <button className="whitespace-nowrap rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-800 hover:bg-slate-50" onClick={onToggleRecordEntry}>{recordEntryOpen ? "기록 입력 닫기" : "기록 입력"}</button>
           <button
             className="whitespace-nowrap rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-800 hover:bg-slate-50 disabled:cursor-wait disabled:opacity-60"
             onClick={() => onCopyShareUrl(currentMatch, shareUrl)}
