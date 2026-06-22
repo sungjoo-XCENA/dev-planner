@@ -27,6 +27,7 @@
     recordLoading: false,
     editModalOpen: false,
     editDate: todayInputValue(),
+    calendarMonth: todayInputValue().slice(0, 7),
     recordIndex: { loaded: false, loading: false, error: "", teamError: "", items: [], teamItems: [] },
     selectedTeamRecord: null,
     selectedTeamRecordLoading: false,
@@ -133,6 +134,9 @@
       ".mrw-calendar-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}",
       ".mrw-calendar-title{font-size:13px;font-weight:950;color:#0f172a}",
       ".mrw-calendar-count{font-size:11px;font-weight:900;color:#64748b}",
+      ".mrw-calendar-nav{display:flex;align-items:center;gap:6px}",
+      ".mrw-calendar-nav button{border:0;border-radius:999px;background:#e2e8f0;color:#334155;width:28px;height:28px;font-size:16px;font-weight:950;line-height:1;cursor:pointer}",
+      ".mrw-calendar-nav button:hover{background:#cbd5e1;color:#0f172a}",
       ".mrw-calendar-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px}",
       ".mrw-calendar-dow{padding:4px 0;color:#94a3b8;font-size:10px;font-weight:950;text-align:center}",
       ".mrw-calendar-day{position:relative;min-height:34px;border:1px solid #e2e8f0;border-radius:10px;background:#fff;color:#334155;font-size:11px;font-weight:950;cursor:pointer}",
@@ -154,18 +158,24 @@
       ".mrw-record-date{font-size:13px;font-weight:950}",
       ".mrw-record-sub{margin-top:2px;color:#64748b;font-size:11px;font-weight:850;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
       ".mrw-record-score{border-radius:999px;background:#e2e8f0;color:#0f172a;padding:5px 8px;font-size:11px;font-weight:950;white-space:nowrap}",
-      ".mrw-team-detail{display:grid;gap:10px;border:1px solid #bbf7d0;border-radius:16px;background:#f0fdf4;padding:12px}",
+      ".mrw-team-detail{display:grid;gap:10px;border:1px solid #dbe3ef;border-radius:16px;background:#f8fafc;padding:12px}",
       ".mrw-team-detail-head{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;flex-wrap:wrap}",
-      ".mrw-team-detail-title{font-size:13px;font-weight:950;color:#14532d}",
-      ".mrw-team-detail-sub{margin-top:2px;color:#166534;font-size:11px;font-weight:850}",
-      ".mrw-team-actions{display:flex;gap:6px;flex-wrap:wrap}",
+      ".mrw-team-detail-title{font-size:13px;font-weight:950;color:#0f172a}",
+      ".mrw-team-detail-sub{margin-top:2px;color:#64748b;font-size:11px;font-weight:850}",
       ".mrw-team-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}",
-      ".mrw-team-box{border:1px solid #d9f99d;border-radius:14px;background:#fff;padding:9px}",
-      ".mrw-team-box-title{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:7px;font-size:12px;font-weight:950;color:#0f172a}",
-      ".mrw-team-group{display:grid;gap:4px;margin-top:6px}",
+      ".mrw-team-box{overflow:hidden;border:1px solid #dbe3ef;border-radius:14px;background:#fff}",
+      ".mrw-team-box-a{border-color:#84cc16;background:#f7fee7}",
+      ".mrw-team-box-b{border-color:#fb923c;background:#fff7ed}",
+      ".mrw-team-box-head{display:flex;align-items:center;justify-content:space-between;gap:6px;padding:9px 10px;font-size:12px;font-weight:950;color:#fff}",
+      ".mrw-team-box-a .mrw-team-box-head{background:linear-gradient(135deg,#84cc16,#10b981)}",
+      ".mrw-team-box-b .mrw-team-box-head{background:linear-gradient(135deg,#fb923c,#ea580c)}",
+      ".mrw-team-box-body{display:grid;gap:7px;padding:9px}",
+      ".mrw-team-group{display:grid;gap:4px}",
       ".mrw-team-group-label{font-size:10px;font-weight:950;color:#64748b}",
       ".mrw-team-player-list{display:flex;flex-wrap:wrap;gap:4px}",
-      ".mrw-team-player{border-radius:999px;background:#f1f5f9;padding:3px 6px;color:#334155;font-size:10px;font-weight:900}",
+      ".mrw-team-player{border:1px solid rgba(15,23,42,.08);border-radius:999px;background:#fff;padding:3px 6px;color:#334155;font-size:10px;font-weight:900}",
+      ".mrw-match-info{display:grid;gap:8px;border:1px solid #e2e8f0;border-radius:18px;background:#fff;padding:12px}",
+      ".mrw-match-info-title{font-size:13px;font-weight:950;color:#0f172a}",
       ".mrw-modal-foot{display:flex;gap:8px;justify-content:flex-end;background:#fff;border-top:1px solid #e2e8f0;padding:12px 14px}",
       ".mrw-icon-close{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;border:0;border-radius:999px;background:#e2e8f0;color:#334155;font-size:20px;font-weight:950;line-height:1;cursor:pointer}",
       ".mrw-empty{color:#94a3b8;font-size:12px;font-weight:800}",
@@ -348,7 +358,7 @@
   }
 
   function recordRoot() {
-    return document.querySelector("[data-mrw-active='true']") || document.getElementById("lineup-result");
+    return document.querySelector("[data-mrw-active='true']");
   }
 
   function panelMount() {
@@ -798,6 +808,7 @@
     state.recordLoading = false;
     state.editingMatchId = "";
     state.selectedScope = "";
+    state.calendarMonth = (state.editDate || todayInputValue()).slice(0, 7);
     state.selectedTeamRecord = null;
     state.selectedTeamRecordLoading = false;
     state.selectedTeamRecordError = "";
@@ -996,14 +1007,12 @@
   }
 
   function renderEditOnlyLoader(form) {
-    var date = state.editDate || form.date || todayInputValue();
-    var title = state.editingRecordOnly ? "다른 경기 불러오기" : "수정할 경기 불러오기";
+    var title = state.editingRecordOnly ? "다른 날짜 선택" : "날짜 선택";
     var help = state.editingRecordOnly
-      ? "다른 날짜를 고르면 현재 화면을 버리고 그 날짜의 저장 기록을 다시 불러옵니다."
-      : "경기일을 고른 뒤 저장된 기록을 불러오면 그 기록 기준으로만 수정합니다.";
+      ? "달력에서 다른 날짜를 누르면 그 날짜의 저장 기록이나 기록 미입력 팀분배를 불러옵니다."
+      : "달력에 표시된 날짜를 눌러 저장된 기록을 수정하거나, 기록 미입력 팀분배를 불러옵니다.";
     return [
       "<div class=\"mrw-mode mrw-edit-load\"><div class=\"mrw-mode-head\"><div><div class=\"mrw-mode-title\">" + title + "</div><div class=\"mrw-mode-help\">" + help + "</div></div></div>",
-      "<div class=\"mrw-edit-load-row\"><div class=\"mrw-field\"><label>경기일</label><input data-mrw=\"editDate\" type=\"date\" value=\"" + escapeHtml(date) + "\" /></div><button type=\"button\" class=\"mrw-button mrw-primary\" data-mrw-action=\"load-edit-date\">기록 불러오기</button></div>",
       renderRecordOverview(form),
       "</div>",
     ].join("");
@@ -1055,7 +1064,7 @@
       "<input type=\"hidden\" data-mrw=\"duration\" value=\"" + escapeHtml(form.duration) + "\" />",
       "<input type=\"hidden\" data-mrw=\"matchKind\" value=\"" + escapeHtml(form.matchKind) + "\" />",
       editOnly ? renderEditOnlyLoader(form) : "",
-      renderMeta(form),
+      renderMatchInfo(form),
       "<div class=\"mrw-mode\"><div class=\"mrw-mode-head\"><div><div class=\"mrw-mode-title\">기록 입력</div><div class=\"mrw-mode-help\">경기 전체로 입력해도 되고, 기억나는 경우만 1Q~4Q를 골라 쿼터 기록으로 남기면 됩니다.</div></div><label class=\"mrw-scope\">기록 기준 " + renderScopeSelect(quarter) + "</label></div></div>",
       "<div class=\"mrw-layout\"><div class=\"mrw-main\">",
       renderScoreboard(score, quarter),
@@ -1076,12 +1085,19 @@
     if (state.editModalOpen) loadRecordIndex(false);
   }
 
+  function renderMatchInfo(form) {
+    return "<div class=\"mrw-match-info\"><div class=\"mrw-match-info-title\">경기 정보</div>" + renderMeta(form) + "</div>";
+  }
+
   function renderMeta(form) {
     var home = form.matchKind === "SELF" ? "DevUtd 주황" : "DevUtd";
     var away = form.matchKind === "SELF" ? "DevUtd 형광" : (form.awayTeamName || firstAwayTeam());
+    var dateField = editOnlyMode()
+      ? fixedInputField("선택 날짜", "date", form.date)
+      : fieldInput("경기일", "date", "date", form.date, state.editingRecordOnly);
     return [
       "<div class=\"mrw-meta\">",
-      fieldInput("경기일", "date", "date", form.date, state.editingRecordOnly),
+      dateField,
       renderMatchKindControl(form.matchKind),
       fieldInput("시작 시간", "startTime", "time", form.startTime || "20:00"),
       "<div class=\"mrw-field\"><label>경기 시간</label><div class=\"mrw-duration\"><button type=\"button\" data-mrw-duration=\"2\" aria-pressed=\"" + (form.duration === "2") + "\">2시간</button><button type=\"button\" data-mrw-duration=\"3\" aria-pressed=\"" + (form.duration === "3") + "\">3시간</button></div></div>",
@@ -1102,6 +1118,10 @@
 
   function fieldInput(label, key, type, value, readonly) {
     return "<div class=\"mrw-field\"><label>" + label + "</label><input data-mrw=\"" + key + "\" type=\"" + type + "\" value=\"" + escapeHtml(value) + "\"" + (readonly ? " readonly" : "") + " /></div>";
+  }
+
+  function fixedInputField(label, key, value) {
+    return "<div class=\"mrw-field\"><label>" + label + "</label><input data-mrw=\"" + key + "\" type=\"hidden\" value=\"" + escapeHtml(value) + "\" /><div class=\"mrw-fixed\">" + escapeHtml(value) + "</div></div>";
   }
 
   function renderVenueSelect(selected) {
@@ -1268,6 +1288,23 @@
     return date.slice(0, 4) + "." + Number(date.slice(5, 7)) + "." + Number(date.slice(8, 10)) + ".";
   }
 
+  function monthInputValue(value) {
+    var date = String(value || "");
+    return /^\d{4}-\d{2}$/.test(date) ? date : todayInputValue().slice(0, 7);
+  }
+
+  function addCalendarMonths(monthKey, delta) {
+    monthKey = monthInputValue(monthKey);
+    var parts = monthKey.split("-").map(Number);
+    var date = new Date(parts[0], parts[1] - 1 + Number(delta || 0), 1);
+    return date.getFullYear() + "-" + String(date.getMonth() + 1).padStart(2, "0");
+  }
+
+  function setCalendarMonth(delta) {
+    state.calendarMonth = addCalendarMonths(state.calendarMonth || (state.editDate || todayInputValue()).slice(0, 7), delta);
+    renderPanel();
+  }
+
   function recordTeamTitle(item) {
     var away = (item && item.awayTeamName) || teamLabel("A");
     var home = (item && item.homeTeamName) || teamLabel("B");
@@ -1294,6 +1331,23 @@
   function teamRecordDateInput(item) {
     var date = String((item && item.date) || "");
     return /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : "";
+  }
+
+  function recordDateLookup() {
+    var lookup = Object.create(null);
+    recordItems().forEach(function (item) {
+      var date = recordDateInput(item);
+      if (date) lookup[date] = true;
+    });
+    return lookup;
+  }
+
+  function missingRecordItems() {
+    var hasMatchRecord = recordDateLookup();
+    return teamRecordItems().filter(function (item) {
+      var date = teamRecordDateInput(item);
+      return date && !hasMatchRecord[date];
+    });
   }
 
   function teamRecordSize(groups) {
@@ -1347,11 +1401,11 @@
     var groups = record && record.teams ? record.teams[team] : null;
     var total = teamRecordSize(groups);
     return [
-      "<div class=\"mrw-team-box\"><div class=\"mrw-team-box-title\"><span>" + teamLabel(team) + "</span><span>" + total + "명</span></div>",
+      "<div class=\"mrw-team-box mrw-team-box-" + team.toLowerCase() + "\"><div class=\"mrw-team-box-head\"><span>" + teamLabel(team) + "</span><span>" + total + "명</span></div><div class=\"mrw-team-box-body\">",
       renderTeamRecordGroup(groups, "attack"),
       renderTeamRecordGroup(groups, "mid"),
       renderTeamRecordGroup(groups, "defense"),
-      "</div>",
+      "</div></div>",
     ].join("");
   }
 
@@ -1366,15 +1420,10 @@
     if (!record) return "";
     var aCount = teamRecordSize(record.teams && record.teams.A);
     var bCount = teamRecordSize(record.teams && record.teams.B);
-    var shareUrl = String(record.shareUrl || "");
-    var openAction = shareUrl
-      ? "<a class=\"mrw-small-btn\" href=\"" + escapeHtml(shareUrl) + "\" target=\"_blank\" rel=\"noreferrer\">라인업 열기</a><button type=\"button\" class=\"mrw-small-btn\" data-mrw-action=\"copy-team-record-url\">URL 복사</button>"
-      : "";
     return [
       "<div class=\"mrw-team-detail\">",
-      "<div class=\"mrw-team-detail-head\"><div><div class=\"mrw-team-detail-title\">" + escapeHtml(record.date) + " 팀 확정 기록</div>",
-      "<div class=\"mrw-team-detail-sub\">형광 " + aCount + "명 · 주황 " + bCount + "명 · 이 팀 기준으로 스코어/골 도움 입력 가능</div></div>",
-      "<div class=\"mrw-team-actions\">" + openAction + "<button type=\"button\" class=\"mrw-small-btn\" data-mrw-action=\"use-team-record\">이 팀으로 입력</button></div></div>",
+      "<div class=\"mrw-team-detail-head\"><div><div class=\"mrw-team-detail-title\">" + escapeHtml(record.date) + " 팀 분배</div>",
+      "<div class=\"mrw-team-detail-sub\">형광 " + aCount + "명 · 주황 " + bCount + "명</div></div></div>",
       "<div class=\"mrw-team-grid\">" + renderTeamRecordTeam(record, "A") + renderTeamRecordTeam(record, "B") + "</div>",
       "</div>",
     ].join("");
@@ -1382,10 +1431,10 @@
 
   function renderRecordCalendar(form) {
     var selected = state.editDate || form.date || todayInputValue();
-    var selectedDate = new Date(selected + "T00:00:00");
-    if (Number.isNaN(selectedDate.getTime())) selectedDate = new Date(todayInputValue() + "T00:00:00");
-    var year = selectedDate.getFullYear();
-    var month = selectedDate.getMonth();
+    var monthKey = monthInputValue(state.calendarMonth || selected.slice(0, 7));
+    var monthDate = new Date(monthKey + "-01T00:00:00");
+    var year = monthDate.getFullYear();
+    var month = monthDate.getMonth();
     var monthLabel = year + "." + String(month + 1).padStart(2, "0");
     var first = new Date(year, month, 1);
     var daysInMonth = new Date(year, month + 1, 0).getDate();
@@ -1422,77 +1471,49 @@
     }
     return [
       "<div class=\"mrw-calendar\">",
-      "<div class=\"mrw-calendar-head\"><div class=\"mrw-calendar-title\">저장된 날짜</div><div class=\"mrw-calendar-count\">" + monthLabel + "</div></div>",
+      "<div class=\"mrw-calendar-head\"><div><div class=\"mrw-calendar-title\">기록 달력</div><div class=\"mrw-calendar-count\">" + monthLabel + "</div></div><div class=\"mrw-calendar-nav\"><button type=\"button\" data-mrw-calendar-month=\"-1\" aria-label=\"이전 달\">‹</button><button type=\"button\" data-mrw-calendar-month=\"1\" aria-label=\"다음 달\">›</button></div></div>",
       "<div class=\"mrw-calendar-grid\">" + cells.join("") + "</div>",
       "</div>",
     ].join("");
   }
 
-  function renderRecentRecordList() {
+  function renderMissingRecordList() {
     if (state.recordIndex.loading) return "<div class=\"mrw-record-list\"><div class=\"mrw-empty\">저장된 기록을 불러오는 중입니다.</div></div>";
-    var items = recordItems().slice(0, 10);
-    var teamItems = teamRecordItems().slice(0, 10);
-    var sections = [];
-    if (state.recordIndex.error) {
-      sections.push("<div class=\"mrw-record-list\"><div class=\"mrw-empty\">" + escapeHtml(state.recordIndex.error) + "</div></div>");
-    } else if (items.length) {
-      sections.push([
-        "<div class=\"mrw-record-list\"><div class=\"mrw-record-list-title\"><span>최근 저장 기록</span><span>" + state.recordIndex.items.length + "경기</span></div>",
-        items.map(function (item) {
-          var date = recordDateInput(item);
-          return [
-            "<button type=\"button\" class=\"mrw-record-chip\" data-mrw-load-record-id=\"" + escapeHtml(item.matchId) + "\" data-mrw-load-record-date=\"" + escapeHtml(date) + "\">",
-            "<span class=\"mrw-record-chip-main\"><span class=\"mrw-record-date\">" + escapeHtml(recordDateLabel(item.matchDate || item.matchId)) + " · " + recordKindText(item) + "</span>",
-            "<span class=\"mrw-record-sub\">" + escapeHtml(recordTeamTitle(item)) + (item.venueName ? " · " + escapeHtml(item.venueName) : "") + "</span></span>",
-            "<span class=\"mrw-record-score\">" + escapeHtml(recordScoreText(item)) + "</span>",
-            "</button>",
-          ].join("");
-        }).join(""),
-        "</div>",
-      ].join(""));
-    }
-    if (state.recordIndex.teamError) {
-      sections.push("<div class=\"mrw-record-list\"><div class=\"mrw-empty\">" + escapeHtml(state.recordIndex.teamError) + "</div></div>");
-    } else if (teamItems.length) {
-      sections.push([
-        "<div class=\"mrw-record-list\"><div class=\"mrw-record-list-title\"><span>팀 확정 기록</span><span>" + state.recordIndex.teamItems.length + "건</span></div>",
-        teamItems.map(function (item) {
-          var date = teamRecordDateInput(item);
-          var aCount = Number(item.teamAPlayers) || 0;
-          var bCount = Number(item.teamBPlayers) || 0;
-          return [
-            "<button type=\"button\" class=\"mrw-record-chip mrw-team-record-chip\" data-mrw-load-team-record-date=\"" + escapeHtml(date) + "\">",
-            "<span class=\"mrw-record-chip-main\"><span class=\"mrw-record-date\">" + escapeHtml(recordDateLabel(date)) + " · 팀확정</span>",
-            "<span class=\"mrw-record-sub\">마지막 확정본 · 형광 " + aCount + "명 · 주황 " + bCount + "명</span></span>",
-            "<span class=\"mrw-record-score\">" + aCount + " : " + bCount + "</span>",
-            "</button>",
-          ].join("");
-        }).join(""),
-        "</div>",
-      ].join(""));
-    }
-    if (!sections.length) return "<div class=\"mrw-record-list\"><div class=\"mrw-empty\">아직 저장된 기록이 없습니다.</div></div>";
-    return sections.join("");
+    if (state.recordIndex.teamError) return "<div class=\"mrw-record-list\"><div class=\"mrw-empty\">" + escapeHtml(state.recordIndex.teamError) + "</div></div>";
+    var missing = missingRecordItems().slice(0, 12);
+    if (!missing.length) return "<div class=\"mrw-record-list\"><div class=\"mrw-empty\">기록 미입력 날짜가 없습니다.</div></div>";
+    return [
+      "<div class=\"mrw-record-list\"><div class=\"mrw-record-list-title\"><span>기록 미입력</span><span>" + missingRecordItems().length + "건</span></div>",
+      missing.map(function (item) {
+        var date = teamRecordDateInput(item);
+        var aCount = Number(item.teamAPlayers) || 0;
+        var bCount = Number(item.teamBPlayers) || 0;
+        return [
+          "<button type=\"button\" class=\"mrw-record-chip mrw-team-record-chip\" data-mrw-load-team-record-date=\"" + escapeHtml(date) + "\">",
+          "<span class=\"mrw-record-chip-main\"><span class=\"mrw-record-date\">" + escapeHtml(recordDateLabel(date)) + "</span>",
+          "<span class=\"mrw-record-sub\">팀 확정 완료 · 경기 기록 미입력 · 형광 " + aCount + "명 · 주황 " + bCount + "명</span></span>",
+          "<span class=\"mrw-record-score\">" + aCount + " : " + bCount + "</span>",
+          "</button>",
+        ].join("");
+      }).join(""),
+      "</div>",
+    ].join("");
   }
 
   function renderRecordOverview(form) {
     var items = recordItems();
     var teamItems = teamRecordItems();
-    var latest = items[0];
+    var missing = missingRecordItems();
     var summary = state.recordIndex.loading
       ? "저장된 기록을 확인하는 중"
       : state.recordIndex.error
         ? "기록 목록을 불러오지 못했습니다"
-        : items.length
-          ? "최근 기록 " + escapeHtml(recordDateLabel(latest.matchDate || latest.matchId)) + " · 경기 " + items.length + "건 · 팀확정 " + teamItems.length + "건"
-          : teamItems.length
-            ? "팀확정 기록 " + teamItems.length + "건"
-            : "저장된 기록 없음";
+        : "경기 기록 " + items.length + "건 · 팀확정 " + teamItems.length + "건 · 기록 미입력 " + missing.length + "건";
     return [
       "<div class=\"mrw-record-overview\">",
       "<div class=\"mrw-record-summary\"><span>" + summary + "</span><button type=\"button\" class=\"mrw-small-btn\" data-mrw-action=\"refresh-record-index\">새로고침</button></div>",
       renderRecordCalendar(form),
-      renderRecentRecordList(),
+      renderMissingRecordList(),
       renderSelectedTeamRecord(),
       "</div>",
     ].join("");
@@ -1501,9 +1522,9 @@
   function renderEditModal(form) {
     return [
       "<div class=\"mrw-modal-backdrop\" data-mrw-action=\"close-edit-modal\"><div class=\"mrw-modal\">",
-      "<div class=\"mrw-modal-head\"><div><h4 class=\"mrw-modal-title\">기존 기록 수정</h4><p class=\"mrw-modal-sub\">수정할 경기 날짜를 선택해서 기록을 불러옵니다.</p></div><button type=\"button\" class=\"mrw-icon-close\" data-mrw-action=\"close-edit-modal\" aria-label=\"닫기\">×</button></div>",
-      "<div class=\"mrw-modal-body\"><div class=\"mrw-field\"><label>경기일</label><input data-mrw=\"editDate\" type=\"date\" value=\"" + escapeHtml(state.editDate || form.date) + "\" /></div><div class=\"mrw-fixed\">기록 키: " + escapeHtml(compactDate(state.editDate || form.date)) + "</div>" + renderRecordOverview(form) + "</div>",
-      "<div class=\"mrw-modal-foot\"><button type=\"button\" class=\"mrw-button mrw-secondary\" data-mrw-action=\"close-edit-modal\">닫기</button><button type=\"button\" class=\"mrw-button mrw-primary\" data-mrw-action=\"load-edit-date\">기록 불러오기</button></div>",
+      "<div class=\"mrw-modal-head\"><div><h4 class=\"mrw-modal-title\">기존 기록 수정</h4><p class=\"mrw-modal-sub\">달력에서 날짜를 선택해 기록을 불러옵니다.</p></div><button type=\"button\" class=\"mrw-icon-close\" data-mrw-action=\"close-edit-modal\" aria-label=\"닫기\">×</button></div>",
+      "<div class=\"mrw-modal-body\">" + renderRecordOverview(form) + "</div>",
+      "<div class=\"mrw-modal-foot\"><button type=\"button\" class=\"mrw-button mrw-secondary\" data-mrw-action=\"close-edit-modal\">닫기</button></div>",
       "</div></div>",
     ].join("");
   }
@@ -1623,9 +1644,15 @@
     if (modal) modal.addEventListener("click", function (event) { event.stopPropagation(); });
     var editDate = panel.querySelector("[data-mrw=editDate]");
     if (editDate) editDate.addEventListener("change", function () { state.editDate = editDate.value || todayInputValue(); renderPanel(); });
+    Array.prototype.forEach.call(panel.querySelectorAll("[data-mrw-calendar-month]"), function (button) {
+      button.addEventListener("click", function () {
+        setCalendarMonth(Number(button.getAttribute("data-mrw-calendar-month")) || 0);
+      });
+    });
     Array.prototype.forEach.call(panel.querySelectorAll("[data-mrw-calendar-date]"), function (button) {
       button.addEventListener("click", function () {
         state.editDate = button.getAttribute("data-mrw-calendar-date") || state.editDate || todayInputValue();
+        state.calendarMonth = state.editDate.slice(0, 7);
         var recordId = button.getAttribute("data-mrw-record-id");
         var teamDate = button.getAttribute("data-mrw-team-record-date");
         if (recordId) {
@@ -1652,13 +1679,6 @@
     });
     var refreshRecordIndex = panel.querySelector("[data-mrw-action=refresh-record-index]");
     if (refreshRecordIndex) refreshRecordIndex.addEventListener("click", function () { loadRecordIndex(true); });
-    var useTeamRecord = panel.querySelector("[data-mrw-action=use-team-record]");
-    if (useTeamRecord) useTeamRecord.addEventListener("click", function () {
-      if (!state.selectedTeamRecord) return;
-      loadTeamRecordForEdit(state.selectedTeamRecord.date);
-    });
-    var copyTeamRecordUrl = panel.querySelector("[data-mrw-action=copy-team-record-url]");
-    if (copyTeamRecordUrl) copyTeamRecordUrl.addEventListener("click", copySelectedTeamRecordUrl);
     var loadEditDate = panel.querySelector("[data-mrw-action=load-edit-date]");
     if (loadEditDate) loadEditDate.addEventListener("click", loadEditRecordByDate);
     var refreshLineup = panel.querySelector("[data-mrw-action=refresh-lineup]");
@@ -1807,6 +1827,7 @@
     if (!date) return;
     try {
       state.editDate = date;
+      state.calendarMonth = date.slice(0, 7);
       state.selectedTeamRecordLoading = true;
       state.selectedTeamRecordError = "";
       renderPanel();
@@ -1819,6 +1840,7 @@
         return;
       }
       var matchId = compactDate(date);
+      state.calendarMonth = date.slice(0, 7);
       resetToTeamRecordMatch(matchId, record, [
         "팀 확정 기록을 불러왔습니다.",
         "기록 키: " + matchId,
@@ -1829,22 +1851,6 @@
       state.selectedTeamRecordError = error && error.message ? error.message : String(error);
       renderPanel();
     }
-  }
-
-  async function copySelectedTeamRecordUrl() {
-    var record = state.selectedTeamRecord;
-    if (!record || !record.shareUrl) return;
-    try {
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        await navigator.clipboard.writeText(record.shareUrl);
-      } else {
-        window.prompt("기록 URL을 복사하세요.", record.shareUrl);
-      }
-      state.status = "팀 확정 기록 URL을 복사했습니다.";
-    } catch (error) {
-      state.status = error && error.message ? error.message : String(error);
-    }
-    renderPanel();
   }
 
   async function loadRecord(matchIdOverride) {
@@ -1907,6 +1913,7 @@
       state.selectedScope = "";
 
       var matchDate = dateInputFromFirebase(data.matchDate) || dateInputFromFirebase(data.matchId || matchId);
+      if (matchDate) state.calendarMonth = matchDate.slice(0, 7);
       state.loadedForm = {
         date: matchDate || todayInputValue(),
         matchId: data.matchId || matchId,

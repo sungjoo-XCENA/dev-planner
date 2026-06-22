@@ -1382,7 +1382,7 @@ function RecordEntryAnchor({
     allowPlayerEdit,
   };
   return (
-    <section id="lineup-result" data-mrw-standalone="true" data-mrw-active="true" className="mb-6 rounded-3xl bg-white p-4 shadow-sm sm:p-6">
+    <section id="record-edit-panel" data-mrw-standalone="true" data-mrw-active="true" className="mb-6 rounded-3xl bg-white p-4 shadow-sm sm:p-6">
       <script
         type="application/json"
         data-mrw-records
