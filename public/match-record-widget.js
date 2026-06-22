@@ -1694,7 +1694,7 @@
     Array.prototype.forEach.call(panel.querySelectorAll("[data-mrw-delete-team-record-date]"), function (button) {
       button.addEventListener("click", function (event) {
         event.stopPropagation();
-        deleteTeamRecord(button.getAttribute("data-mrw-delete-team-record-date") || selectedTeamRecordDate() || state.editDate || todayInputValue());
+        deleteDateRecords(button.getAttribute("data-mrw-delete-team-record-date") || selectedTeamRecordDate() || state.editDate || todayInputValue());
       });
     });
     var refreshRecordIndex = panel.querySelector("[data-mrw-action=refresh-record-index]");
@@ -2000,33 +2000,59 @@
     }
   }
 
-  async function deleteTeamRecord(date) {
+  async function deleteMatchRecordById(matchId) {
+    var response = await fetch("/api/match-record?matchId=" + encodeURIComponent(matchId), {
+      method: "DELETE",
+      headers: { accept: "application/json" },
+    });
+    var data = await response.json().catch(function () { return {}; });
+    if (!response.ok) throw new Error(data.detail || data.error || "경기 기록 삭제에 실패했습니다.");
+    removeRecordIndexItem(data.matchId || matchId);
+    return data;
+  }
+
+  async function deleteTeamRecordByDate(date) {
+    var response = await fetch("/api/team-records?date=" + encodeURIComponent(date), {
+      method: "DELETE",
+      headers: { accept: "application/json" },
+    });
+    var data = await response.json().catch(function () { return {}; });
+    if (!response.ok) throw new Error(data.detail || data.error || "팀 확정 기록 삭제에 실패했습니다.");
+    removeTeamRecordIndexItem(date);
+    return data;
+  }
+
+  function deleteStatusLines(date, matchId, matchData, teamData) {
+    var lines = [
+      "해당 날짜 기록을 모두 삭제했습니다.",
+      "날짜: " + date,
+      "기록 키: " + matchId,
+    ];
+    if (matchData && matchData.deleted === false) lines.push("경기 기록: 삭제할 기록 없음");
+    if (teamData && teamData.deleted === false) lines.push("팀 확정 기록: 삭제할 기록 없음");
+    return lines.join("\n");
+  }
+
+  async function deleteDateRecords(date, matchId) {
     try {
       var targetDate = String(date || selectedTeamRecordDate() || state.editDate || "");
       if (!/^\d{4}-\d{2}-\d{2}$/.test(targetDate)) {
-        state.status = "삭제할 팀 확정 날짜를 선택해주세요.";
+        state.status = "삭제할 날짜를 선택해주세요.";
         renderPanel();
         return;
       }
+      var targetMatchId = matchId || compactDate(targetDate);
 
-      var ok = window.confirm("해당 날짜의 팀 확정 기록을 삭제할까요?\n날짜: " + targetDate + "\n경기 기록이 따로 저장되어 있으면 경기 기록은 삭제되지 않습니다.");
+      var ok = window.confirm("해당 날짜의 저장 기록을 모두 삭제할까요?\n날짜: " + targetDate + "\n경기기록과 팀확정 기록이 모두 삭제됩니다.");
       if (!ok) return;
 
-      state.status = "팀 확정 기록을 삭제하는 중...";
+      state.status = "해당 날짜 기록을 모두 삭제하는 중...";
       renderPanel();
 
-      var response = await fetch("/api/team-records?date=" + encodeURIComponent(targetDate), {
-        method: "DELETE",
-        headers: { accept: "application/json" },
-      });
-      var data = await response.json().catch(function () { return {}; });
-      if (!response.ok) throw new Error(data.detail || data.error || "팀 확정 기록 삭제에 실패했습니다.");
+      var matchData = await deleteMatchRecordById(targetMatchId);
+      var teamData = await deleteTeamRecordByDate(targetDate);
 
-      removeTeamRecordIndexItem(targetDate);
-      clearRecordSelection(targetDate, [
-        data.message || "팀 확정 기록을 삭제했습니다.",
-        "날짜: " + targetDate,
-      ].join("\n"));
+      clearRecordSelection(targetDate, deleteStatusLines(targetDate, targetMatchId, matchData, teamData));
       loadRecordIndex(true);
     } catch (error) {
       state.status = error && error.message ? error.message : String(error);
@@ -2037,7 +2063,7 @@
   async function deleteRecord() {
     try {
       if (!state.editingMatchId && selectedTeamRecordDate()) {
-        await deleteTeamRecord(selectedTeamRecordDate());
+        await deleteDateRecords(selectedTeamRecordDate(), compactDate(selectedTeamRecordDate()));
         return;
       }
 
@@ -2045,43 +2071,14 @@
       var dateInput = panel && panel.querySelector("[data-mrw=date]");
       var matchIdInput = panel && panel.querySelector("[data-mrw=matchId]");
       var matchId = state.editingMatchId || (matchIdInput && matchIdInput.value.trim()) || compactDate(dateInput && dateInput.value);
+      var targetDate = (dateInput && dateInput.value) || dateInputFromFirebase(matchId) || state.editDate || todayInputValue();
       if (!matchId) {
         state.status = "삭제할 기록 날짜를 선택해주세요.";
         renderPanel();
         return;
       }
 
-      var ok = window.confirm("해당 날짜의 저장 기록을 삭제할까요?\n기록 키: " + matchId);
-      if (!ok) return;
-
-      state.status = "해당 날짜 기록을 삭제하는 중...";
-      renderPanel();
-
-      var response = await fetch("/api/match-record?matchId=" + encodeURIComponent(matchId), {
-        method: "DELETE",
-        headers: { accept: "application/json" },
-      });
-      var data = await response.json().catch(function () { return {}; });
-      if (!response.ok) throw new Error(data.detail || data.error || "경기 기록 삭제에 실패했습니다.");
-      removeRecordIndexItem(data.matchId || matchId);
-
-      var deletedMatchId = data.matchId || matchId;
-      var deletedDate = dateInputFromFirebase(deletedMatchId) || state.editDate || todayInputValue();
-      var teamRecord = await fetchTeamRecord(deletedDate).catch(function () { return null; });
-      if (teamRecord) {
-        resetToTeamRecordMatch(deletedMatchId, teamRecord, [
-          data.message || "해당 날짜 경기 기록을 삭제했습니다.",
-          "기록 키: " + deletedMatchId,
-          "팀 확정 기록은 남아 있어 기록 미입력 상태로 전환했습니다.",
-        ].join("\n"));
-      } else {
-        resetToEmptyMatch(deletedMatchId, [
-          data.message || "해당 날짜 기록을 삭제했습니다.",
-          "기록 키: " + deletedMatchId,
-          "해당 날짜에 남은 팀 확정 기록이 없습니다.",
-        ].join("\n"), true);
-      }
-      loadRecordIndex(true);
+      await deleteDateRecords(targetDate, matchId);
     } catch (error) {
       state.status = error && error.message ? error.message : String(error);
       renderPanel();
