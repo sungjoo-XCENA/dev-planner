@@ -151,13 +151,17 @@
       ".mrw-calendar-day.mrw-selected:after,.mrw-calendar-day.mrw-selected:before{background:#fff}",
       ".mrw-record-list{display:grid;gap:7px}",
       ".mrw-record-list-title{display:flex;align-items:center;justify-content:space-between;gap:8px;color:#0f172a;font-size:13px;font-weight:950}",
-      ".mrw-record-chip{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px;border:1px solid #e2e8f0;border-radius:14px;background:#fff;padding:9px 10px;text-align:left;color:#0f172a;cursor:pointer}",
+      ".mrw-record-chip{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:8px;border:1px solid #e2e8f0;border-radius:14px;background:#fff;padding:9px 10px;text-align:left;color:#0f172a}",
       ".mrw-record-chip:hover{border-color:#94a3b8;background:#f8fafc}",
       ".mrw-team-record-chip{border-color:#bbf7d0;background:#f0fdf4}",
+      ".mrw-record-chip-selected{border-color:#0f172a;background:#ecfccb}",
+      ".mrw-record-chip-action{min-width:0;border:0;background:transparent;padding:0;text-align:left;color:inherit;font:inherit;cursor:pointer}",
+      ".mrw-record-chip-action:focus-visible{outline:3px solid rgba(15,23,42,.35);outline-offset:3px;border-radius:10px}",
       ".mrw-record-chip-main{min-width:0}",
       ".mrw-record-date{font-size:13px;font-weight:950}",
       ".mrw-record-sub{margin-top:2px;color:#64748b;font-size:11px;font-weight:850;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
       ".mrw-record-score{border-radius:999px;background:#e2e8f0;color:#0f172a;padding:5px 8px;font-size:11px;font-weight:950;white-space:nowrap}",
+      ".mrw-record-delete{white-space:nowrap}",
       ".mrw-team-detail{display:grid;gap:10px;border:1px solid #dbe3ef;border-radius:16px;background:#f8fafc;padding:12px}",
       ".mrw-team-detail-head{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;flex-wrap:wrap}",
       ".mrw-team-detail-title{font-size:13px;font-weight:950;color:#0f172a}",
@@ -179,7 +183,7 @@
       ".mrw-modal-foot{display:flex;gap:8px;justify-content:flex-end;background:#fff;border-top:1px solid #e2e8f0;padding:12px 14px}",
       ".mrw-icon-close{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;border:0;border-radius:999px;background:#e2e8f0;color:#334155;font-size:20px;font-weight:950;line-height:1;cursor:pointer}",
       ".mrw-empty{color:#94a3b8;font-size:12px;font-weight:800}",
-      "@media(max-width:760px){.mrw-card{padding:14px;border-radius:18px}.mrw-title{font-size:18px}.mrw-meta{grid-template-columns:1fr}.mrw-wide{grid-column:1/-1}.mrw-summary{grid-template-columns:1fr}.mrw-summary-item:last-child{grid-column:auto}.mrw-field{max-width:100%;overflow:hidden}.mrw-field input,.mrw-field select,.mrw-field textarea,.mrw-fixed{min-height:42px;width:100%;max-width:100%;min-width:0;min-inline-size:0}.mrw-field input[type=date],.mrw-field input[type=time]{appearance:none;-webkit-appearance:none;text-align:left}.mrw-mode-head{align-items:stretch}.mrw-scope{width:100%}.mrw-scope select{flex:1}.mrw-layout{grid-template-columns:1fr}.mrw-scoreboard{padding:10px}.mrw-score-num{font-size:40px}.mrw-score-row{grid-template-columns:1fr;gap:10px}.mrw-side{min-height:76px;padding:12px 38px}.mrw-team-name{font-size:12px}.mrw-score-minus{right:6px;top:6px;width:28px;height:28px;font-size:17px}.mrw-stats{grid-template-columns:1fr}.mrw-stat-list{gap:5px}.mrw-stat-row{grid-template-columns:minmax(68px,1fr) auto auto;gap:4px;padding:6px}.mrw-stat-name{font-size:12px;line-height:1.2}.mrw-name{white-space:normal}.mrw-role{padding:1px 5px;font-size:9px}.mrw-player-remove{padding:3px 6px;font-size:9px}.mrw-counter{grid-template-columns:18px 20px 14px 20px;gap:1px;padding:3px;min-width:76px}.mrw-counter-label{font-size:9px;line-height:1}.mrw-counter button{width:20px;height:20px;font-size:12px}.mrw-counter-value{font-size:12px}.mrw-add-team,.mrw-add-player,.mrw-edit-load-row{grid-template-columns:1fr}.mrw-add-team button,.mrw-add-player button,.mrw-edit-load-row button{min-height:38px}.mrw-events{max-height:none}.mrw-actions .mrw-button{flex:1 1 100%}.mrw-team-grid{grid-template-columns:1fr}.mrw-modal-backdrop{align-items:flex-end;padding:0}.mrw-modal{width:100%;border-radius:22px 22px 0 0;max-height:84vh}}",
+      "@media(max-width:760px){.mrw-card{padding:14px;border-radius:18px}.mrw-title{font-size:18px}.mrw-meta{grid-template-columns:1fr}.mrw-wide{grid-column:1/-1}.mrw-summary{grid-template-columns:1fr}.mrw-summary-item:last-child{grid-column:auto}.mrw-field{max-width:100%;overflow:hidden}.mrw-field input,.mrw-field select,.mrw-field textarea,.mrw-fixed{min-height:42px;width:100%;max-width:100%;min-width:0;min-inline-size:0}.mrw-field input[type=date],.mrw-field input[type=time]{appearance:none;-webkit-appearance:none;text-align:left}.mrw-mode-head{align-items:stretch}.mrw-scope{width:100%}.mrw-scope select{flex:1}.mrw-layout{grid-template-columns:1fr}.mrw-scoreboard{padding:10px}.mrw-score-num{font-size:40px}.mrw-score-row{grid-template-columns:1fr;gap:10px}.mrw-side{min-height:76px;padding:12px 38px}.mrw-team-name{font-size:12px}.mrw-score-minus{right:6px;top:6px;width:28px;height:28px;font-size:17px}.mrw-stats{grid-template-columns:1fr}.mrw-stat-list{gap:5px}.mrw-stat-row{grid-template-columns:minmax(68px,1fr) auto auto;gap:4px;padding:6px}.mrw-stat-name{font-size:12px;line-height:1.2}.mrw-name{white-space:normal}.mrw-role{padding:1px 5px;font-size:9px}.mrw-player-remove{padding:3px 6px;font-size:9px}.mrw-counter{grid-template-columns:18px 20px 14px 20px;gap:1px;padding:3px;min-width:76px}.mrw-counter-label{font-size:9px;line-height:1}.mrw-counter button{width:20px;height:20px;font-size:12px}.mrw-counter-value{font-size:12px}.mrw-add-team,.mrw-add-player,.mrw-edit-load-row{grid-template-columns:1fr}.mrw-add-team button,.mrw-add-player button,.mrw-edit-load-row button{min-height:38px}.mrw-events{max-height:none}.mrw-actions .mrw-button{flex:1 1 100%}.mrw-record-chip{grid-template-columns:minmax(0,1fr) auto;align-items:stretch}.mrw-record-chip-action{grid-column:1/-1}.mrw-record-sub{white-space:normal}.mrw-record-delete{grid-column:1/-1;width:100%;min-height:38px}.mrw-team-grid{grid-template-columns:1fr}.mrw-modal-backdrop{align-items:flex-end;padding:0}.mrw-modal{width:100%;border-radius:22px 22px 0 0;max-height:84vh}}",
     ].join("\n");
     document.head.appendChild(style);
   }
@@ -1036,7 +1040,7 @@
     var refreshAction = canRefreshCurrentLineup()
       ? "<button type=\"button\" class=\"mrw-button mrw-secondary\" data-mrw-action=\"refresh-lineup\">라인업 갱신</button>"
       : "";
-    var deleteAction = state.editingMatchId
+    var deleteAction = state.editingMatchId || selectedTeamRecordDate()
       ? "<button type=\"button\" class=\"mrw-button mrw-danger\" data-mrw-action=\"delete-record\">삭제</button>"
       : "";
 
@@ -1336,6 +1340,10 @@
     return /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : "";
   }
 
+  function selectedTeamRecordDate() {
+    return teamRecordDateInput(state.selectedTeamRecord);
+  }
+
   function recordDateLookup() {
     var lookup = Object.create(null);
     recordItems().forEach(function (item) {
@@ -1426,7 +1434,7 @@
     return [
       "<div class=\"mrw-team-detail\">",
       "<div class=\"mrw-team-detail-head\"><div><div class=\"mrw-team-detail-title\">" + escapeHtml(record.date) + " 팀 분배</div>",
-      "<div class=\"mrw-team-detail-sub\">형광 " + aCount + "명 · 주황 " + bCount + "명</div></div></div>",
+      "<div class=\"mrw-team-detail-sub\">형광 " + aCount + "명 · 주황 " + bCount + "명</div></div><button type=\"button\" class=\"mrw-small-btn mrw-small-danger\" data-mrw-delete-team-record-date=\"" + escapeHtml(record.date) + "\">삭제</button></div>",
       "<div class=\"mrw-team-grid\">" + renderTeamRecordTeam(record, "A") + renderTeamRecordTeam(record, "B") + "</div>",
       "</div>",
     ].join("");
@@ -1491,12 +1499,15 @@
         var date = teamRecordDateInput(item);
         var aCount = Number(item.teamAPlayers) || 0;
         var bCount = Number(item.teamBPlayers) || 0;
+        var selected = selectedTeamRecordDate() === date;
         return [
-          "<button type=\"button\" class=\"mrw-record-chip mrw-team-record-chip\" data-mrw-load-team-record-date=\"" + escapeHtml(date) + "\">",
+          "<div class=\"mrw-record-chip mrw-team-record-chip" + (selected ? " mrw-record-chip-selected" : "") + "\">",
+          "<button type=\"button\" class=\"mrw-record-chip-action\" data-mrw-load-team-record-date=\"" + escapeHtml(date) + "\" aria-expanded=\"" + (selected ? "true" : "false") + "\">",
           "<span class=\"mrw-record-chip-main\"><span class=\"mrw-record-date\">" + escapeHtml(recordDateLabel(date)) + "</span>",
-          "<span class=\"mrw-record-sub\">팀 확정 완료 · 경기 기록 미입력 · 형광 " + aCount + "명 · 주황 " + bCount + "명</span></span>",
+          "<span class=\"mrw-record-sub\">팀 확정 완료 · 경기 기록 미입력 · 형광 " + aCount + "명 · 주황 " + bCount + "명</span></span></button>",
           "<span class=\"mrw-record-score\">" + aCount + " : " + bCount + "</span>",
-          "</button>",
+          "<button type=\"button\" class=\"mrw-small-btn mrw-small-danger mrw-record-delete\" data-mrw-delete-team-record-date=\"" + escapeHtml(date) + "\">삭제</button>",
+          "</div>",
         ].join("");
       }).join(""),
       "</div>",
@@ -1663,10 +1674,10 @@
           return;
         }
         if (teamDate) {
-          loadTeamRecordForEdit(teamDate);
+          toggleTeamRecordForEdit(teamDate);
           return;
         }
-        renderPanel();
+        clearRecordSelection(state.editDate, "");
       });
     });
     Array.prototype.forEach.call(panel.querySelectorAll("[data-mrw-load-record-id]"), function (button) {
@@ -1677,7 +1688,13 @@
     });
     Array.prototype.forEach.call(panel.querySelectorAll("[data-mrw-load-team-record-date]"), function (button) {
       button.addEventListener("click", function () {
-        loadTeamRecordForEdit(button.getAttribute("data-mrw-load-team-record-date") || state.editDate || todayInputValue());
+        toggleTeamRecordForEdit(button.getAttribute("data-mrw-load-team-record-date") || state.editDate || todayInputValue());
+      });
+    });
+    Array.prototype.forEach.call(panel.querySelectorAll("[data-mrw-delete-team-record-date]"), function (button) {
+      button.addEventListener("click", function (event) {
+        event.stopPropagation();
+        deleteTeamRecord(button.getAttribute("data-mrw-delete-team-record-date") || selectedTeamRecordDate() || state.editDate || todayInputValue());
       });
     });
     var refreshRecordIndex = panel.querySelector("[data-mrw-action=refresh-record-index]");
@@ -1824,6 +1841,24 @@
     state.recordIndex.loaded = false;
   }
 
+  function removeTeamRecordIndexItem(date) {
+    var targetDate = String(date || "");
+    state.recordIndex.teamItems = (Array.isArray(state.recordIndex.teamItems) ? state.recordIndex.teamItems : []).filter(function (item) {
+      return teamRecordDateInput(item) !== targetDate;
+    });
+    state.recordIndex.loaded = false;
+  }
+
+  function clearRecordSelection(date, status) {
+    var nextDate = date || state.editDate || todayInputValue();
+    resetRecordEntryState();
+    state.editDate = nextDate;
+    state.calendarMonth = nextDate.slice(0, 7);
+    state.status = status || "";
+    removeExistingPanel();
+    renderPanel();
+  }
+
   function resetToTeamRecordMatch(matchId, record, status) {
     resetRecordEntryState();
     state.editingRecordOnly = true;
@@ -1866,6 +1901,15 @@
       state.selectedTeamRecordError = error && error.message ? error.message : String(error);
       renderPanel();
     }
+  }
+
+  function toggleTeamRecordForEdit(date) {
+    if (!date) return;
+    if (selectedTeamRecordDate() === date) {
+      clearRecordSelection(date, "팀 확정 기록을 접었습니다.");
+      return;
+    }
+    loadTeamRecordForEdit(date);
   }
 
   async function loadRecord(matchIdOverride) {
@@ -1956,8 +2000,47 @@
     }
   }
 
+  async function deleteTeamRecord(date) {
+    try {
+      var targetDate = String(date || selectedTeamRecordDate() || state.editDate || "");
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(targetDate)) {
+        state.status = "삭제할 팀 확정 날짜를 선택해주세요.";
+        renderPanel();
+        return;
+      }
+
+      var ok = window.confirm("해당 날짜의 팀 확정 기록을 삭제할까요?\n날짜: " + targetDate + "\n경기 기록이 따로 저장되어 있으면 경기 기록은 삭제되지 않습니다.");
+      if (!ok) return;
+
+      state.status = "팀 확정 기록을 삭제하는 중...";
+      renderPanel();
+
+      var response = await fetch("/api/team-records?date=" + encodeURIComponent(targetDate), {
+        method: "DELETE",
+        headers: { accept: "application/json" },
+      });
+      var data = await response.json().catch(function () { return {}; });
+      if (!response.ok) throw new Error(data.detail || data.error || "팀 확정 기록 삭제에 실패했습니다.");
+
+      removeTeamRecordIndexItem(targetDate);
+      clearRecordSelection(targetDate, [
+        data.message || "팀 확정 기록을 삭제했습니다.",
+        "날짜: " + targetDate,
+      ].join("\n"));
+      loadRecordIndex(true);
+    } catch (error) {
+      state.status = error && error.message ? error.message : String(error);
+      renderPanel();
+    }
+  }
+
   async function deleteRecord() {
     try {
+      if (!state.editingMatchId && selectedTeamRecordDate()) {
+        await deleteTeamRecord(selectedTeamRecordDate());
+        return;
+      }
+
       var panel = document.getElementById(PANEL_ID);
       var dateInput = panel && panel.querySelector("[data-mrw=date]");
       var matchIdInput = panel && panel.querySelector("[data-mrw=matchId]");

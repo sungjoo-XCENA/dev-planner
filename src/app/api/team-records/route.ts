@@ -1,7 +1,7 @@
 import { promises as fs } from "fs";
 import path from "path";
 import { NextResponse } from "next/server";
-import { firebaseGetJson, firebasePatchJson } from "@/lib/firebaseRealtime";
+import { firebaseDeleteJson, firebaseGetJson, firebasePatchJson } from "@/lib/firebaseRealtime";
 import type { TeamRecord, TeamRecordGroups, TeamRecordPlayer, TeamRecordSummary } from "@/types/teamRecord";
 
 export const dynamic = "force-dynamic";
@@ -115,6 +115,38 @@ async function writeDb(db: TeamRecordDb): Promise<void> {
   const tempPath = `${STORE_PATH}.${process.pid}.tmp`;
   await fs.writeFile(tempPath, `${JSON.stringify(db, null, 2)}\n`, "utf8");
   await fs.rename(tempPath, STORE_PATH);
+}
+
+async function deleteRecordByDate(date: string): Promise<boolean> {
+  const redis = getRedisConfig();
+  if (redis) {
+    const db = await readDb();
+    const existed = Boolean(db.records[date]);
+    delete db.records[date];
+    await redisCommand<string>(redis, ["SET", REDIS_RECORDS_KEY, JSON.stringify(db)]);
+    return existed;
+  }
+
+  if (hasFirebaseConfig()) {
+    const pathParts = [...firebaseRecordsPath(), date];
+    const existing = await firebaseGetJson(pathParts);
+    await firebaseDeleteJson(pathParts);
+    const remaining = await firebaseGetJson(pathParts);
+    if (remaining) {
+      throw new Error(`Firebase team record delete verification failed for ${pathParts.join("/")}`);
+    }
+    return Boolean(existing);
+  }
+
+  if (!shouldUseFileStore()) {
+    throw storageNotConfiguredError();
+  }
+
+  const db = await readDb();
+  const existed = Boolean(db.records[date]);
+  delete db.records[date];
+  await writeDb(db);
+  return existed;
 }
 
 function parseFirebaseRecords(raw: unknown): Record<string, TeamRecord> {
@@ -273,4 +305,28 @@ export async function POST(request: Request) {
     return storageErrorResponse(error);
   }
   return NextResponse.json({ record: normalized });
+}
+
+export async function DELETE(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const date = searchParams.get("date");
+
+  if (!isIsoDate(date)) {
+    return NextResponse.json({ error: "Invalid date" }, { status: 400 });
+  }
+
+  try {
+    const deleted = await deleteRecordByDate(date);
+    return NextResponse.json(
+      {
+        ok: true,
+        date,
+        deleted,
+        message: deleted ? "팀 확정 기록을 삭제했습니다." : "삭제할 팀 확정 기록이 없습니다.",
+      },
+      { headers: { "cache-control": "no-store" } },
+    );
+  } catch (error) {
+    return storageErrorResponse(error);
+  }
 }
