@@ -130,6 +130,8 @@
       ".mrw-modal-body{display:grid;gap:12px;padding:14px}",
       ".mrw-record-overview{display:grid;gap:12px}",
       ".mrw-record-summary{display:flex;align-items:center;justify-content:space-between;gap:8px;border:1px solid #e2e8f0;border-radius:14px;background:#f8fafc;padding:10px;color:#334155;font-size:12px;font-weight:900}",
+      ".mrw-record-summary-actions{display:flex;align-items:center;justify-content:flex-end;gap:6px;flex-wrap:wrap}",
+      ".mrw-small-primary{background:#0f172a;color:#fff}",
       ".mrw-calendar{border:1px solid #e2e8f0;border-radius:16px;background:#fff;padding:10px}",
       ".mrw-calendar-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}",
       ".mrw-calendar-title{font-size:13px;font-weight:950;color:#0f172a}",
@@ -183,7 +185,7 @@
       ".mrw-modal-foot{display:flex;gap:8px;justify-content:flex-end;background:#fff;border-top:1px solid #e2e8f0;padding:12px 14px}",
       ".mrw-icon-close{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;border:0;border-radius:999px;background:#e2e8f0;color:#334155;font-size:20px;font-weight:950;line-height:1;cursor:pointer}",
       ".mrw-empty{color:#94a3b8;font-size:12px;font-weight:800}",
-      "@media(max-width:760px){.mrw-card{padding:14px;border-radius:18px}.mrw-title{font-size:18px}.mrw-meta{grid-template-columns:1fr}.mrw-wide{grid-column:1/-1}.mrw-summary{grid-template-columns:1fr}.mrw-summary-item:last-child{grid-column:auto}.mrw-field{max-width:100%;overflow:hidden}.mrw-field input,.mrw-field select,.mrw-field textarea,.mrw-fixed{min-height:42px;width:100%;max-width:100%;min-width:0;min-inline-size:0}.mrw-field input[type=date],.mrw-field input[type=time]{appearance:none;-webkit-appearance:none;text-align:left}.mrw-mode-head{align-items:stretch}.mrw-scope{width:100%}.mrw-scope select{flex:1}.mrw-layout{grid-template-columns:1fr}.mrw-scoreboard{padding:10px}.mrw-score-num{font-size:40px}.mrw-score-row{grid-template-columns:1fr;gap:10px}.mrw-side{min-height:76px;padding:12px 38px}.mrw-team-name{font-size:12px}.mrw-score-minus{right:6px;top:6px;width:28px;height:28px;font-size:17px}.mrw-stats{grid-template-columns:1fr}.mrw-stat-list{gap:5px}.mrw-stat-row{grid-template-columns:minmax(68px,1fr) auto auto;gap:4px;padding:6px}.mrw-stat-name{font-size:12px;line-height:1.2}.mrw-name{white-space:normal}.mrw-role{padding:1px 5px;font-size:9px}.mrw-player-remove{padding:3px 6px;font-size:9px}.mrw-counter{grid-template-columns:18px 20px 14px 20px;gap:1px;padding:3px;min-width:76px}.mrw-counter-label{font-size:9px;line-height:1}.mrw-counter button{width:20px;height:20px;font-size:12px}.mrw-counter-value{font-size:12px}.mrw-add-team,.mrw-add-player,.mrw-edit-load-row{grid-template-columns:1fr}.mrw-add-team button,.mrw-add-player button,.mrw-edit-load-row button{min-height:38px}.mrw-events{max-height:none}.mrw-actions .mrw-button{flex:1 1 100%}.mrw-record-chip{grid-template-columns:minmax(0,1fr) auto;align-items:stretch}.mrw-record-chip-action{grid-column:1/-1}.mrw-record-sub{white-space:normal}.mrw-record-delete{grid-column:1/-1;width:100%;min-height:38px}.mrw-team-grid{grid-template-columns:1fr}.mrw-modal-backdrop{align-items:flex-end;padding:0}.mrw-modal{width:100%;border-radius:22px 22px 0 0;max-height:84vh}}",
+      "@media(max-width:760px){.mrw-card{padding:14px;border-radius:18px}.mrw-title{font-size:18px}.mrw-meta{grid-template-columns:1fr}.mrw-wide{grid-column:1/-1}.mrw-summary{grid-template-columns:1fr}.mrw-summary-item:last-child{grid-column:auto}.mrw-field{max-width:100%;overflow:hidden}.mrw-field input,.mrw-field select,.mrw-field textarea,.mrw-fixed{min-height:42px;width:100%;max-width:100%;min-width:0;min-inline-size:0}.mrw-field input[type=date],.mrw-field input[type=time]{appearance:none;-webkit-appearance:none;text-align:left}.mrw-mode-head{align-items:stretch}.mrw-scope{width:100%}.mrw-scope select{flex:1}.mrw-layout{grid-template-columns:1fr}.mrw-scoreboard{padding:10px}.mrw-score-num{font-size:40px}.mrw-score-row{grid-template-columns:1fr;gap:10px}.mrw-side{min-height:76px;padding:12px 38px}.mrw-team-name{font-size:12px}.mrw-score-minus{right:6px;top:6px;width:28px;height:28px;font-size:17px}.mrw-stats{grid-template-columns:1fr}.mrw-stat-list{gap:5px}.mrw-stat-row{grid-template-columns:minmax(68px,1fr) auto auto;gap:4px;padding:6px}.mrw-stat-name{font-size:12px;line-height:1.2}.mrw-name{white-space:normal}.mrw-role{padding:1px 5px;font-size:9px}.mrw-player-remove{padding:3px 6px;font-size:9px}.mrw-counter{grid-template-columns:18px 20px 14px 20px;gap:1px;padding:3px;min-width:76px}.mrw-counter-label{font-size:9px;line-height:1}.mrw-counter button{width:20px;height:20px;font-size:12px}.mrw-counter-value{font-size:12px}.mrw-add-team,.mrw-add-player,.mrw-edit-load-row{grid-template-columns:1fr}.mrw-add-team button,.mrw-add-player button,.mrw-edit-load-row button{min-height:38px}.mrw-events{max-height:none}.mrw-actions .mrw-button{flex:1 1 100%}.mrw-record-summary{align-items:stretch;flex-direction:column}.mrw-record-summary-actions{justify-content:stretch}.mrw-record-summary-actions .mrw-small-btn{flex:1 1 auto;min-height:36px}.mrw-record-chip{grid-template-columns:minmax(0,1fr) auto;align-items:stretch}.mrw-record-chip-action{grid-column:1/-1}.mrw-record-sub{white-space:normal}.mrw-record-delete{grid-column:1/-1;width:100%;min-height:38px}.mrw-team-grid{grid-template-columns:1fr}.mrw-modal-backdrop{align-items:flex-end;padding:0}.mrw-modal{width:100%;border-radius:22px 22px 0 0;max-height:84vh}}",
     ].join("\n");
     document.head.appendChild(style);
   }
@@ -1518,6 +1520,9 @@
     var items = recordItems();
     var teamItems = teamRecordItems();
     var missing = missingRecordItems();
+    var manualInputAction = !state.editingRecordOnly && !state.recordLoading
+      ? "<button type=\"button\" class=\"mrw-small-btn mrw-small-primary\" data-mrw-action=\"start-manual-record\">기록 입력</button>"
+      : "";
     var summary = state.recordIndex.loading
       ? "저장된 기록을 확인하는 중"
       : state.recordIndex.error
@@ -1525,7 +1530,7 @@
         : "경기 기록 " + items.length + "건 · 팀확정 " + teamItems.length + "건 · 기록 미입력 " + missing.length + "건";
     return [
       "<div class=\"mrw-record-overview\">",
-      "<div class=\"mrw-record-summary\"><span>" + summary + "</span><button type=\"button\" class=\"mrw-small-btn\" data-mrw-action=\"refresh-record-index\">새로고침</button></div>",
+      "<div class=\"mrw-record-summary\"><span>" + summary + "</span><div class=\"mrw-record-summary-actions\">" + manualInputAction + "<button type=\"button\" class=\"mrw-small-btn\" data-mrw-action=\"refresh-record-index\">새로고침</button></div></div>",
       renderRecordCalendar(form),
       renderMissingRecordList(),
       renderSelectedTeamRecord(),
@@ -1699,6 +1704,8 @@
     });
     var refreshRecordIndex = panel.querySelector("[data-mrw-action=refresh-record-index]");
     if (refreshRecordIndex) refreshRecordIndex.addEventListener("click", function () { loadRecordIndex(true); });
+    var startManualRecord = panel.querySelector("[data-mrw-action=start-manual-record]");
+    if (startManualRecord) startManualRecord.addEventListener("click", startManualRecordInput);
     var loadEditDate = panel.querySelector("[data-mrw-action=load-edit-date]");
     if (loadEditDate) loadEditDate.addEventListener("click", loadEditRecordByDate);
     var refreshLineup = panel.querySelector("[data-mrw-action=refresh-lineup]");
@@ -1738,6 +1745,19 @@
       return;
     }
     loadRecord(matchId);
+  }
+
+  function startManualRecordInput() {
+    var date = state.editDate || todayInputValue();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) date = todayInputValue();
+    state.editDate = date;
+    state.calendarMonth = date.slice(0, 7);
+    state.matchKind = "SELF";
+    resetToEmptyMatch(compactDate(date), [
+      "선택한 날짜로 빈 기록 입력을 시작합니다.",
+      "날짜: " + date,
+      "형광/주황 선수 추가 후 스코어와 골/도움을 입력하세요.",
+    ].join("\n"), true);
   }
 
   function refreshCurrentLineup() {
