@@ -1,6 +1,7 @@
 import { promises as fs } from "fs";
 import path from "path";
 import { NextResponse } from "next/server";
+import { firebaseGetJson, firebasePatchJson } from "@/lib/firebaseRealtime";
 import type { TeamRecord, TeamRecordGroups, TeamRecordPlayer, TeamRecordSummary } from "@/types/teamRecord";
 
 export const dynamic = "force-dynamic";
@@ -12,6 +13,7 @@ type TeamRecordDb = {
 
 const STORE_PATH = path.join(process.cwd(), "data", "team-records.json");
 const REDIS_RECORDS_KEY = "dev-planner:team-records:v1";
+const FIREBASE_RECORDS_PATH = process.env.FIREBASE_TEAM_RECORDS_PATH || "PlannerTeamRecords";
 
 type RedisConfig = {
   url: string;
@@ -33,8 +35,16 @@ function shouldUseFileStore(): boolean {
   return process.env.VERCEL !== "1";
 }
 
+function hasFirebaseConfig(): boolean {
+  return Boolean(process.env.FIREBASE_SERVICE_ACCOUNT_JSON || process.env.FIREBASE_SERVICE_ACCOUNT_PATH);
+}
+
+function firebaseRecordsPath(): string[] {
+  return FIREBASE_RECORDS_PATH.split("/").map((part) => part.trim()).filter(Boolean);
+}
+
 function storageNotConfiguredError(): Error {
-  return new Error("Vercel 배포 환경에서는 UPSTASH_REDIS_REST_URL/UPSTASH_REDIS_REST_TOKEN 또는 KV_REST_API_URL/KV_REST_API_TOKEN 환경변수가 필요합니다.");
+  return new Error("Vercel 배포 환경에서는 기존 Firebase 서비스 계정 환경변수(FIREBASE_SERVICE_ACCOUNT_JSON 또는 FIREBASE_SERVICE_ACCOUNT_PATH)가 필요합니다.");
 }
 
 async function redisCommand<T>(config: RedisConfig, command: unknown[]): Promise<T> {
@@ -66,6 +76,10 @@ async function readDb(): Promise<TeamRecordDb> {
     return parseDb(await redisCommand<string | null>(redis, ["GET", REDIS_RECORDS_KEY]));
   }
 
+  if (hasFirebaseConfig()) {
+    return { records: parseFirebaseRecords(await firebaseGetJson(firebaseRecordsPath())) };
+  }
+
   if (!shouldUseFileStore()) {
     throw storageNotConfiguredError();
   }
@@ -88,6 +102,11 @@ async function writeDb(db: TeamRecordDb): Promise<void> {
     return;
   }
 
+  if (hasFirebaseConfig()) {
+    await firebasePatchJson(firebaseRecordsPath(), db.records);
+    return;
+  }
+
   if (!shouldUseFileStore()) {
     throw storageNotConfiguredError();
   }
@@ -96,6 +115,16 @@ async function writeDb(db: TeamRecordDb): Promise<void> {
   const tempPath = `${STORE_PATH}.${process.pid}.tmp`;
   await fs.writeFile(tempPath, `${JSON.stringify(db, null, 2)}\n`, "utf8");
   await fs.rename(tempPath, STORE_PATH);
+}
+
+function parseFirebaseRecords(raw: unknown): Record<string, TeamRecord> {
+  if (!raw || typeof raw !== "object") return {};
+  const records: Record<string, TeamRecord> = {};
+  Object.entries(raw as Record<string, unknown>).forEach(([date, value]) => {
+    const record = normalizeStoredRecord(date, value);
+    if (record) records[date] = record;
+  });
+  return records;
 }
 
 function isIsoDate(value: unknown): value is string {
@@ -147,6 +176,21 @@ function normalizeRecord(input: unknown, existing?: TeamRecord): TeamRecord | nu
     shareUrl: record.shareUrl,
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
+  };
+}
+
+function normalizeStoredRecord(date: string, input: unknown): TeamRecord | null {
+  if (!isIsoDate(date) || !input || typeof input !== "object") return null;
+  const record = input as Partial<TeamRecord>;
+  if (!record.teams || !isRecordGroups(record.teams.A) || !isRecordGroups(record.teams.B)) return null;
+  if (typeof record.shareUrl !== "string" || record.shareUrl.trim().length === 0) return null;
+  const now = new Date().toISOString();
+  return {
+    date,
+    teams: record.teams,
+    shareUrl: record.shareUrl,
+    createdAt: typeof record.createdAt === "string" ? record.createdAt : now,
+    updatedAt: typeof record.updatedAt === "string" ? record.updatedAt : now,
   };
 }
 
