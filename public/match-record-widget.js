@@ -1434,7 +1434,7 @@
     return [
       "<div class=\"mrw-team-detail\">",
       "<div class=\"mrw-team-detail-head\"><div><div class=\"mrw-team-detail-title\">" + escapeHtml(record.date) + " 팀 분배</div>",
-      "<div class=\"mrw-team-detail-sub\">형광 " + aCount + "명 · 주황 " + bCount + "명</div></div><button type=\"button\" class=\"mrw-small-btn mrw-small-danger\" data-mrw-delete-team-record-date=\"" + escapeHtml(record.date) + "\">삭제</button></div>",
+      "<div class=\"mrw-team-detail-sub\">형광 " + aCount + "명 · 주황 " + bCount + "명</div></div></div>",
       "<div class=\"mrw-team-grid\">" + renderTeamRecordTeam(record, "A") + renderTeamRecordTeam(record, "B") + "</div>",
       "</div>",
     ].join("");
