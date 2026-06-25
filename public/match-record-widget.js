@@ -999,7 +999,11 @@
       renderPanel();
       var next = document.getElementById(PANEL_ID);
       var select = next && next.querySelector("[data-mrw=awayTeam]");
-      if (select) select.value = name;
+      if (select) {
+        select.value = name;
+        state.loadedForm = Object.assign({}, state.loadedForm || formState(next), { matchKind: "MATCH", awayTeamName: name });
+        setTeamLabels(state.loadedForm);
+      }
     } catch (error) {
       state.status = error && error.message ? error.message : String(error);
       renderPanel();
@@ -1168,9 +1172,6 @@
   }
 
   function renderMatchKindControl(matchKind) {
-    if (state.editingRecordOnly) {
-      return "<div class=\"mrw-field\"><label>경기 구분</label><div class=\"mrw-fixed\">" + (matchKind === "MATCH" ? "A매치" : "자체전") + "</div></div>";
-    }
     return "<div class=\"mrw-field\"><label>경기 구분</label><div class=\"mrw-segment\"><button type=\"button\" data-mrw-kind=\"SELF\" aria-pressed=\"" + (matchKind === "SELF") + "\">자체전</button><button type=\"button\" data-mrw-kind=\"MATCH\" aria-pressed=\"" + (matchKind === "MATCH") + "\">A매치</button></div></div>";
   }
 
@@ -1605,27 +1606,50 @@
     if (dateInput && idInput) {
       dateInput.addEventListener("change", function () {
         idInput.value = compactDate(dateInput.value);
+        var currentForm = formState(panel);
+        currentForm.date = dateInput.value;
+        currentForm.matchId = idInput.value;
         resetRecordEntryState();
+        state.loadedForm = currentForm;
+        state.matchKind = currentForm.matchKind;
+        setTeamLabels(currentForm);
         renderPanel();
       });
     }
     ["startTime", "venueName", "awayTeam", "memo"].forEach(function (key) {
       var element = panel.querySelector("[data-mrw=" + key + "]");
-      if (element) element.addEventListener("change", renderPanel);
+      if (element) element.addEventListener("change", function () {
+        var currentForm = formState(panel);
+        state.loadedForm = currentForm;
+        setTeamLabels(currentForm);
+        state.status = "";
+        renderPanel();
+      });
     });
     Array.prototype.forEach.call(panel.querySelectorAll("[data-mrw-duration]"), function (button) {
       button.addEventListener("click", function () {
         var durationInput = panel.querySelector("[data-mrw=duration]");
         if (durationInput) durationInput.value = button.getAttribute("data-mrw-duration") || "2";
+        state.loadedForm = formState(panel);
         renderPanel();
       });
     });
     Array.prototype.forEach.call(panel.querySelectorAll("[data-mrw-kind]"), function (button) {
       button.addEventListener("click", function () {
-        state.matchKind = button.getAttribute("data-mrw-kind") === "MATCH" ? "MATCH" : "SELF";
-        resetRecordEntryState();
+        var nextKind = button.getAttribute("data-mrw-kind") === "MATCH" ? "MATCH" : "SELF";
+        var currentForm = formState(panel);
+        currentForm.matchKind = nextKind;
+        currentForm.awayTeamName = nextKind === "MATCH" ? (currentForm.awayTeamName || firstAwayTeam()) : "";
         var matchKindInput = panel.querySelector("[data-mrw=matchKind]");
-        if (matchKindInput) matchKindInput.value = state.matchKind;
+        if (matchKindInput) matchKindInput.value = nextKind;
+        state.matchKind = nextKind;
+        state.loadedForm = currentForm;
+        state.teamScores = Object.create(null);
+        state.summaryStats = Object.create(null);
+        state.events = [];
+        state.conflict = null;
+        state.status = "";
+        setTeamLabels(currentForm);
         renderPanel();
       });
     });
