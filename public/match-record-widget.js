@@ -1054,6 +1054,15 @@
     return teamLabel(team);
   }
 
+  function displayTeamOrder() {
+    return ["B", "A"];
+  }
+
+  function scoreLine(score) {
+    var order = displayTeamOrder();
+    return teamLabel(order[0]) + " " + score[order[0]] + " : " + score[order[1]] + " " + teamLabel(order[1]);
+  }
+
   function renderPanelHead(editOnly) {
     var action = allowRecordEdit()
       ? "<button type=\"button\" class=\"mrw-button mrw-secondary\" data-mrw-action=\"open-edit-modal\">기록 수정</button>"
@@ -1214,7 +1223,7 @@
       summaryItem("기록 키", compactDate(form.date)),
       summaryItem("시간", time),
       summaryItem("구장", form.venueName || preferredVenue()),
-      summaryItem("대진", away + " vs " + home),
+      summaryItem("대진", home + " vs " + away),
     ].join("") + "</div>";
   }
 
@@ -1230,10 +1239,11 @@
   }
 
   function renderScoreboard(score, quarter) {
+    var order = displayTeamOrder();
     return [
       "<div class=\"mrw-scoreboard\"><div class=\"mrw-score-row\">",
-      scoreButton("A", score.A, quarter),
-      scoreButton("B", score.B, quarter),
+      scoreButton(order[0], score[order[0]], quarter),
+      scoreButton(order[1], score[order[1]], quarter),
       "</div></div>",
     ].join("");
   }
@@ -1243,7 +1253,8 @@
   }
 
   function renderStatTeams(records, quarter) {
-    return "<div class=\"mrw-stats\">" + renderStatTeam(records, "A", quarter) + renderStatTeam(records, "B", quarter) + "</div>";
+    var order = displayTeamOrder();
+    return "<div class=\"mrw-stats\">" + order.map(function (team) { return renderStatTeam(records, team, quarter); }).join("") + "</div>";
   }
 
   function renderStatTeam(records, team, quarter) {
@@ -1312,7 +1323,7 @@
     });
 
     return [
-      "<div class=\"mrw-log\"><div class=\"mrw-log-head\"><div class=\"mrw-log-title\">최근 기록</div><div class=\"mrw-log-score\">" + teamLabel("A") + " " + score.A + " : " + score.B + " " + teamLabel("B") + "</div></div>",
+      "<div class=\"mrw-log\"><div class=\"mrw-log-head\"><div class=\"mrw-log-title\">최근 기록</div><div class=\"mrw-log-score\">" + scoreLine(score) + "</div></div>",
       "<div class=\"mrw-events\">",
       items.length ? items.map(renderLogItem).join("") : "<div class=\"mrw-empty\">아직 입력한 기록이 없습니다.</div>",
       "</div></div>",
@@ -1369,13 +1380,13 @@
   function recordTeamTitle(item) {
     var away = (item && item.awayTeamName) || teamLabel("A");
     var home = (item && item.homeTeamName) || teamLabel("B");
-    return away + " vs " + home;
+    return home + " vs " + away;
   }
 
   function recordScoreText(item) {
     var away = Number(item && item.awayGoal);
     var home = Number(item && item.homeGoal);
-    return (Number.isFinite(away) ? away : 0) + " : " + (Number.isFinite(home) ? home : 0);
+    return (Number.isFinite(home) ? home : 0) + " : " + (Number.isFinite(away) ? away : 0);
   }
 
   function recordKindText(item) {
@@ -2086,7 +2097,7 @@
       state.status = [
         "기존 기록을 불러왔습니다.",
         "기록 키: " + (data.matchId || matchId),
-        "스코어: " + (data.awayTeamName || teamLabel("A")) + " " + (data.awayGoal || 0) + " : " + (data.homeGoal || 0) + " " + (data.homeTeamName || teamLabel("B")),
+        "스코어: " + (data.homeTeamName || teamLabel("B")) + " " + (data.homeGoal || 0) + " : " + (data.awayGoal || 0) + " " + (data.awayTeamName || teamLabel("A")),
         "수정 후 기록 저장을 누르면 기존 기록에 반영됩니다.",
       ].join("\n");
       panel = document.getElementById(PANEL_ID);
@@ -2214,7 +2225,7 @@
       state.status = [
         data.message,
         "기록 키: " + (data.matchId || payload.matchId),
-        "스코어: " + awayName + " " + awayGoal + " : " + homeGoal + " " + homeName,
+        "스코어: " + homeName + " " + homeGoal + " : " + awayGoal + " " + awayName,
         saveSummaryText(payload),
       ].join("\n");
       renderPanel();
