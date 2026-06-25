@@ -549,23 +549,34 @@
     return "";
   }
 
-  function playerSearchOptions(records, team) {
+  function registeredPlayerOptions() {
     var data = standaloneData();
-    var loaded = state.loadedPlayers || emptyLoadedPlayers();
+    return uniqueNames(Array.isArray(data.playerOptions) ? data.playerOptions : []);
+  }
+
+  function registeredPlayerLookup() {
+    var lookup = Object.create(null);
+    registeredPlayerOptions().forEach(function (name) {
+      lookup[playerName(name)] = name;
+    });
+    return lookup;
+  }
+
+  function registeredPlayerName(rawName) {
+    var name = playerName(rawName);
+    if (!name) return "";
+    return registeredPlayerLookup()[name] || "";
+  }
+
+  function registeredPlayerError(name) {
+    return name + " 선수는 선수 명단에 없습니다. 이름을 확인하세요.";
+  }
+
+  function playerSearchOptions(records, team) {
     var currentTeamPlayers = teamPlayers(records, team);
     var currentLookup = Object.create(null);
     currentTeamPlayers.forEach(function (name) { currentLookup[name] = true; });
-    var candidates = []
-      .concat(Array.isArray(data.playerOptions) ? data.playerOptions : [])
-      .concat(recordPlayers(records))
-      .concat(loaded.A || [], loaded.B || [])
-      .concat(summaryStatsArray().map(function (stat) { return stat.player; }))
-      .concat(state.events.reduce(function (acc, event) {
-        return acc.concat(event.scorer || [], event.assist || []);
-      }, []))
-      .concat(Object.keys(state.roles))
-      .concat(Object.keys(KNOWN_STAFF_ROLES));
-    return uniqueNames(candidates).filter(function (name) { return !currentLookup[name]; }).sort(function (a, b) {
+    return registeredPlayerOptions().filter(function (name) { return !currentLookup[name]; }).sort(function (a, b) {
       return a.localeCompare(b, "ko");
     });
   }
@@ -694,6 +705,38 @@
     return Object.keys(state.summaryStats).map(function (key) { return state.summaryStats[key]; });
   }
 
+  function invalidRecordPlayerNames(records, stats, events) {
+    var lookup = registeredPlayerLookup();
+    var invalid = [];
+    function add(rawName) {
+      var name = playerName(rawName);
+      if (!name || name === "없음" || name === "?놁쓬" || name === "??곸벉") return;
+      if (!lookup[name] && invalid.indexOf(name) < 0) invalid.push(name);
+    }
+    (Array.isArray(records) ? records : []).forEach(function (record) {
+      (record.attack || []).forEach(add);
+      (record.mid || []).forEach(add);
+      (record.defense || []).forEach(add);
+      add(record.gk);
+      (record.bench || []).forEach(add);
+    });
+    (Array.isArray(stats) ? stats : []).forEach(function (stat) {
+      add(stat && stat.player);
+    });
+    (Array.isArray(events) ? events : []).forEach(function (event) {
+      add(event && event.scorer);
+      add(event && event.assist);
+    });
+    return invalid;
+  }
+
+  function assertRegisteredRecordPlayers(records, stats, events) {
+    var invalid = invalidRecordPlayerNames(records, stats, events);
+    if (invalid.length > 0) {
+      throw new Error("선수 명단에 없는 이름이 있습니다: " + invalid.join(", ") + "\n선수 검색에서 등록된 이름을 선택해주세요.");
+    }
+  }
+
   function hasEnteredRecordItems() {
     return teamScoresArray().length > 0 || summaryStatsArray().length > 0 || state.events.length > 0;
   }
@@ -775,8 +818,14 @@
   }
 
   function addLoadedPlayer(team, rawName) {
-    var name = playerName(rawName);
-    if (!name || (team !== "A" && team !== "B")) return;
+    var typedName = playerName(rawName);
+    var name = registeredPlayerName(rawName);
+    if (!typedName || (team !== "A" && team !== "B")) return;
+    if (!name) {
+      state.status = registeredPlayerError(typedName);
+      renderPanel();
+      return;
+    }
     var loaded = ensureLoadedPlayersFromCurrent();
     loaded[team] = uniqueNames((loaded[team] || []).concat(name));
     state.currentLineupOverride = false;
@@ -1197,7 +1246,9 @@
   }
 
   function renderStatTeam(records, team, quarter) {
-    var players = teamPlayers(records, team, quarter);
+    var players = teamPlayers(records, team, quarter).sort(function (a, b) {
+      return a.localeCompare(b, "ko");
+    });
     var totals = statTotals(team, quarter);
     return [
       "<div class=\"mrw-stat-team\"><div class=\"mrw-stat-team-title\"><span>" + teamLabel(team) + "</span><span class=\"mrw-stat-total\">골 " + totals.goals + " · 도움 " + totals.assists + "</span></div>",
@@ -1229,7 +1280,7 @@
     var datalist = (options || []).length > 0
       ? "<datalist id=\"" + listId + "\">" + options.map(function (name) { return "<option value=\"" + escapeHtml(name) + "\"></option>"; }).join("") + "</datalist>"
       : "";
-    return "<div class=\"mrw-add-player\"><input data-mrw-add-player-name=\"" + team + "\" type=\"text\" list=\"" + listId + "\" autocomplete=\"off\" placeholder=\"" + teamLabel(team) + " 선수 검색/추가\" /><button type=\"button\" data-mrw-add-player-team=\"" + team + "\">추가</button>" + datalist + "</div>";
+    return "<div class=\"mrw-add-player\"><input data-mrw-add-player-name=\"" + team + "\" type=\"text\" list=\"" + listId + "\" autocomplete=\"off\" placeholder=\"" + teamLabel(team) + " 등록 선수 검색/추가\" /><button type=\"button\" data-mrw-add-player-team=\"" + team + "\">추가</button>" + datalist + "</div>";
   }
 
   function renderRole(player) {
@@ -1797,6 +1848,10 @@
     var awayControl = panel.querySelector("[data-mrw=awayTeam]");
     var away = matchKind === "SELF" ? "DevUtd 형광" : ((awayControl && (awayControl.value || awayControl.textContent)) || firstAwayTeam());
     var hasQuarterRecords = teamScoresArray().some(function (score) { return score.quarter; }) || summaryStatsArray().some(function (stat) { return stat.quarter; });
+    var quarters = payloadRecords(parseQuarterCards());
+    var events = state.events;
+    var summaryStats = summaryStatsArray();
+    assertRegisteredRecordPlayers(quarters, summaryStats, events);
     return {
       matchId: state.editingMatchId || panel.querySelector("[data-mrw=matchId]").value.trim() || compactDate(matchDate),
       matchDate: matchDate,
@@ -1807,9 +1862,9 @@
       homeTeamName: home,
       awayTeamName: away,
       memo: valueOf(panel, "memo", ""),
-      quarters: payloadRecords(parseQuarterCards()),
-      events: state.events,
-      summaryStats: summaryStatsArray(),
+      quarters: quarters,
+      events: events,
+      summaryStats: summaryStats,
       teamScores: teamScoresArray(),
       scoreOverride: teamScoreSummary(),
       staffRoles: staffRolesPayload(),

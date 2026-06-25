@@ -658,8 +658,8 @@ export default function Home() {
       .slice(0, 20);
   }, [playerQuery, sortedSheetPlayers, staffFirstSheetPlayers]);
   const recordPlayerOptions = useMemo(
-    () => uniqueRecordNames([...selectablePlayers.map((player) => player.name), ...dedicatedGks.map((gk) => gk.name)]),
-    [selectablePlayers, dedicatedGks],
+    () => uniqueRecordNames([...sortedSheetPlayers.map((player) => player.name), ...dedicatedGks.map((gk) => gk.name)]),
+    [sortedSheetPlayers, dedicatedGks],
   );
 
   const canGenerate = plannerMode === "BALANCE"
