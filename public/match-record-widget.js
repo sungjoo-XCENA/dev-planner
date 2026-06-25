@@ -995,14 +995,17 @@
         state.options.teams.push({ name: name });
         state.options.teams.sort(function (a, b) { return a.name.localeCompare(b.name, "ko"); });
       }
+      var next = document.getElementById(PANEL_ID);
+      state.loadedForm = Object.assign({}, state.loadedForm || formState(next || panel), { matchKind: "MATCH", awayTeamName: name });
+      state.matchKind = "MATCH";
+      setTeamLabels(state.loadedForm);
       state.status = "상대팀을 추가했습니다.";
       renderPanel();
-      var next = document.getElementById(PANEL_ID);
+      next = document.getElementById(PANEL_ID);
       var select = next && next.querySelector("[data-mrw=awayTeam]");
       if (select) {
         select.value = name;
-        state.loadedForm = Object.assign({}, state.loadedForm || formState(next), { matchKind: "MATCH", awayTeamName: name });
-        setTeamLabels(state.loadedForm);
+        select.dispatchEvent(new Event("change", { bubbles: true }));
       }
     } catch (error) {
       state.status = error && error.message ? error.message : String(error);
