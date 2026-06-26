@@ -176,6 +176,7 @@ function modeHelp(mode: PlannerMode): string {
 const LINEUP_SHARE_HASH_KEY = "lineup";
 const MATCH_LINEUP_SHARE_HASH_KEY = "matchLineup";
 const TEAM_SHARE_HASH_KEY = "teams";
+const SHORT_SHARE_HASH_KEY = "s";
 const COMPRESSED_LINEUP_PREFIX = "gz.";
 const RAW_LINEUP_PREFIX = "raw.";
 
@@ -211,6 +212,15 @@ type SharedTeamData = {
   teamVariants: TeamBalanceResult[];
   selectedVariantIdx: number;
 };
+
+type StoredShareResponse = {
+  kind?: string;
+  payload?: unknown;
+  error?: string;
+  detail?: string;
+};
+
+type ShareKind = "teams" | "lineup" | "matchLineup";
 
 type SharedMatchLineupPayload = {
   version: 1;
@@ -277,13 +287,32 @@ function normalizeSharedVariants(payload: Partial<SharedLineupPayload>): SharedL
   };
 }
 
-async function encodeSharedLineup(lineup: LineupResult, teamContext?: LineupShareTeamContext): Promise<string> {
-  const payload: SharedLineupPayload = {
+function createSharedLineupPayload(lineup: LineupResult, teamContext?: LineupShareTeamContext): SharedLineupPayload {
+  return {
     version: 1,
     lineup,
     ...(teamContext?.teamResult ? { teamResult: teamContext.teamResult } : {}),
     ...(teamContext?.selectedVariantIdx != null ? { selectedVariantIdx: teamContext.selectedVariantIdx } : {}),
   };
+}
+
+function createSharedTeamPayload(teamVariants: TeamBalanceResult[], selectedVariantIdx: number): SharedTeamPayload {
+  const variants = teamVariants.filter(Boolean);
+  const idx = variants.length > 0 ? Math.min(Math.max(selectedVariantIdx, 0), variants.length - 1) : 0;
+  return {
+    version: 1,
+    teamResult: variants[idx] ?? null,
+    teamVariants: variants,
+    selectedVariantIdx: idx,
+  };
+}
+
+function createSharedMatchLineupPayload(match: MatchPlanResult): SharedMatchLineupPayload {
+  return { version: 1, match };
+}
+
+async function encodeSharedLineup(lineup: LineupResult, teamContext?: LineupShareTeamContext): Promise<string> {
+  const payload = createSharedLineupPayload(lineup, teamContext);
   const bytes = new TextEncoder().encode(JSON.stringify(payload));
   if (typeof CompressionStream === "undefined") {
     return `${RAW_LINEUP_PREFIX}${bytesToBase64Url(bytes)}`;
@@ -292,14 +321,7 @@ async function encodeSharedLineup(lineup: LineupResult, teamContext?: LineupShar
 }
 
 async function encodeSharedTeams(teamVariants: TeamBalanceResult[], selectedVariantIdx: number): Promise<string> {
-  const variants = teamVariants.filter(Boolean);
-  const idx = variants.length > 0 ? Math.min(Math.max(selectedVariantIdx, 0), variants.length - 1) : 0;
-  const payload: SharedTeamPayload = {
-    version: 1,
-    teamResult: variants[idx] ?? null,
-    teamVariants: variants,
-    selectedVariantIdx: idx,
-  };
+  const payload = createSharedTeamPayload(teamVariants, selectedVariantIdx);
   const bytes = new TextEncoder().encode(JSON.stringify(payload));
   if (typeof CompressionStream === "undefined") {
     return `${RAW_LINEUP_PREFIX}${bytesToBase64Url(bytes)}`;
@@ -334,6 +356,21 @@ async function decodeSharedTeams(value: string): Promise<SharedTeamData> {
   return parsePayload(new TextDecoder().decode(await gunzip(compressed)));
 }
 
+function normalizeSharedTeamPayload(payload: Partial<SharedTeamPayload>): SharedTeamData {
+  if (payload.version !== 1 || !Array.isArray(payload.teamVariants)) {
+    throw new Error("팀분배 공유 데이터 형식이 올바르지 않습니다.");
+  }
+  const variants = payload.teamVariants.filter(Boolean);
+  const idx = variants.length > 0
+    ? Math.min(Math.max(Number(payload.selectedVariantIdx ?? 0) || 0, 0), variants.length - 1)
+    : 0;
+  return {
+    teamResult: payload.teamResult ?? variants[idx] ?? null,
+    teamVariants: variants,
+    selectedVariantIdx: idx,
+  };
+}
+
 async function decodeSharedLineup(value: string): Promise<SharedLineupData> {
   if (value.startsWith(RAW_LINEUP_PREFIX)) {
     const json = new TextDecoder().decode(base64UrlToBytes(value.slice(RAW_LINEUP_PREFIX.length)));
@@ -357,7 +394,7 @@ async function decodeSharedLineup(value: string): Promise<SharedLineupData> {
 }
 
 async function encodeSharedMatchLineup(match: MatchPlanResult): Promise<string> {
-  const payload: SharedMatchLineupPayload = { version: 1, match };
+  const payload = createSharedMatchLineupPayload(match);
   const bytes = new TextEncoder().encode(JSON.stringify(payload));
   if (typeof CompressionStream === "undefined") {
     return `${RAW_LINEUP_PREFIX}${bytesToBase64Url(bytes)}`;
@@ -384,44 +421,79 @@ async function decodeSharedMatchLineup(value: string): Promise<MatchPlanResult> 
   return parsePayload(new TextDecoder().decode(await gunzip(compressed)));
 }
 
-async function buildLineupShareUrl(lineup: LineupResult, teamContext?: LineupShareTeamContext): Promise<string | null> {
+function buildHashUrl(key: string, value: string): string | null {
   if (typeof window === "undefined") return null;
   const url = new URL(window.location.href);
   url.search = "";
   const params = new URLSearchParams();
-  params.set(LINEUP_SHARE_HASH_KEY, await encodeSharedLineup(lineup, teamContext));
+  params.set(key, value);
   url.hash = params.toString();
   return url.toString();
+}
+
+async function buildShortShareUrl(kind: ShareKind, payload: unknown): Promise<string | null> {
+  if (typeof window === "undefined") return null;
+  const response = await fetch("/api/share", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ kind, payload }),
+  });
+  const data = await response.json().catch(() => ({})) as { id?: string; error?: string; detail?: string };
+  if (!response.ok || !data.id) {
+    throw new Error(data.detail || data.error || "공유 링크 저장에 실패했습니다.");
+  }
+  return buildHashUrl(SHORT_SHARE_HASH_KEY, data.id);
+}
+
+async function loadShortShare(id: string): Promise<StoredShareResponse> {
+  const response = await fetch(`/api/share?id=${encodeURIComponent(id)}`, {
+    method: "GET",
+    headers: { accept: "application/json" },
+    cache: "no-store",
+  });
+  const data = await response.json().catch(() => ({})) as StoredShareResponse;
+  if (!response.ok) {
+    throw new Error(data.detail || data.error || "공유 링크 조회에 실패했습니다.");
+  }
+  return data;
+}
+
+async function buildLineupShareUrl(lineup: LineupResult, teamContext?: LineupShareTeamContext): Promise<string | null> {
+  const payload = createSharedLineupPayload(lineup, teamContext);
+  try {
+    return await buildShortShareUrl("lineup", payload);
+  } catch {
+    return buildHashUrl(LINEUP_SHARE_HASH_KEY, await encodeSharedLineup(lineup, teamContext));
+  }
 }
 
 async function buildTeamShareUrl(teamVariants: TeamBalanceResult[], selectedVariantIdx: number): Promise<string | null> {
-  if (typeof window === "undefined") return null;
-  const url = new URL(window.location.href);
-  url.search = "";
-  const params = new URLSearchParams();
-  params.set(TEAM_SHARE_HASH_KEY, await encodeSharedTeams(teamVariants, selectedVariantIdx));
-  url.hash = params.toString();
-  return url.toString();
+  const payload = createSharedTeamPayload(teamVariants, selectedVariantIdx);
+  try {
+    return await buildShortShareUrl("teams", payload);
+  } catch {
+    return buildHashUrl(TEAM_SHARE_HASH_KEY, await encodeSharedTeams(teamVariants, selectedVariantIdx));
+  }
 }
 
 async function buildMatchLineupShareUrl(match: MatchPlanResult): Promise<string | null> {
-  if (typeof window === "undefined") return null;
-  const url = new URL(window.location.href);
-  url.search = "";
-  const params = new URLSearchParams();
-  params.set(MATCH_LINEUP_SHARE_HASH_KEY, await encodeSharedMatchLineup(match));
-  url.hash = params.toString();
-  return url.toString();
+  const payload = createSharedMatchLineupPayload(match);
+  try {
+    return await buildShortShareUrl("matchLineup", payload);
+  } catch {
+    return buildHashUrl(MATCH_LINEUP_SHARE_HASH_KEY, await encodeSharedMatchLineup(match));
+  }
 }
 
 function clearLineupShareHash() {
   if (typeof window === "undefined") return;
   const url = new URL(window.location.href);
   const params = new URLSearchParams(url.hash.startsWith("#") ? url.hash.slice(1) : url.hash);
-  if (!params.has(LINEUP_SHARE_HASH_KEY) && !params.has(MATCH_LINEUP_SHARE_HASH_KEY) && !params.has(TEAM_SHARE_HASH_KEY)) return;
+  if (!params.has(LINEUP_SHARE_HASH_KEY) && !params.has(MATCH_LINEUP_SHARE_HASH_KEY) && !params.has(TEAM_SHARE_HASH_KEY) && !params.has(SHORT_SHARE_HASH_KEY)) return;
   params.delete(LINEUP_SHARE_HASH_KEY);
   params.delete(MATCH_LINEUP_SHARE_HASH_KEY);
   params.delete(TEAM_SHARE_HASH_KEY);
+  params.delete(SHORT_SHARE_HASH_KEY);
   url.hash = params.toString();
   window.history.replaceState(null, "", url.toString());
 }
@@ -624,11 +696,72 @@ export default function Home() {
     let cancelled = false;
     const applySharedLineup = async () => {
       const params = new URLSearchParams(window.location.hash.startsWith("#") ? window.location.hash.slice(1) : window.location.hash);
+      const shortId = params.get(SHORT_SHARE_HASH_KEY);
       const encodedMatch = params.get(MATCH_LINEUP_SHARE_HASH_KEY);
       const encodedTeams = params.get(TEAM_SHARE_HASH_KEY);
       const encoded = params.get(LINEUP_SHARE_HASH_KEY);
-      if (!encodedMatch && !encodedTeams && !encoded) return;
+      if (!shortId && !encodedMatch && !encodedTeams && !encoded) return;
       try {
+        if (shortId) {
+          const sharedShort = await loadShortShare(shortId);
+          if (sharedShort.kind === "matchLineup") {
+            const payload = sharedShort.payload as Partial<SharedMatchLineupPayload>;
+            if (payload.version !== 1 || !payload.match || !Array.isArray(payload.match.quarters)) {
+              throw new Error("매치 라인업 공유 데이터 형식이 올바르지 않습니다.");
+            }
+            if (cancelled) return;
+            setPlannerMode("MATCH");
+            setTeamResult(null);
+            setTeamVariants([]);
+            setSelectedVariantIdx(0);
+            setLineupResult(null);
+            setMatchResult(payload.match);
+            setTeamsConfirmed(false);
+            setSwapSelection(null);
+            setCopied(false);
+            window.setTimeout(() => document.getElementById("match-result")?.scrollIntoView({ block: "start" }), 0);
+            return;
+          }
+          if (sharedShort.kind === "teams") {
+            const sharedTeams = normalizeSharedTeamPayload(sharedShort.payload as Partial<SharedTeamPayload>);
+            if (cancelled) return;
+            setPlannerMode("BALANCE");
+            setTeamResult(sharedTeams.teamResult);
+            setTeamVariants(sharedTeams.teamVariants);
+            setSelectedVariantIdx(sharedTeams.selectedVariantIdx);
+            setLineupResult(null);
+            setMatchResult(null);
+            setTeamsConfirmed(false);
+            setSwapSelection(null);
+            setCopied(false);
+            window.setTimeout(() => document.getElementById("team-result")?.scrollIntoView({ block: "start" }), 0);
+            return;
+          }
+          if (sharedShort.kind === "lineup") {
+            const payload = sharedShort.payload as Partial<SharedLineupPayload>;
+            if (payload.version !== 1 || !payload.lineup || !Array.isArray(payload.lineup.quarters)) {
+              throw new Error("라인업 공유 데이터 형식이 올바르지 않습니다.");
+            }
+            if (cancelled) return;
+            const shared = normalizeSharedVariants(payload);
+            const sharedVariants = shared.teamVariants ?? (shared.teamResult ? [shared.teamResult] : []);
+            const sharedVariantIdx = sharedVariants.length > 0
+              ? Math.min(Math.max(shared.selectedVariantIdx ?? 0, 0), sharedVariants.length - 1)
+              : 0;
+            setPlannerMode("BALANCE");
+            setTeamResult(shared.teamResult ?? sharedVariants[sharedVariantIdx] ?? null);
+            setTeamVariants(sharedVariants);
+            setSelectedVariantIdx(sharedVariantIdx);
+            setLineupResult(shared.lineup);
+            setMatchResult(null);
+            setTeamsConfirmed(true);
+            setSwapSelection(null);
+            setCopied(false);
+            window.setTimeout(() => document.getElementById("lineup-result")?.scrollIntoView({ block: "start" }), 0);
+            return;
+          }
+          throw new Error("공유 링크 종류를 확인할 수 없습니다.");
+        }
         if (encodedMatch) {
           const sharedMatch = await decodeSharedMatchLineup(encodedMatch);
           if (cancelled) return;
