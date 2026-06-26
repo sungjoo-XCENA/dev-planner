@@ -1152,7 +1152,7 @@
       "<input type=\"hidden\" data-mrw=\"matchKind\" value=\"" + escapeHtml(form.matchKind) + "\" />",
       editOnly ? renderEditOnlyLoader(form) : "",
       renderMatchInfo(form),
-      state.selectedTeamRecord ? renderSelectedTeamRecord() : "",
+      !editOnly && state.selectedTeamRecord ? renderSelectedTeamRecord() : "",
       "<div class=\"mrw-mode\"><div class=\"mrw-mode-head\"><div><div class=\"mrw-mode-title\">기록 입력</div><div class=\"mrw-mode-help\">경기 전체로 입력해도 되고, 기억나는 경우만 1Q~4Q를 골라 쿼터 기록으로 남기면 됩니다.</div></div><label class=\"mrw-scope\">기록 기준 " + renderScopeSelect(quarter) + "</label></div></div>",
       "<div class=\"mrw-layout\"><div class=\"mrw-main\">",
       renderScoreboard(score, quarter),
