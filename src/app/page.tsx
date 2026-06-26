@@ -175,6 +175,7 @@ function modeHelp(mode: PlannerMode): string {
 
 const LINEUP_SHARE_HASH_KEY = "lineup";
 const MATCH_LINEUP_SHARE_HASH_KEY = "matchLineup";
+const TEAM_SHARE_HASH_KEY = "teams";
 const COMPRESSED_LINEUP_PREFIX = "gz.";
 const RAW_LINEUP_PREFIX = "raw.";
 
@@ -195,8 +196,20 @@ type SharedLineupData = {
 
 type LineupShareTeamContext = {
   teamResult?: TeamBalanceResult | null;
-  teamVariants?: TeamBalanceResult[];
   selectedVariantIdx?: number;
+};
+
+type SharedTeamPayload = {
+  version: 1;
+  teamResult?: TeamBalanceResult | null;
+  teamVariants: TeamBalanceResult[];
+  selectedVariantIdx?: number;
+};
+
+type SharedTeamData = {
+  teamResult: TeamBalanceResult | null;
+  teamVariants: TeamBalanceResult[];
+  selectedVariantIdx: number;
 };
 
 type SharedMatchLineupPayload = {
@@ -265,21 +278,60 @@ function normalizeSharedVariants(payload: Partial<SharedLineupPayload>): SharedL
 }
 
 async function encodeSharedLineup(lineup: LineupResult, teamContext?: LineupShareTeamContext): Promise<string> {
-  const variants = Array.isArray(teamContext?.teamVariants) ? teamContext.teamVariants.filter(Boolean) : [];
-  const selectedVariantIdx = variants.length > 0
-    ? Math.min(Math.max(Number(teamContext?.selectedVariantIdx ?? 0) || 0, 0), variants.length - 1)
-    : 0;
   const payload: SharedLineupPayload = {
     version: 1,
     lineup,
     ...(teamContext?.teamResult ? { teamResult: teamContext.teamResult } : {}),
-    ...(variants.length > 0 ? { teamVariants: variants, selectedVariantIdx } : {}),
+    ...(teamContext?.selectedVariantIdx != null ? { selectedVariantIdx: teamContext.selectedVariantIdx } : {}),
   };
   const bytes = new TextEncoder().encode(JSON.stringify(payload));
   if (typeof CompressionStream === "undefined") {
     return `${RAW_LINEUP_PREFIX}${bytesToBase64Url(bytes)}`;
   }
   return `${COMPRESSED_LINEUP_PREFIX}${bytesToBase64Url(await gzip(bytes))}`;
+}
+
+async function encodeSharedTeams(teamVariants: TeamBalanceResult[], selectedVariantIdx: number): Promise<string> {
+  const variants = teamVariants.filter(Boolean);
+  const idx = variants.length > 0 ? Math.min(Math.max(selectedVariantIdx, 0), variants.length - 1) : 0;
+  const payload: SharedTeamPayload = {
+    version: 1,
+    teamResult: variants[idx] ?? null,
+    teamVariants: variants,
+    selectedVariantIdx: idx,
+  };
+  const bytes = new TextEncoder().encode(JSON.stringify(payload));
+  if (typeof CompressionStream === "undefined") {
+    return `${RAW_LINEUP_PREFIX}${bytesToBase64Url(bytes)}`;
+  }
+  return `${COMPRESSED_LINEUP_PREFIX}${bytesToBase64Url(await gzip(bytes))}`;
+}
+
+async function decodeSharedTeams(value: string): Promise<SharedTeamData> {
+  const parsePayload = (json: string) => {
+    const payload = JSON.parse(json) as Partial<SharedTeamPayload>;
+    if (payload.version !== 1 || !Array.isArray(payload.teamVariants)) {
+      throw new Error("팀분배 공유 데이터 형식이 올바르지 않습니다.");
+    }
+    const variants = payload.teamVariants.filter(Boolean);
+    const idx = variants.length > 0
+      ? Math.min(Math.max(Number(payload.selectedVariantIdx ?? 0) || 0, 0), variants.length - 1)
+      : 0;
+    return {
+      teamResult: payload.teamResult ?? variants[idx] ?? null,
+      teamVariants: variants,
+      selectedVariantIdx: idx,
+    };
+  };
+
+  if (value.startsWith(RAW_LINEUP_PREFIX)) {
+    return parsePayload(new TextDecoder().decode(base64UrlToBytes(value.slice(RAW_LINEUP_PREFIX.length))));
+  }
+  if (!value.startsWith(COMPRESSED_LINEUP_PREFIX)) {
+    throw new Error("팀분배 공유 URL 형식이 올바르지 않습니다.");
+  }
+  const compressed = base64UrlToBytes(value.slice(COMPRESSED_LINEUP_PREFIX.length));
+  return parsePayload(new TextDecoder().decode(await gunzip(compressed)));
 }
 
 async function decodeSharedLineup(value: string): Promise<SharedLineupData> {
@@ -342,6 +394,16 @@ async function buildLineupShareUrl(lineup: LineupResult, teamContext?: LineupSha
   return url.toString();
 }
 
+async function buildTeamShareUrl(teamVariants: TeamBalanceResult[], selectedVariantIdx: number): Promise<string | null> {
+  if (typeof window === "undefined") return null;
+  const url = new URL(window.location.href);
+  url.search = "";
+  const params = new URLSearchParams();
+  params.set(TEAM_SHARE_HASH_KEY, await encodeSharedTeams(teamVariants, selectedVariantIdx));
+  url.hash = params.toString();
+  return url.toString();
+}
+
 async function buildMatchLineupShareUrl(match: MatchPlanResult): Promise<string | null> {
   if (typeof window === "undefined") return null;
   const url = new URL(window.location.href);
@@ -356,9 +418,10 @@ function clearLineupShareHash() {
   if (typeof window === "undefined") return;
   const url = new URL(window.location.href);
   const params = new URLSearchParams(url.hash.startsWith("#") ? url.hash.slice(1) : url.hash);
-  if (!params.has(LINEUP_SHARE_HASH_KEY) && !params.has(MATCH_LINEUP_SHARE_HASH_KEY)) return;
+  if (!params.has(LINEUP_SHARE_HASH_KEY) && !params.has(MATCH_LINEUP_SHARE_HASH_KEY) && !params.has(TEAM_SHARE_HASH_KEY)) return;
   params.delete(LINEUP_SHARE_HASH_KEY);
   params.delete(MATCH_LINEUP_SHARE_HASH_KEY);
+  params.delete(TEAM_SHARE_HASH_KEY);
   url.hash = params.toString();
   window.history.replaceState(null, "", url.toString());
 }
@@ -562,8 +625,9 @@ export default function Home() {
     const applySharedLineup = async () => {
       const params = new URLSearchParams(window.location.hash.startsWith("#") ? window.location.hash.slice(1) : window.location.hash);
       const encodedMatch = params.get(MATCH_LINEUP_SHARE_HASH_KEY);
+      const encodedTeams = params.get(TEAM_SHARE_HASH_KEY);
       const encoded = params.get(LINEUP_SHARE_HASH_KEY);
-      if (!encodedMatch && !encoded) return;
+      if (!encodedMatch && !encodedTeams && !encoded) return;
       try {
         if (encodedMatch) {
           const sharedMatch = await decodeSharedMatchLineup(encodedMatch);
@@ -578,6 +642,21 @@ export default function Home() {
           setSwapSelection(null);
           setCopied(false);
           window.setTimeout(() => document.getElementById("match-result")?.scrollIntoView({ block: "start" }), 0);
+          return;
+        }
+        if (encodedTeams) {
+          const sharedTeams = await decodeSharedTeams(encodedTeams);
+          if (cancelled) return;
+          setPlannerMode("BALANCE");
+          setTeamResult(sharedTeams.teamResult);
+          setTeamVariants(sharedTeams.teamVariants);
+          setSelectedVariantIdx(sharedTeams.selectedVariantIdx);
+          setLineupResult(null);
+          setMatchResult(null);
+          setTeamsConfirmed(false);
+          setSwapSelection(null);
+          setCopied(false);
+          window.setTimeout(() => document.getElementById("team-result")?.scrollIntoView({ block: "start" }), 0);
           return;
         }
         if (!encoded) return;
@@ -888,7 +967,7 @@ export default function Home() {
       const recordDate = formatLocalDate();
       let shareUrl = typeof window !== "undefined" ? window.location.href : "/";
       try {
-        shareUrl = await buildLineupShareUrl(lineup, { teamResult, teamVariants, selectedVariantIdx }) ?? shareUrl;
+        shareUrl = await buildLineupShareUrl(lineup, { teamResult, selectedVariantIdx }) ?? shareUrl;
       } catch {
         // 기록 저장은 공유 URL 압축 지원 여부와 별개로 진행한다.
       }
@@ -1106,6 +1185,34 @@ export default function Home() {
     }
   }
 
+  async function copyTeamShareUrl() {
+    try {
+      const url = await buildTeamShareUrl(teamVariants, selectedVariantIdx);
+      if (!url) return;
+      const shareData = { title: "DEV FC 팀분배", text: "DEV FC 팀분배 10개 조합 공유", url };
+      if (typeof navigator.share === "function" && (!navigator.canShare || navigator.canShare(shareData))) {
+        try {
+          await navigator.share(shareData);
+        } catch (shareError) {
+          if (shareError instanceof DOMException && shareError.name === "AbortError") return;
+          if (navigator.clipboard?.writeText) {
+            await navigator.clipboard.writeText(url);
+          } else {
+            window.prompt("공유 URL을 복사하세요", url);
+          }
+        }
+      } else if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(url);
+      } else {
+        window.prompt("공유 URL을 복사하세요", url);
+      }
+      window.history.replaceState(null, "", url);
+      setCopied(true);
+    } catch (error) {
+      setErrors([error instanceof Error ? error.message : String(error)]);
+    }
+  }
+
   async function copyMatchLineupShareUrl(match: MatchPlanResult, prebuiltUrl?: string | null) {
     try {
       const url = prebuiltUrl ?? await buildMatchLineupShareUrl(match);
@@ -1299,13 +1406,14 @@ export default function Home() {
           onSubRoleTarget={handleSubRoleTarget}
           onConfirm={handleConfirmTeams}
           onReadjust={handleReadjustTeams}
+          onCopyTeamShareUrl={copyTeamShareUrl}
+          copied={copied}
         />
       )}
       {lineupResult && (
         <LineupResultView
           result={lineupResult}
           teamResult={plannerMode === "BALANCE" ? teamResult : null}
-          teamVariants={plannerMode === "BALANCE" ? teamVariants : []}
           selectedVariantIdx={plannerMode === "BALANCE" ? selectedVariantIdx : 0}
           copied={copied}
           onCopyShareUrl={copyLineupShareUrl}
@@ -1749,6 +1857,8 @@ function TeamResultView({
   onSubRoleTarget,
   onConfirm,
   onReadjust,
+  onCopyTeamShareUrl,
+  copied,
 }: {
   result: TeamBalanceResult;
   confirmed: boolean;
@@ -1761,6 +1871,8 @@ function TeamResultView({
   onSubRoleTarget: (targetTeam: "A" | "B", playerId: string, targetSubRole: AssignedSubRole) => void;
   onConfirm: () => void;
   onReadjust: () => void;
+  onCopyTeamShareUrl: () => void;
+  copied: boolean;
 }) {
   const s = result.summary;
   const totalA = s.centerForwardScoreA + s.wingScoreA + s.midScoreA + s.centerBackScoreA + s.wingBackScoreA + s.activityA;
@@ -1803,12 +1915,19 @@ function TeamResultView({
     }
   }, [teamAHistoryNames, teamBHistoryNames]);
   return (
-    <section className="mb-6 rounded-3xl bg-white p-6 shadow-sm">
+    <section id="team-result" className="mb-6 rounded-3xl bg-white p-6 shadow-sm">
       <div className="flex flex-wrap items-center gap-2">
         <h2 className="text-xl font-bold">팀 분배 결과</h2>
         <span className={`rounded-full px-3 py-1 text-xs font-bold ${qualityBadgeClass(result.quality)}`}>{result.quality}</span>
         {!confirmed && <span className="rounded-full bg-blue-100 px-3 py-1 text-xs font-bold text-blue-700">조정 가능</span>}
         <div className="ml-auto flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-700 hover:bg-slate-50"
+            onClick={onCopyTeamShareUrl}
+          >
+            {copied ? "공유 링크 복사됨" : "팀분배 10개 공유"}
+          </button>
           <button
             type="button"
             className="rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-black text-indigo-700 hover:bg-indigo-100 disabled:cursor-wait disabled:opacity-60"
@@ -3088,7 +3207,6 @@ function swapInsideQuarter<T extends SwappableQuarter>(q: T, sec1: LineupSection
 function LineupResultView({
   result,
   teamResult,
-  teamVariants = [],
   selectedVariantIdx = 0,
   copied,
   onCopyShareUrl,
@@ -3096,7 +3214,6 @@ function LineupResultView({
 }: {
   result: LineupResult;
   teamResult?: TeamBalanceResult | null;
-  teamVariants?: TeamBalanceResult[];
   selectedVariantIdx?: number;
   copied: boolean;
   onCopyShareUrl: (result: LineupResult, teamContext?: LineupShareTeamContext, prebuiltUrl?: string | null) => void;
@@ -3122,7 +3239,7 @@ function LineupResultView({
     let active = true;
     setShareUrl(null);
     setShareUrlError(null);
-    void buildLineupShareUrl(currentLineup, { teamResult, teamVariants, selectedVariantIdx })
+    void buildLineupShareUrl(currentLineup, { teamResult, selectedVariantIdx })
       .then((url) => {
         if (active) setShareUrl(url);
       })
@@ -3132,7 +3249,7 @@ function LineupResultView({
     return () => {
       active = false;
     };
-  }, [currentLineup, teamResult, teamVariants, selectedVariantIdx]);
+  }, [currentLineup, teamResult, selectedVariantIdx]);
 
   function handleQuarterSwap(key: string) {
     if (!quarterSwapKey) {
@@ -3265,7 +3382,7 @@ function LineupResultView({
     try {
       let recordShareUrl = shareUrl;
       if (!recordShareUrl && !shareUrlError) {
-        recordShareUrl = await buildLineupShareUrl(currentLineup, { teamResult, teamVariants, selectedVariantIdx });
+        recordShareUrl = await buildLineupShareUrl(currentLineup, { teamResult, selectedVariantIdx });
       }
       const fallbackUrl = typeof window !== "undefined" ? window.location.href : "/";
       const record = buildTeamRecord(teamResult, today, recordShareUrl ?? fallbackUrl, currentLineup);
@@ -3339,14 +3456,14 @@ function LineupResultView({
         <div className="flex w-full flex-wrap gap-2 sm:w-auto">
           <button
             className="min-h-11 w-full rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 disabled:cursor-wait disabled:opacity-60 sm:w-auto"
-            onClick={() => onCopyShareUrl(currentLineup, { teamResult, teamVariants, selectedVariantIdx }, shareUrl)}
+            onClick={() => onCopyShareUrl(currentLineup, { teamResult, selectedVariantIdx }, shareUrl)}
             disabled={!shareUrl && !shareUrlError}
           >
             {copied ? "공유 링크 복사됨" : !shareUrl && !shareUrlError ? "공유 링크 준비 중" : "라인업/팀분배 공유"}
           </button>
         </div>
       </div>
-      <p className="mt-2 text-xs text-slate-500">같은 쿼터 안에서는 <span className="font-bold">필드, GK, 대기</span> 어디든 서로 자리를 바꿀 수 있어요. 쿼터 순서는 각 피치 아래 <span className="font-bold">쿼터 순서 바꾸기</span> 버튼으로 조정하면 위에서부터 1~4Q로 다시 정렬됩니다. 코치별 미세조정과 팀분배 1~10 버전은 <span className="font-bold">라인업/팀분배 공유</span>로 현재 상태를 공유하세요.</p>
+      <p className="mt-2 text-xs text-slate-500">같은 쿼터 안에서는 <span className="font-bold">필드, GK, 대기</span> 어디든 서로 자리를 바꿀 수 있어요. 쿼터 순서는 각 피치 아래 <span className="font-bold">쿼터 순서 바꾸기</span> 버튼으로 조정하면 위에서부터 1~4Q로 다시 정렬됩니다. 코치별 미세조정과 확정된 팀분배는 <span className="font-bold">라인업/팀분배 공유</span>로 현재 상태를 공유하세요.</p>
       {result.warnings.length > 0 && <div className="mt-4"><MessageBox title="라인업 경고" items={result.warnings} tone="warning" /></div>}
 
       <div className="mt-4 rounded-2xl border-2 border-slate-300 bg-white p-2 sm:p-5">
