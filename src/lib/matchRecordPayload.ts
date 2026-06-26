@@ -53,7 +53,7 @@ type PlannerQuarterInfo = {
     A: "fluorescent";
     B: "orange";
   };
-  teams: Record<TeamName, { label: string; players: string[] }>;
+  teams: Record<TeamName, PlannerTeamRecord>;
   staffRoles: Partial<Record<string, StaffRole>>;
   quarters: Record<string, PlannerQuarterRecord>;
   events: PlannerEventRecord[];
@@ -80,6 +80,11 @@ type PlannerLineupSide = {
   defense: string[];
   gk: string;
   bench: string[];
+};
+
+type PlannerTeamRecord = PlannerLineupSide & {
+  label: string;
+  players: string[];
 };
 
 type PlannerEventRecord = {
@@ -165,8 +170,8 @@ export function buildMatchInfoPayload(body: MatchRecordSaveRequest, savedAt = ne
   const homeGoal = teamScores.length > 0 ? teamScoreTotals.B : (scoreOverride?.B ?? homeGoalNames.length);
   const awayGoal = teamScores.length > 0 ? teamScoreTotals.A : (scoreOverride?.A ?? awayGoalNames.length);
   const teams = {
-    A: teamPlayers(body.quarters, "A"),
-    B: teamPlayers(body.quarters, "B"),
+    A: teamSummary(body.quarters, "A", awayTeamName),
+    B: teamSummary(body.quarters, "B", homeTeamName),
   };
 
   return {
@@ -178,8 +183,8 @@ export function buildMatchInfoPayload(body: MatchRecordSaveRequest, savedAt = ne
     AwayTeamName: awayTeamName,
     HomeGoal: homeGoal,
     AwayGoal: awayGoal,
-    HomePlayerInfo: firebaseNameList(teams.B),
-    AwayPlayerInfo: firebaseNameList(teams.A),
+    HomePlayerInfo: firebaseNameList(teams.B.players),
+    AwayPlayerInfo: firebaseNameList(teams.A.players),
     HomeGoalInfo: firebaseNameList(homeGoalNames, { unique: false }),
     AwayGoalInfo: firebaseNameList(awayGoalNames, { unique: false }),
     HomeAssistInfo: firebaseNameList(homeAssistNames, { unique: false }),
@@ -208,10 +213,7 @@ export function buildMatchInfoPayload(body: MatchRecordSaveRequest, savedAt = ne
         A: "fluorescent",
         B: "orange",
       },
-      teams: {
-        A: { label: awayTeamName, players: teams.A },
-        B: { label: homeTeamName, players: teams.B },
-      },
+      teams,
       staffRoles: normalizeStaffRoles(body.staffRoles),
       quarters: quarterRecords(body.quarters, events, teamScores),
       events: events.map(toPlannerEvent),
@@ -362,15 +364,51 @@ function normalizeQuarter(value: unknown): MatchRecordPlayerStat["quarter"] {
   return quarter === 1 || quarter === 2 || quarter === 3 || quarter === 4 ? quarter : undefined;
 }
 
-function teamPlayers(quarters: TeamQuarterLineup[], team: TeamName): string[] {
-  const names: string[] = [];
+function teamSummary(quarters: TeamQuarterLineup[], team: TeamName, label: string): PlannerTeamRecord {
+  const groups: PlannerLineupSide = {
+    attack: [],
+    mid: [],
+    defense: [],
+    gk: NONE_GK,
+    bench: [],
+  };
+  const players: string[] = [];
+  const seenPlayers = new Set<string>();
+
+  function addPlayer(name: string) {
+    const normalized = name.trim();
+    if (!normalized || normalized === NONE_GK || seenPlayers.has(normalized)) return;
+    seenPlayers.add(normalized);
+    players.push(normalized);
+  }
+
+  function addGroupNames(group: keyof Omit<PlannerLineupSide, "gk">, names: string[]) {
+    names.forEach((name) => {
+      const normalized = name.trim();
+      if (!normalized || normalized === NONE_GK || groups[group].includes(normalized)) return;
+      groups[group].push(normalized);
+      addPlayer(normalized);
+    });
+  }
+
   quarters
     .filter((quarter) => quarter.team === team)
     .forEach((quarter) => {
-      names.push(...quarter.attack, ...quarter.mid, ...quarter.defense, ...quarter.bench);
-      if (quarter.gk && quarter.gk !== NONE_GK) names.push(quarter.gk);
+      addGroupNames("attack", quarter.attack);
+      addGroupNames("mid", quarter.mid);
+      addGroupNames("defense", quarter.defense);
+      addGroupNames("bench", quarter.bench);
+      if (quarter.gk && quarter.gk !== NONE_GK) {
+        if (groups.gk === NONE_GK) groups.gk = quarter.gk.trim();
+        addPlayer(quarter.gk);
+      }
     });
-  return uniqueNames(names);
+
+  return {
+    label,
+    players,
+    ...groups,
+  };
 }
 
 function firebaseNameList(names: string[], options: { unique?: boolean } = {}): Array<{ Name: string } | null> {
