@@ -180,6 +180,19 @@
       ".mrw-team-group-label{font-size:10px;font-weight:950;color:#64748b}",
       ".mrw-team-player-list{display:flex;flex-wrap:wrap;gap:4px}",
       ".mrw-team-player{border:1px solid rgba(15,23,42,.08);border-radius:999px;background:#fff;padding:3px 6px;color:#334155;font-size:10px;font-weight:900}",
+      ".mrw-detail-badges{display:flex;gap:5px;flex-wrap:wrap;margin-top:5px}",
+      ".mrw-detail-badge{border-radius:999px;background:#e2e8f0;color:#334155;padding:3px 7px;font-size:10px;font-weight:950}",
+      ".mrw-detail-badge-lineup{background:#dbeafe;color:#1d4ed8}",
+      ".mrw-lineup-detail{display:grid;gap:8px;border-top:1px solid #e2e8f0;padding-top:10px}",
+      ".mrw-lineup-title{font-size:12px;font-weight:950;color:#0f172a}",
+      ".mrw-lineup-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:8px}",
+      ".mrw-lineup-quarter{overflow:hidden;border:1px solid #dbe3ef;border-radius:14px;background:#fff}",
+      ".mrw-lineup-quarter-head{background:#f1f5f9;padding:8px 10px;color:#0f172a;font-size:12px;font-weight:950}",
+      ".mrw-lineup-side{display:grid;gap:5px;padding:8px 10px;border-top:1px solid #eef2f7}",
+      ".mrw-lineup-team{font-size:11px;font-weight:950;color:#334155}",
+      ".mrw-lineup-row{display:grid;grid-template-columns:42px minmax(0,1fr);gap:6px;align-items:start}",
+      ".mrw-lineup-label{color:#64748b;font-size:10px;font-weight:950}",
+      ".mrw-lineup-names{display:flex;flex-wrap:wrap;gap:4px}",
       ".mrw-match-info{display:grid;gap:8px;border:1px solid #e2e8f0;border-radius:18px;background:#fff;padding:12px}",
       ".mrw-match-info-title{font-size:13px;font-weight:950;color:#0f172a}",
       ".mrw-modal-foot{display:flex;gap:8px;justify-content:flex-end;background:#fff;border-top:1px solid #e2e8f0;padding:12px 14px}",
@@ -1139,6 +1152,7 @@
       "<input type=\"hidden\" data-mrw=\"matchKind\" value=\"" + escapeHtml(form.matchKind) + "\" />",
       editOnly ? renderEditOnlyLoader(form) : "",
       renderMatchInfo(form),
+      state.selectedTeamRecord ? renderSelectedTeamRecord() : "",
       "<div class=\"mrw-mode\"><div class=\"mrw-mode-head\"><div><div class=\"mrw-mode-title\">기록 입력</div><div class=\"mrw-mode-help\">경기 전체로 입력해도 되고, 기억나는 경우만 1Q~4Q를 골라 쿼터 기록으로 남기면 됩니다.</div></div><label class=\"mrw-scope\">기록 기준 " + renderScopeSelect(quarter) + "</label></div></div>",
       "<div class=\"mrw-layout\"><div class=\"mrw-main\">",
       renderScoreboard(score, quarter),
@@ -1488,6 +1502,60 @@
     ].join("");
   }
 
+  function lineupGroupNames(value) {
+    return Array.isArray(value) ? value.filter(function (name) { return typeof name === "string" && name.trim(); }) : [];
+  }
+
+  function renderLineupNames(names) {
+    var clean = lineupGroupNames(names);
+    return clean.length
+      ? clean.map(function (name) { return "<span class=\"mrw-team-player\">" + escapeHtml(name) + "</span>"; }).join("")
+      : "<span class=\"mrw-team-player\">없음</span>";
+  }
+
+  function renderLineupRow(label, names) {
+    return "<div class=\"mrw-lineup-row\"><span class=\"mrw-lineup-label\">" + label + "</span><div class=\"mrw-lineup-names\">" + renderLineupNames(names) + "</div></div>";
+  }
+
+  function renderLineupSide(side, team) {
+    var gk = side && side.gk && side.gk !== "?놁쓬" ? [side.gk] : [];
+    return [
+      "<div class=\"mrw-lineup-side\"><div class=\"mrw-lineup-team\">" + teamLabel(team) + "</div>",
+      renderLineupRow("공격", side && side.attack),
+      renderLineupRow("미드", side && side.mid),
+      renderLineupRow("수비", side && side.defense),
+      renderLineupRow("GK", gk),
+      renderLineupRow("대기", side && side.bench),
+      "</div>",
+    ].join("");
+  }
+
+  function renderTeamRecordLineup(record) {
+    var quarters = record && record.lineup && Array.isArray(record.lineup.quarters) ? record.lineup.quarters : [];
+    if (!quarters.length) {
+      return "<div class=\"mrw-lineup-detail\"><div class=\"mrw-lineup-title\">쿼터당 라인업</div><div class=\"mrw-empty\">저장된 쿼터 라인업이 없습니다.</div></div>";
+    }
+    var byQuarter = {};
+    quarters.forEach(function (quarter) {
+      if (!quarter || !quarter.quarter || !quarter.team) return;
+      if (!byQuarter[quarter.quarter]) byQuarter[quarter.quarter] = {};
+      byQuarter[quarter.quarter][quarter.team] = quarter;
+    });
+    return [
+      "<div class=\"mrw-lineup-detail\"><div class=\"mrw-lineup-title\">쿼터당 라인업</div><div class=\"mrw-lineup-grid\">",
+      [1, 2, 3, 4].map(function (quarter) {
+        var item = byQuarter[quarter] || {};
+        return [
+          "<div class=\"mrw-lineup-quarter\"><div class=\"mrw-lineup-quarter-head\">" + quarter + "Q</div>",
+          renderLineupSide(item.A, "A"),
+          renderLineupSide(item.B, "B"),
+          "</div>",
+        ].join("");
+      }).join(""),
+      "</div></div>",
+    ].join("");
+  }
+
   function renderSelectedTeamRecord() {
     if (state.selectedTeamRecordLoading) {
       return "<div class=\"mrw-team-detail\"><div class=\"mrw-empty\">팀 확정 기록을 불러오는 중입니다.</div></div>";
@@ -1499,6 +1567,16 @@
     if (!record) return "";
     var aCount = teamRecordSize(record.teams && record.teams.A);
     var bCount = teamRecordSize(record.teams && record.teams.B);
+    var hasLineup = Boolean(record.lineup && Array.isArray(record.lineup.quarters) && record.lineup.quarters.length);
+    return [
+      "<div class=\"mrw-team-detail\">",
+      "<div class=\"mrw-team-detail-head\"><div><div class=\"mrw-team-detail-title\">" + escapeHtml(record.date) + " 팀분배/라인업 상세</div>",
+      "<div class=\"mrw-team-detail-sub\">형광 " + aCount + "명 · 주황 " + bCount + "명</div><div class=\"mrw-detail-badges\"><span class=\"mrw-detail-badge\">팀분배</span>" + (hasLineup ? "<span class=\"mrw-detail-badge mrw-detail-badge-lineup\">쿼터 라인업</span>" : "") + "</div></div></div>",
+      "<div class=\"mrw-lineup-title\">팀분배</div>",
+      "<div class=\"mrw-team-grid\">" + renderTeamRecordTeam(record, "A") + renderTeamRecordTeam(record, "B") + "</div>",
+      renderTeamRecordLineup(record),
+      "</div>",
+    ].join("");
     return [
       "<div class=\"mrw-team-detail\">",
       "<div class=\"mrw-team-detail-head\"><div><div class=\"mrw-team-detail-title\">" + escapeHtml(record.date) + " 팀 분배</div>",
@@ -2086,6 +2164,9 @@
 
       var matchDate = dateInputFromFirebase(data.matchDate) || dateInputFromFirebase(data.matchId || matchId);
       if (matchDate) state.calendarMonth = matchDate.slice(0, 7);
+      state.selectedTeamRecord = matchDate ? await fetchTeamRecord(matchDate).catch(function () { return null; }) : null;
+      state.selectedTeamRecordLoading = false;
+      state.selectedTeamRecordError = "";
       state.loadedForm = {
         date: matchDate || todayInputValue(),
         matchId: data.matchId || matchId,
