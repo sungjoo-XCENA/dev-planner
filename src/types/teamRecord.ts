@@ -1,4 +1,5 @@
 import type { MemberType, Position, PositionGroup, StaffRole } from "./player";
+import type { TeamQuarterLineup } from "./lineup";
 import type { TeamName } from "./team";
 
 export type TeamRecordPlayer = {
@@ -21,6 +22,10 @@ export type TeamRecordGroups = {
 export type TeamRecord = {
   date: string;
   teams: Record<TeamName, TeamRecordGroups>;
+  lineup?: {
+    savedAt: string;
+    quarters: TeamQuarterLineup[];
+  };
   shareUrl: string;
   createdAt: string;
   updatedAt: string;
@@ -32,4 +37,5 @@ export type TeamRecordSummary = {
   updatedAt: string;
   teamAPlayers: number;
   teamBPlayers: number;
+  hasLineup: boolean;
 };

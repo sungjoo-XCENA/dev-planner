@@ -2,6 +2,7 @@ import { promises as fs } from "fs";
 import path from "path";
 import { NextResponse } from "next/server";
 import { firebaseDeleteJson, firebaseGetJson, firebasePatchJson } from "@/lib/firebaseRealtime";
+import type { TeamQuarterLineup } from "@/types/lineup";
 import type { TeamRecord, TeamRecordGroups, TeamRecordPlayer, TeamRecordSummary } from "@/types/teamRecord";
 
 export const dynamic = "force-dynamic";
@@ -194,6 +195,54 @@ function isRecordGroups(value: unknown): value is TeamRecordGroups {
   );
 }
 
+function isQuarterNumber(value: unknown): value is TeamQuarterLineup["quarter"] {
+  return value === 1 || value === 2 || value === 3 || value === 4;
+}
+
+function isTeamName(value: unknown): value is TeamQuarterLineup["team"] {
+  return value === "A" || value === "B";
+}
+
+function stringArray(value: unknown): string[] | null {
+  if (!Array.isArray(value) || !value.every((item) => typeof item === "string")) return null;
+  return value;
+}
+
+function normalizeLineupQuarter(value: unknown): TeamQuarterLineup | null {
+  if (!value || typeof value !== "object") return null;
+  const record = value as Partial<TeamQuarterLineup>;
+  const attack = stringArray(record.attack);
+  const mid = stringArray(record.mid);
+  const defense = stringArray(record.defense);
+  const bench = stringArray(record.bench);
+  const warnings = stringArray(record.warnings);
+
+  if (!isQuarterNumber(record.quarter) || !isTeamName(record.team) || !attack || !mid || !defense || !bench) return null;
+
+  return {
+    quarter: record.quarter,
+    team: record.team,
+    attack,
+    mid,
+    defense,
+    gk: typeof record.gk === "string" ? record.gk : "",
+    bench,
+    warnings: warnings ?? [],
+  };
+}
+
+function normalizeLineup(value: unknown): TeamRecord["lineup"] | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const record = value as Partial<NonNullable<TeamRecord["lineup"]>>;
+  if (typeof record.savedAt !== "string" || !Array.isArray(record.quarters)) return undefined;
+  const quarters = record.quarters.map(normalizeLineupQuarter);
+  if (quarters.some((quarter) => !quarter)) return undefined;
+  return {
+    savedAt: record.savedAt,
+    quarters: quarters as TeamQuarterLineup[],
+  };
+}
+
 function normalizeRecord(input: unknown, existing?: TeamRecord): TeamRecord | null {
   if (!input || typeof input !== "object") return null;
   const record = input as Partial<TeamRecord>;
@@ -202,9 +251,11 @@ function normalizeRecord(input: unknown, existing?: TeamRecord): TeamRecord | nu
   if (typeof record.shareUrl !== "string" || record.shareUrl.trim().length === 0) return null;
 
   const now = new Date().toISOString();
+  const lineup = normalizeLineup(record.lineup);
   return {
     date: record.date,
     teams: record.teams,
+    ...(lineup ? { lineup } : {}),
     shareUrl: record.shareUrl,
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
@@ -217,9 +268,11 @@ function normalizeStoredRecord(date: string, input: unknown): TeamRecord | null 
   if (!record.teams || !isRecordGroups(record.teams.A) || !isRecordGroups(record.teams.B)) return null;
   if (typeof record.shareUrl !== "string" || record.shareUrl.trim().length === 0) return null;
   const now = new Date().toISOString();
+  const lineup = normalizeLineup(record.lineup);
   return {
     date,
     teams: record.teams,
+    ...(lineup ? { lineup } : {}),
     shareUrl: record.shareUrl,
     createdAt: typeof record.createdAt === "string" ? record.createdAt : now,
     updatedAt: typeof record.updatedAt === "string" ? record.updatedAt : now,
@@ -237,6 +290,7 @@ function toSummary(record: TeamRecord): TeamRecordSummary {
     updatedAt: record.updatedAt,
     teamAPlayers: teamSize(record.teams.A),
     teamBPlayers: teamSize(record.teams.B),
+    hasLineup: Boolean(record.lineup?.quarters.length),
   };
 }
 

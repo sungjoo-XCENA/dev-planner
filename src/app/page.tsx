@@ -397,7 +397,7 @@ function toRecordGroups(players: TeamRecordSourcePlayer[]): TeamRecordGroups {
   return groups;
 }
 
-function buildTeamRecord(result: TeamBalanceResult, date: string, shareUrl: string): TeamRecord {
+function buildTeamRecord(result: TeamBalanceResult, date: string, shareUrl: string, lineup?: Pick<LineupResult, "quarters">): TeamRecord {
   const now = new Date().toISOString();
   return {
     date,
@@ -405,6 +405,7 @@ function buildTeamRecord(result: TeamBalanceResult, date: string, shareUrl: stri
       A: toRecordGroups(result.teamA.players),
       B: toRecordGroups(result.teamB.players),
     },
+    ...(lineup ? { lineup: { savedAt: now, quarters: lineup.quarters } } : {}),
     shareUrl,
     createdAt: now,
     updatedAt: now,
@@ -3106,6 +3107,8 @@ function LineupResultView({
   const [quarterSwapKey, setQuarterSwapKey] = useState<string | null>(null);
   const [shareUrl, setShareUrl] = useState<string | null>(null);
   const [shareUrlError, setShareUrlError] = useState<string | null>(null);
+  const [lineupSaveStatus, setLineupSaveStatus] = useState<string | null>(null);
+  const [lineupSaveError, setLineupSaveError] = useState<string | null>(null);
   const refs = useRef<Map<string, HTMLDivElement | null>>(new Map());
   const currentLineup = useMemo(() => ({ ...result, quarters }), [result, quarters]);
 
@@ -3255,6 +3258,22 @@ function LineupResultView({
     if (!elem) return;
     const teamFileName = team === "A" ? "fluorescent" : "orange";
     await downloadElementAsImage(elem, `dev_fc_${teamFileName}_lineup_${today}.png`);
+    if (!teamResult) return;
+
+    setLineupSaveStatus(null);
+    setLineupSaveError(null);
+    try {
+      let recordShareUrl = shareUrl;
+      if (!recordShareUrl && !shareUrlError) {
+        recordShareUrl = await buildLineupShareUrl(currentLineup, { teamResult, teamVariants, selectedVariantIdx });
+      }
+      const fallbackUrl = typeof window !== "undefined" ? window.location.href : "/";
+      const record = buildTeamRecord(teamResult, today, recordShareUrl ?? fallbackUrl, currentLineup);
+      await upsertTeamRecord(record);
+      setLineupSaveStatus(`${formatTeamName(team)} 라인업 확정 저장 완료`);
+    } catch (error) {
+      setLineupSaveError(`라인업 확정 저장 실패: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   const teamOverview = useMemo(() => {
@@ -3367,6 +3386,11 @@ function LineupResultView({
         <button className="rounded-xl bg-lime-500 px-4 py-3 text-sm font-black text-lime-950 shadow-sm hover:bg-lime-400" onClick={() => downloadTeam("A")}>형광팀 라인업 확정 (이미지 저장)</button>
         <button className="rounded-xl bg-orange-500 px-4 py-3 text-sm font-black text-white shadow-sm hover:bg-orange-400" onClick={() => downloadTeam("B")}>주황팀 라인업 확정 (이미지 저장)</button>
       </div>
+      {(lineupSaveStatus || lineupSaveError) && (
+        <p className={`mt-3 text-right text-xs font-semibold ${lineupSaveError ? "text-red-600" : "text-emerald-700"}`}>
+          {lineupSaveError ?? lineupSaveStatus}
+        </p>
+      )}
     </section>
   );
 }
