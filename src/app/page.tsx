@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import type { AssignedSubRole, DedicatedGoalkeeper, FieldPosition, Player, PositionGroup, StaffRole } from "@/types/player";
+import type { AssignedPlayer, AssignedSubRole, DedicatedGoalkeeper, FieldPosition, Player, PositionGroup, StaffRole } from "@/types/player";
 import type { PlayerRelation } from "@/types/relation";
 import type { LineupResult, LineupRole, Quarter } from "@/types/lineup";
 import type { TeamBalanceResult, TeamName } from "@/types/team";
@@ -275,15 +275,42 @@ async function gunzip(bytes: Uint8Array): Promise<Uint8Array> {
 }
 
 function normalizeSharedVariants(payload: Partial<SharedLineupPayload>): SharedLineupData {
-  const variants = Array.isArray(payload.teamVariants) ? payload.teamVariants.filter(Boolean) : [];
-  const fallbackVariants = variants.length > 0 ? variants : (payload.teamResult ? [payload.teamResult] : []);
+  const variants = Array.isArray(payload.teamVariants)
+    ? payload.teamVariants.map(normalizeSharedTeamResult).filter((result): result is TeamBalanceResult => Boolean(result))
+    : [];
+  const normalizedTeamResult = normalizeSharedTeamResult(payload.teamResult);
+  const fallbackVariants = variants.length > 0 ? variants : (normalizedTeamResult ? [normalizedTeamResult] : []);
   const maxIdx = Math.max(0, fallbackVariants.length - 1);
   const selectedVariantIdx = Math.min(Math.max(Number(payload.selectedVariantIdx ?? 0) || 0, 0), maxIdx);
   return {
     lineup: payload.lineup as LineupResult,
-    teamResult: payload.teamResult ?? fallbackVariants[selectedVariantIdx] ?? null,
+    teamResult: normalizedTeamResult ?? fallbackVariants[selectedVariantIdx] ?? null,
     teamVariants: fallbackVariants,
     selectedVariantIdx,
+  };
+}
+
+function normalizeSharedAssignedPlayer(player: AssignedPlayer): AssignedPlayer {
+  return {
+    ...player,
+    secondaryPositions: Array.isArray(player.secondaryPositions) ? player.secondaryPositions : [],
+  };
+}
+
+function normalizeSharedTeamResult(result: TeamBalanceResult | null | undefined): TeamBalanceResult | null {
+  if (!result) return null;
+  return {
+    ...result,
+    teamA: {
+      ...result.teamA,
+      players: Array.isArray(result.teamA?.players) ? result.teamA.players.map(normalizeSharedAssignedPlayer) : [],
+    },
+    teamB: {
+      ...result.teamB,
+      players: Array.isArray(result.teamB?.players) ? result.teamB.players.map(normalizeSharedAssignedPlayer) : [],
+    },
+    relationViolations: Array.isArray(result.relationViolations) ? result.relationViolations : [],
+    warnings: Array.isArray(result.warnings) ? result.warnings : [],
   };
 }
 
@@ -360,12 +387,13 @@ function normalizeSharedTeamPayload(payload: Partial<SharedTeamPayload>): Shared
   if (payload.version !== 1 || !Array.isArray(payload.teamVariants)) {
     throw new Error("팀분배 공유 데이터 형식이 올바르지 않습니다.");
   }
-  const variants = payload.teamVariants.filter(Boolean);
+  const variants = payload.teamVariants.map(normalizeSharedTeamResult).filter((result): result is TeamBalanceResult => Boolean(result));
+  const normalizedTeamResult = normalizeSharedTeamResult(payload.teamResult);
   const idx = variants.length > 0
     ? Math.min(Math.max(Number(payload.selectedVariantIdx ?? 0) || 0, 0), variants.length - 1)
     : 0;
   return {
-    teamResult: payload.teamResult ?? variants[idx] ?? null,
+    teamResult: normalizedTeamResult ?? variants[idx] ?? null,
     teamVariants: variants,
     selectedVariantIdx: idx,
   };
