@@ -283,10 +283,35 @@ function normalizeSharedVariants(payload: Partial<SharedLineupPayload>): SharedL
   const maxIdx = Math.max(0, fallbackVariants.length - 1);
   const selectedVariantIdx = Math.min(Math.max(Number(payload.selectedVariantIdx ?? 0) || 0, 0), maxIdx);
   return {
-    lineup: payload.lineup as LineupResult,
+    lineup: normalizeSharedLineup(payload.lineup),
     teamResult: normalizedTeamResult ?? fallbackVariants[selectedVariantIdx] ?? null,
     teamVariants: fallbackVariants,
     selectedVariantIdx,
+  };
+}
+
+function stringList(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
+function normalizeSharedLineup(lineup: unknown): LineupResult {
+  const source = lineup as Partial<LineupResult>;
+  return {
+    quarters: Array.isArray(source.quarters)
+      ? source.quarters.map((quarter) => ({
+        ...quarter,
+        attack: stringList(quarter.attack),
+        mid: stringList(quarter.mid),
+        defense: stringList(quarter.defense),
+        gk: typeof quarter.gk === "string" ? quarter.gk : "없음",
+        bench: stringList(quarter.bench),
+        warnings: stringList(quarter.warnings),
+      }))
+      : [],
+    playerSummaries: Array.isArray(source.playerSummaries) ? source.playerSummaries : [],
+    staffRoles: source.staffRoles && typeof source.staffRoles === "object" ? source.staffRoles : {},
+    dedicatedGkRotation: source.dedicatedGkRotation && typeof source.dedicatedGkRotation === "object" ? source.dedicatedGkRotation : {},
+    warnings: stringList(source.warnings),
   };
 }
 
