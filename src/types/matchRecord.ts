@@ -27,6 +27,13 @@ export type MatchRecordTeamScore = {
   quarter?: Quarter;
 };
 
+export type MatchRecordGuestPlayer = {
+  team: TeamName;
+  name: string;
+  role?: string;
+  quarter?: Quarter;
+};
+
 export type MatchRecordSaveRequest = {
   matchId: string;
   matchDate: string;
@@ -38,8 +45,11 @@ export type MatchRecordSaveRequest = {
   awayTeamName?: string;
   memo?: string;
   quarters: TeamQuarterLineup[];
+  lineupQuarters?: TeamQuarterLineup[];
   events: MatchRecordEvent[];
   summaryStats?: MatchRecordPlayerStat[];
+  guestStats?: MatchRecordPlayerStat[];
+  guestPlayers?: MatchRecordGuestPlayer[];
   teamScores?: MatchRecordTeamScore[];
   scoreOverride?: Partial<Record<TeamName, number>>;
   staffRoles?: Partial<Record<string, StaffRole>>;
@@ -76,6 +86,8 @@ export type MatchRecordLoadResponse = {
   hasPlannerQuarterInfo: boolean;
   events: MatchRecordEvent[];
   summaryStats?: MatchRecordPlayerStat[];
+  guestStats?: MatchRecordPlayerStat[];
+  guestPlayers?: MatchRecordGuestPlayer[];
   teamScores?: MatchRecordTeamScore[];
   players?: Partial<Record<TeamName, string[]>>;
   staffRoles?: Partial<Record<string, StaffRole>>;

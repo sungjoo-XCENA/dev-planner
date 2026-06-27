@@ -20,6 +20,7 @@
     teamLabels: { A: TEAM_LABELS.A, B: TEAM_LABELS.B },
     teamScores: Object.create(null),
     summaryStats: Object.create(null),
+    guestStats: Object.create(null),
     events: [],
     roles: Object.create(null),
     standaloneKey: "",
@@ -100,6 +101,7 @@
       ".mrw-role-coach{background:#dff9fb;color:#0e7490}",
       ".mrw-role-manager{background:#ede9fe;color:#6d28d9}",
       ".mrw-role-director{background:#fef3c7;color:#92400e}",
+      ".mrw-role-guest{background:#f3e8ff;color:#7e22ce}",
       ".mrw-counter{display:grid;grid-template-columns:24px 24px 16px 24px;align-items:center;gap:2px;border-radius:999px;background:#f1f5f9;padding:4px;min-width:98px;box-sizing:border-box}",
       ".mrw-counter-label{color:#64748b;font-size:10px;font-weight:950;text-align:center;white-space:nowrap;line-height:1}",
       ".mrw-counter button{border:0;border-radius:999px;background:#fff;color:#0f172a;width:24px;height:24px;font-size:13px;font-weight:950;line-height:1;cursor:pointer;box-shadow:0 1px 3px rgba(15,23,42,.08)}",
@@ -581,6 +583,15 @@
     return registeredPlayerLookup()[name] || "";
   }
 
+  function isRegisteredPlayer(rawName) {
+    return Boolean(registeredPlayerName(rawName));
+  }
+
+  function isGuestPlayer(rawName) {
+    var name = playerName(rawName);
+    return Boolean(name) && name !== "없음" && name !== "미정" && !isRegisteredPlayer(name);
+  }
+
   function registeredPlayerError(name) {
     return name + " 선수는 선수 명단에 없습니다. 이름을 확인하세요.";
   }
@@ -656,6 +667,47 @@
     });
   }
 
+  function filterNamesByRegistration(names) {
+    return (Array.isArray(names) ? names : []).filter(function (name) {
+      return isRegisteredPlayer(name);
+    });
+  }
+
+  function filterRecordByRegistration(record) {
+    var gk = isRegisteredPlayer(record && record.gk) ? record.gk : "없음";
+    return {
+      quarter: record.quarter,
+      team: record.team,
+      attack: filterNamesByRegistration(record.attack),
+      mid: filterNamesByRegistration(record.mid),
+      defense: filterNamesByRegistration(record.defense),
+      gk: gk,
+      bench: filterNamesByRegistration(record.bench),
+      warnings: record.warnings || [],
+    };
+  }
+
+  function guestPlayersFromRecords(records) {
+    var seen = Object.create(null);
+    var guests = [];
+    function add(record, role, rawName) {
+      var name = playerName(rawName);
+      if (!isGuestPlayer(name)) return;
+      var key = record.team + "|" + (record.quarter || "") + "|" + role + "|" + name;
+      if (seen[key]) return;
+      seen[key] = true;
+      guests.push({ team: record.team, quarter: record.quarter, role: role, name: name });
+    }
+    (Array.isArray(records) ? records : []).forEach(function (record) {
+      (record.attack || []).forEach(function (name) { add(record, "attack", name); });
+      (record.mid || []).forEach(function (name) { add(record, "mid", name); });
+      (record.defense || []).forEach(function (name) { add(record, "defense", name); });
+      add(record, "gk", record.gk);
+      (record.bench || []).forEach(function (name) { add(record, "bench", name); });
+    });
+    return guests;
+  }
+
   function scoreKey(team, quarter) {
     return team + "|" + (quarter || "");
   }
@@ -694,10 +746,11 @@
     player = playerName(player);
     if (!player) return;
     var key = statKey(team, player, quarter);
-    var current = state.summaryStats[key] || { team: team, player: player, goals: 0, assists: 0, quarter: quarter };
+    var bucket = isRegisteredPlayer(player) ? state.summaryStats : state.guestStats;
+    var current = bucket[key] || { team: team, player: player, goals: 0, assists: 0, quarter: quarter };
     current[field] = Math.max(0, Math.min(20, (Number(current[field]) || 0) + delta));
-    if (current.goals > 0 || current.assists > 0) state.summaryStats[key] = current;
-    else delete state.summaryStats[key];
+    if (current.goals > 0 || current.assists > 0) bucket[key] = current;
+    else delete bucket[key];
     state.conflict = null;
     state.status = "";
     renderPanel();
@@ -706,6 +759,7 @@
   function removeSummaryStat(team, player, quarter) {
     player = playerName(player);
     delete state.summaryStats[statKey(team, player, quarter)];
+    delete state.guestStats[statKey(team, player, quarter)];
     state.status = "";
     renderPanel();
   }
@@ -718,6 +772,14 @@
     return Object.keys(state.summaryStats).map(function (key) { return state.summaryStats[key]; });
   }
 
+  function guestStatsArray() {
+    return Object.keys(state.guestStats).map(function (key) { return state.guestStats[key]; });
+  }
+
+  function allStatsArray() {
+    return summaryStatsArray().concat(guestStatsArray());
+  }
+
   function invalidRecordPlayerNames(records, stats, events) {
     var lookup = registeredPlayerLookup();
     var invalid = [];
@@ -726,13 +788,6 @@
       if (!name || name === "없음" || name === "?놁쓬" || name === "??곸벉") return;
       if (!lookup[name] && invalid.indexOf(name) < 0) invalid.push(name);
     }
-    (Array.isArray(records) ? records : []).forEach(function (record) {
-      (record.attack || []).forEach(add);
-      (record.mid || []).forEach(add);
-      (record.defense || []).forEach(add);
-      add(record.gk);
-      (record.bench || []).forEach(add);
-    });
     (Array.isArray(stats) ? stats : []).forEach(function (stat) {
       add(stat && stat.player);
     });
@@ -751,7 +806,7 @@
   }
 
   function hasEnteredRecordItems() {
-    return teamScoresArray().length > 0 || summaryStatsArray().length > 0 || state.events.length > 0;
+    return teamScoresArray().length > 0 || allStatsArray().length > 0 || state.events.length > 0;
   }
 
   function teamScoreSummary() {
@@ -762,7 +817,7 @@
   }
 
   function statTotals(team, quarter) {
-    return summaryStatsArray()
+    return allStatsArray()
       .filter(function (stat) { return stat.team === team && (quarter === undefined || stat.quarter === quarter); })
       .reduce(function (acc, stat) {
         acc.goals += Number(stat.goals) || 0;
@@ -773,6 +828,15 @@
 
   function setSummaryStatsFromArray(stats) {
     state.summaryStats = Object.create(null);
+    setStatsIntoBucket(state.summaryStats, stats);
+  }
+
+  function setGuestStatsFromArray(stats) {
+    state.guestStats = Object.create(null);
+    setStatsIntoBucket(state.guestStats, stats);
+  }
+
+  function setStatsIntoBucket(bucket, stats) {
     (Array.isArray(stats) ? stats : []).forEach(function (stat) {
       if (!stat || !stat.player || (stat.team !== "A" && stat.team !== "B")) return;
       var player = playerName(stat.player);
@@ -780,7 +844,7 @@
       var goals = clampCount(stat.goals);
       var assists = clampCount(stat.assists);
       if (!player || (goals <= 0 && assists <= 0)) return;
-      state.summaryStats[statKey(stat.team, player, quarter)] = {
+      bucket[statKey(stat.team, player, quarter)] = {
         team: stat.team,
         player: player,
         goals: goals,
@@ -866,6 +930,7 @@
   function resetRecordEntryState() {
     state.events = [];
     state.summaryStats = Object.create(null);
+    state.guestStats = Object.create(null);
     state.teamScores = Object.create(null);
     state.conflict = null;
     state.loadedRecord = null;
@@ -1291,7 +1356,8 @@
 
   function renderPlayerStat(team, player, quarter) {
     player = playerName(player);
-    var stat = state.summaryStats[statKey(team, player, quarter)] || { goals: 0, assists: 0 };
+    var bucket = isRegisteredPlayer(player) ? state.summaryStats : state.guestStats;
+    var stat = bucket[statKey(team, player, quarter)] || { goals: 0, assists: 0 };
     var remove = canEditPlayers()
       ? "<button type=\"button\" class=\"mrw-player-remove\" data-mrw-remove-player-team=\"" + team + "\" data-mrw-remove-player=\"" + escapeHtml(player) + "\">제외</button>"
       : "";
@@ -1314,7 +1380,9 @@
 
   function renderRole(player) {
     var role = state.roles[player] || KNOWN_STAFF_ROLES[player];
+    if (!role && isGuestPlayer(player)) role = "용병";
     if (!role) return "";
+    if (role === "용병") return "<span class=\"mrw-role mrw-role-guest\">용병</span>";
     var cls = role === "감독" ? "mrw-role-manager" : role === "단장" ? "mrw-role-director" : "mrw-role-coach";
     return "<span class=\"mrw-role " + cls + "\">" + role + "</span>";
   }
@@ -1328,12 +1396,13 @@
     teamScoresArray().forEach(function (entry) {
       items.push({ type: "score", team: entry.team, quarter: entry.quarter, title: scoreboardTeamLabel(entry.team) + " 스코어", sub: scopeLabel(entry.quarter) + " · 골 " + entry.goals });
     });
-    summaryStatsArray().forEach(function (entry) {
+    allStatsArray().forEach(function (entry) {
       var parts = [];
       if (entry.goals > 0) parts.push("골 " + entry.goals);
       if (entry.assists > 0) parts.push("도움 " + entry.assists);
       var player = playerName(entry.player);
-      items.push({ type: "stat", team: entry.team, player: player, quarter: entry.quarter, title: teamLabel(entry.team) + " · " + player, sub: scopeLabel(entry.quarter) + " · " + parts.join(" · ") });
+      var guest = isGuestPlayer(player);
+      items.push({ type: "stat", team: entry.team, player: player, quarter: entry.quarter, title: teamLabel(entry.team) + " · " + player + (guest ? " (용병)" : ""), sub: scopeLabel(entry.quarter) + " · " + parts.join(" · ") });
     });
     state.events.forEach(function (event, index) {
       items.push({ type: "event", index: index, title: teamLabel(event.team) + " · " + event.scorer, sub: scopeLabel(event.quarter) + " · 골 1" + (event.assist ? " · 도움 " + event.assist : "") });
@@ -1963,10 +2032,12 @@
     var home = matchKind === "SELF" ? "DevUtd 주황" : "DevUtd";
     var awayControl = panel.querySelector("[data-mrw=awayTeam]");
     var away = matchKind === "SELF" ? "DevUtd 형광" : ((awayControl && (awayControl.value || awayControl.textContent)) || firstAwayTeam());
-    var hasQuarterRecords = teamScoresArray().some(function (score) { return score.quarter; }) || summaryStatsArray().some(function (stat) { return stat.quarter; });
-    var quarters = payloadRecords(parseQuarterCards());
+    var hasQuarterRecords = teamScoresArray().some(function (score) { return score.quarter; }) || allStatsArray().some(function (stat) { return stat.quarter; });
+    var lineupQuarters = payloadRecords(parseQuarterCards());
+    var quarters = lineupQuarters.map(filterRecordByRegistration);
     var events = state.events;
     var summaryStats = summaryStatsArray();
+    var guestStats = guestStatsArray();
     assertRegisteredRecordPlayers(quarters, summaryStats, events);
     return {
       matchId: state.editingMatchId || panel.querySelector("[data-mrw=matchId]").value.trim() || compactDate(matchDate),
@@ -1979,8 +2050,11 @@
       awayTeamName: away,
       memo: valueOf(panel, "memo", ""),
       quarters: quarters,
+      lineupQuarters: lineupQuarters,
       events: events,
       summaryStats: summaryStats,
+      guestStats: guestStats,
+      guestPlayers: guestPlayersFromRecords(lineupQuarters),
       teamScores: teamScoresArray(),
       scoreOverride: teamScoreSummary(),
       staffRoles: staffRolesPayload(),
@@ -2003,6 +2077,15 @@
       if (stat.assists > 0) parts.push("도움 " + stat.assists);
       if (parts.length === 0) return;
       lines.push("- " + scopeLabel(stat.quarter) + " · " + teamLabelForPayload(stat.team, payload) + " · " + player + ": " + parts.join(" · "));
+    });
+    (payload.guestStats || []).forEach(function (stat) {
+      var player = playerName(stat.player);
+      if (!player) return;
+      var parts = [];
+      if (stat.goals > 0) parts.push("골 " + stat.goals);
+      if (stat.assists > 0) parts.push("도움 " + stat.assists);
+      if (parts.length === 0) return;
+      lines.push("- " + scopeLabel(stat.quarter) + " · " + teamLabelForPayload(stat.team, payload) + " · " + player + "(용병): " + parts.join(" · "));
     });
     (payload.events || []).forEach(function (event) {
       if (!event || !event.scorer) return;
@@ -2152,6 +2235,7 @@
       applyStaffRoles(data.staffRoles);
       state.events = Array.isArray(data.events) ? data.events : [];
       setSummaryStatsFromArray(data.summaryStats);
+      setGuestStatsFromArray(data.guestStats);
       setTeamScoresFromArray(data.teamScores, data.scoreOverride);
       state.loadedPlayers = normalizeLoadedPlayers(data.players) || emptyLoadedPlayers();
       state.conflict = null;

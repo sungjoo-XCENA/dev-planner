@@ -4,6 +4,7 @@ import { buildMatchInfoPayload, validateMatchRecordRequest } from "@/lib/matchRe
 import type {
   MatchRecordConflictResponse,
   MatchRecordEvent,
+  MatchRecordGuestPlayer,
   MatchRecordLoadResponse,
   MatchRecordPlayerStat,
   MatchRecordSaveRequest,
@@ -206,6 +207,7 @@ function loadResponse(matchId: string, existing: unknown): MatchRecordLoadRespon
     ? (record.PlannerQuarterInfo as Record<string, unknown>)
     : {};
   const plannerStats = plannerSummaryStats(planner.summaryStats);
+  const guestStats = plannerSummaryStats(planner.guestStats);
 
   return {
     ok: true,
@@ -223,6 +225,8 @@ function loadResponse(matchId: string, existing: unknown): MatchRecordLoadRespon
     hasPlannerQuarterInfo: Boolean(record.PlannerQuarterInfo),
     events: plannerEvents(planner.Events ?? planner.events),
     summaryStats: plannerStats.length > 0 ? plannerStats : legacySummaryStats(record),
+    guestStats,
+    guestPlayers: plannerGuestPlayers(planner.guestPlayers),
     teamScores: plannerTeamScores(planner.teamScores, record.HomeGoal, record.AwayGoal),
     players: playerListsFromRecord(planner, record),
     staffRoles: staffRolesFromRecord(planner, record),
@@ -316,6 +320,28 @@ function plannerSummaryStats(value: unknown): MatchRecordPlayerStat[] {
       };
     })
     .filter((stat): stat is MatchRecordPlayerStat => Boolean(stat));
+}
+
+function plannerGuestPlayers(value: unknown): MatchRecordGuestPlayer[] {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .map((item) => {
+      const record = item && typeof item === "object" ? (item as Record<string, unknown>) : {};
+      const team = teamValue(record.team);
+      const name = normalizePersonName(stringValue(record.name) ?? "");
+      const role = stringValue(record.role)?.trim();
+      const quarter = quarterValue(record.quarter);
+
+      if (!team || !name) return null;
+      return {
+        team,
+        name,
+        ...(role ? { role } : {}),
+        ...(quarter ? { quarter } : {}),
+      };
+    })
+    .filter((player): player is MatchRecordGuestPlayer => Boolean(player));
 }
 
 function playerListsFromRecord(planner: Record<string, unknown>, record: Record<string, unknown>): Partial<Record<TeamName, string[]>> {
