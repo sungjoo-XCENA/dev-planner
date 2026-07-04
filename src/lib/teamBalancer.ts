@@ -30,9 +30,16 @@ const ACTIVITY_BALANCE_WEIGHT = 2;
 const MULTI_POSITION_VARIANT_PENALTY = 600;
 const GOOD_TOTAL_DIFF_LIMIT = 3;
 const VARIANT_TOTAL_DIFF_TOLERANCE = 3;
+const DEFAULT_QUARTER_TARGET = 3;
+const QUARTER_BALANCE_PENALTY = 120;
 const RELATION_PENALTY: Record<PlayerRelation["score"], number> = {
   1: 1000,
   2: 80,
+};
+
+export type TeamBalanceOptions = {
+  quarterTargets?: Record<string, number>;
+  dualTeamPlayerIds?: string[];
 };
 
 type FieldPlayer = Player & { primaryPosition: FieldPosition };
@@ -54,6 +61,32 @@ type SubRoleScores = {
 
 function isFieldPlayer(player: Player): player is FieldPlayer {
   return player.primaryPosition !== "GK";
+}
+
+function quarterTargetFor(id: string, options: TeamBalanceOptions = {}): number {
+  return Math.max(1, Math.min(4, Math.round(options.quarterTargets?.[id] ?? DEFAULT_QUARTER_TARGET)));
+}
+
+function isDualTeamPlayer(id: string, options: TeamBalanceOptions = {}): boolean {
+  return options.dualTeamPlayerIds?.includes(id) ?? false;
+}
+
+function ownQuarterWeight(player: { id: string }, options: TeamBalanceOptions = {}): number {
+  if (isDualTeamPlayer(player.id, options)) return 1 / DEFAULT_QUARTER_TARGET;
+  return quarterTargetFor(player.id, options) / DEFAULT_QUARTER_TARGET;
+}
+
+function virtualQuarterWeight(player: { id: string }, options: TeamBalanceOptions = {}): number {
+  return isDualTeamPlayer(player.id, options) ? 1 / DEFAULT_QUARTER_TARGET : 0;
+}
+
+function playerQuarterContribution(player: { id: string }, options: TeamBalanceOptions = {}): number {
+  return isDualTeamPlayer(player.id, options) ? 1 : quarterTargetFor(player.id, options);
+}
+
+function teamQuarterTotal(ownTeam: Array<{ id: string }>, otherTeam: Array<{ id: string }>, options: TeamBalanceOptions = {}): number {
+  return ownTeam.reduce((acc, p) => acc + playerQuarterContribution(p, options), 0)
+    + otherTeam.reduce((acc, p) => acc + (isDualTeamPlayer(p.id, options) ? 1 : 0), 0);
 }
 
 function targetForTeamSize(size: number): RoleTargets {
@@ -250,23 +283,38 @@ function assignDetailedSubRoles<T extends (FieldPlayer | AssignedFieldPlayer) & 
 function subRoleScores(players: Array<FieldPlayer & { assignedGroup: PositionGroup }>): SubRoleScores {
   const assigned = assignDetailedSubRoles(players);
   return assigned.reduce<SubRoleScores>((scores, player) => {
-    if (player.assignedSubRole === "CF") {
-      scores.centerForward += centerForwardScore(player);
-      scores.attack += centerForwardScore(player);
-    } else if (player.assignedSubRole === "WING") {
-      scores.wing += wingScore(player);
-      scores.attack += wingScore(player);
-    } else if (player.assignedSubRole === "MID") {
-      scores.mid += player.midScore;
-    } else if (player.assignedSubRole === "CB") {
-      scores.centerBack += centerBackScore(player);
-      scores.defense += centerBackScore(player);
-    } else {
-      scores.wingBack += wingBackScore(player);
-      scores.defense += wingBackScore(player);
-    }
+    addSubRoleScore(scores, player);
     return scores;
   }, { centerForward: 0, wing: 0, attack: 0, mid: 0, centerBack: 0, wingBack: 0, defense: 0 });
+}
+
+function addSubRoleScore(scores: SubRoleScores, player: FieldPlayer & { assignedSubRole: AssignedSubRole }, weight = 1): void {
+  if (player.assignedSubRole === "CF") {
+    scores.centerForward += centerForwardScore(player) * weight;
+    scores.attack += centerForwardScore(player) * weight;
+  } else if (player.assignedSubRole === "WING") {
+    scores.wing += wingScore(player) * weight;
+    scores.attack += wingScore(player) * weight;
+  } else if (player.assignedSubRole === "MID") {
+    scores.mid += player.midScore * weight;
+  } else if (player.assignedSubRole === "CB") {
+    scores.centerBack += centerBackScore(player) * weight;
+    scores.defense += centerBackScore(player) * weight;
+  } else {
+    scores.wingBack += wingBackScore(player) * weight;
+    scores.defense += wingBackScore(player) * weight;
+  }
+}
+
+function weightedSubRoleScores(
+  ownTeam: Array<FieldPlayer & { assignedGroup: PositionGroup }>,
+  otherTeam: Array<FieldPlayer & { assignedGroup: PositionGroup }>,
+  options: TeamBalanceOptions = {},
+): SubRoleScores {
+  const scores: SubRoleScores = { centerForward: 0, wing: 0, attack: 0, mid: 0, centerBack: 0, wingBack: 0, defense: 0 };
+  assignDetailedSubRoles(ownTeam).forEach((player) => addSubRoleScore(scores, player, ownQuarterWeight(player, options)));
+  assignDetailedSubRoles(otherTeam).forEach((player) => addSubRoleScore(scores, player, virtualQuarterWeight(player, options)));
+  return scores;
 }
 
 function buildSlotAssignments(
@@ -489,17 +537,24 @@ function pairCostByAssignments(
   teamB: FieldPlayer[],
   assignments: Map<string, SlotAssignment>,
   relations: PlayerRelation[] = [],
+  options: TeamBalanceOptions = {},
 ): number {
-  const aScores = subRoleScores(assignedPlayersForCost(teamA, assignments));
-  const bScores = subRoleScores(assignedPlayersForCost(teamB, assignments));
-  const aAct = teamA.reduce((acc, p) => acc + effectiveActivityScore(p), 0);
-  const bAct = teamB.reduce((acc, p) => acc + effectiveActivityScore(p), 0);
+  const assignedA = assignedPlayersForCost(teamA, assignments);
+  const assignedB = assignedPlayersForCost(teamB, assignments);
+  const aScores = weightedSubRoleScores(assignedA, assignedB, options);
+  const bScores = weightedSubRoleScores(assignedB, assignedA, options);
+  const aAct = teamA.reduce((acc, p) => acc + effectiveActivityScore(p) * ownQuarterWeight(p, options), 0)
+    + teamB.reduce((acc, p) => acc + effectiveActivityScore(p) * virtualQuarterWeight(p, options), 0);
+  const bAct = teamB.reduce((acc, p) => acc + effectiveActivityScore(p) * ownQuarterWeight(p, options), 0)
+    + teamA.reduce((acc, p) => acc + effectiveActivityScore(p) * virtualQuarterWeight(p, options), 0);
   const aCoach = teamA.filter(isStaffMember).length;
   const bCoach = teamB.filter(isStaffMember).length;
   const aGuest = teamA.filter((player) => player.memberType === "GUEST").length;
   const bGuest = teamB.filter((player) => player.memberType === "GUEST").length;
   const aMulti = teamA.filter(isMultiPositionPlayer).length;
   const bMulti = teamB.filter(isMultiPositionPlayer).length;
+  const aQuarter = teamQuarterTotal(teamA, teamB, options);
+  const bQuarter = teamQuarterTotal(teamB, teamA, options);
   const total = (aScores.attack + aScores.mid + aScores.defense + aAct) - (bScores.attack + bScores.mid + bScores.defense + bAct);
   const lineDiff = Math.abs(aScores.attack - bScores.attack)
     + Math.abs(aScores.mid - bScores.mid)
@@ -514,6 +569,7 @@ function pairCostByAssignments(
        + Math.abs(aCoach - bCoach) * COACH_BALANCE_PENALTY
        + Math.abs(aGuest - bGuest) * 100
        + Math.abs(aMulti - bMulti) * MULTI_POSITION_BALANCE_PENALTY
+       + Math.abs(aQuarter - bQuarter) * QUARTER_BALANCE_PENALTY
        + assignedGroupCountDiff(teamA, teamB, assignments) * 120
        + lateralBalancePenalty(teamA, teamB, assignments) * 8
        + Math.abs(total)
@@ -620,19 +676,20 @@ function chooseBasePairPlan(
   teamTargets: RoleTargets,
   relations: PlayerRelation[],
   maxVariants: number,
+  options: TeamBalanceOptions = {},
 ): PairPlan {
   const probe = Math.max(maxVariants * 40, 400);
   const seen = new Set<string>();
   let best: { pairPlan: PairPlan; result: TeamBalanceResult; fitScore: number } | null = null;
 
   for (let variant = 0; variant < probe; variant += 1) {
-    const { attPool, midPool, defPool } = buildPools(fieldPlayers, teamTargets, variant, relations);
+    const { attPool, midPool, defPool } = buildPools(fieldPlayers, teamTargets, variant, relations, options);
     const pairPlan = buildPairPlan(attPool, midPool, defPool);
     const key = pairPlanKey(pairPlan);
     if (seen.has(key)) continue;
     seen.add(key);
 
-    const evaluated = evaluatePoolAssignment(attPool, midPool, defPool, relations, variant);
+    const evaluated = evaluatePoolAssignment(attPool, midPool, defPool, relations, variant, options);
     const result = buildResult(evaluated.teamA, evaluated.teamB, evaluated.summary, relations);
     const fitScore = pairPlanFitScore(pairPlan);
     if (!best || fitScore < best.fitScore
@@ -652,6 +709,7 @@ function pairSplitPools(
   defPool: FieldPlayer[],
   relations: PlayerRelation[] = [],
   variant = 0,
+  options: TeamBalanceOptions = {},
 ): SplitResult {
   const pairPlan = buildPairPlan(attPool, midPool, defPool);
   const { assignments } = pairPlan;
@@ -670,16 +728,16 @@ function pairSplitPools(
       } else if (teamB.length < teamA.length) {
         teamB.push(stronger);
       } else {
-        const costA = pairCostByAssignments([...teamA, stronger], teamB, assignments, relations);
-        const costB = pairCostByAssignments(teamA, [...teamB, stronger], assignments, relations);
+        const costA = pairCostByAssignments([...teamA, stronger], teamB, assignments, relations, options);
+        const costB = pairCostByAssignments(teamA, [...teamB, stronger], assignments, relations, options);
         if (costA <= costB) teamA.push(stronger);
         else teamB.push(stronger);
       }
       continue;
     }
 
-    const cost1 = pairCostByAssignments([...teamA, stronger], [...teamB, weaker], assignments, relations);
-    const cost2 = pairCostByAssignments([...teamA, weaker], [...teamB, stronger], assignments, relations);
+    const cost1 = pairCostByAssignments([...teamA, stronger], [...teamB, weaker], assignments, relations, options);
+    const cost2 = pairCostByAssignments([...teamA, weaker], [...teamB, stronger], assignments, relations, options);
     const preferFlipped = Math.floor(variant / (2 ** (pairSequence % 20))) % 2 === 1;
     const variantTolerance = group === "MID" ? 120 : 48;
     const useFlipped = cost2 < cost1 || (preferFlipped && Math.abs(cost1 - cost2) <= variantTolerance);
@@ -698,7 +756,7 @@ function pairSplitPools(
   return { teamA, teamB, partnerById, assignments, pairMetaById };
 }
 
-function evaluatePairMask(pairPlan: PairPlan, relations: PlayerRelation[], mask: number): { teamA: AssignedFieldPlayer[]; teamB: AssignedFieldPlayer[]; summary: TeamBalanceSummary } {
+function evaluatePairMask(pairPlan: PairPlan, relations: PlayerRelation[], mask: number, options: TeamBalanceOptions = {}): { teamA: AssignedFieldPlayer[]; teamB: AssignedFieldPlayer[]; summary: TeamBalanceSummary } {
   const teamA: FieldPlayer[] = [];
   const teamB: FieldPlayer[] = [];
   const pairMetaById = pairMetaMap(pairPlan);
@@ -730,7 +788,7 @@ function evaluatePairMask(pairPlan: PairPlan, relations: PlayerRelation[], mask:
     return { ...buildAssigned(player, assignment.group, assignment.subRole), ...pairMetaById.get(player.id) };
   });
 
-  return { teamA: assignedA, teamB: assignedB, summary: calcSummary(assignedA, assignedB, relations) };
+  return { teamA: assignedA, teamB: assignedB, summary: calcSummary(assignedA, assignedB, relations, options) };
 }
 
 function relationPenaltyForSplit(teamA: Array<{ id: string }>, teamB: Array<{ id: string }>, relations: PlayerRelation[]): number {
@@ -781,11 +839,17 @@ function calcSummary(
   teamA: AssignedFieldPlayer[],
   teamB: AssignedFieldPlayer[],
   relations: PlayerRelation[] = [],
+  options: TeamBalanceOptions = {},
 ): TeamBalanceSummary {
-  const sum = (players: AssignedFieldPlayer[], fn: (p: AssignedFieldPlayer) => number) =>
-    players.reduce((acc, p) => acc + fn(p), 0);
-  const aScores = subRoleScores(teamA);
-  const bScores = subRoleScores(teamB);
+  const sum = (
+    ownTeam: AssignedFieldPlayer[],
+    otherTeam: AssignedFieldPlayer[],
+    fn: (p: AssignedFieldPlayer) => number,
+  ) =>
+    ownTeam.reduce((acc, p) => acc + fn(p) * ownQuarterWeight(p, options), 0)
+    + otherTeam.reduce((acc, p) => acc + fn(p) * virtualQuarterWeight(p, options), 0);
+  const aScores = weightedSubRoleScores(teamA, teamB, options);
+  const bScores = weightedSubRoleScores(teamB, teamA, options);
   const centerForwardScoreA = aScores.centerForward;
   const centerForwardScoreB = bScores.centerForward;
   const wingScoreA = aScores.wing;
@@ -800,8 +864,8 @@ function calcSummary(
   const wingBackScoreB = bScores.wingBack;
   const defenseScoreA = aScores.defense;
   const defenseScoreB = bScores.defense;
-  const activityA = sum(teamA, (p) => effectiveActivityScore(p));
-  const activityB = sum(teamB, (p) => effectiveActivityScore(p));
+  const activityA = sum(teamA, teamB, (p) => effectiveActivityScore(p));
+  const activityB = sum(teamB, teamA, (p) => effectiveActivityScore(p));
   const fieldGkA = teamA.filter((p) => p.canGk).length;
   const fieldGkB = teamB.filter((p) => p.canGk).length;
   const regularA = teamA.filter((p) => p.memberType === "REGULAR").length;
@@ -815,6 +879,10 @@ function calcSummary(
   const overrides = [...teamA, ...teamB].filter((p) => p.isPositionOverride).length;
   const relationViolations = relationViolationsForTeams(teamA, teamB, relations);
   const relationPenalty = relationViolations.reduce((acc, violation) => acc + violation.penalty, 0);
+  const quarterTargetA = teamQuarterTotal(teamA, teamB, options);
+  const quarterTargetB = teamQuarterTotal(teamB, teamA, options);
+  const dualTeamA = teamA.filter((p) => isDualTeamPlayer(p.id, options)).length;
+  const dualTeamB = teamB.filter((p) => isDualTeamPlayer(p.id, options)).length;
 
   const lineDiff = Math.abs(attackScoreA - attackScoreB)
     + Math.abs(midScoreA - midScoreB)
@@ -828,6 +896,7 @@ function calcSummary(
     lineDiff * LINE_BALANCE_WEIGHT +
     detailSlotDiff * DETAIL_SLOT_BALANCE_WEIGHT +
     Math.abs(activityA - activityB) * ACTIVITY_BALANCE_WEIGHT +
+    Math.abs(quarterTargetA - quarterTargetB) * QUARTER_BALANCE_PENALTY +
     Math.abs(fieldGkA - fieldGkB) * 3 +
     Math.abs(guestA - guestB) +
     Math.abs(coachA - coachB) * COACH_BALANCE_PENALTY +
@@ -865,6 +934,10 @@ function calcSummary(
     relationPenalty,
     relationViolationCount: relationViolations.length,
     relationHardViolationCount: relationViolations.filter((violation) => violation.score === 1).length,
+    quarterTargetA,
+    quarterTargetB,
+    dualTeamA,
+    dualTeamB,
     balanceScore,
   };
 }
@@ -875,8 +948,9 @@ function evaluatePoolAssignment(
   defPool: FieldPlayer[],
   relations: PlayerRelation[] = [],
   variant = 0,
+  options: TeamBalanceOptions = {},
 ): { adjScore: number; balanceScore: number; mismatchCount: number; teamA: AssignedFieldPlayer[]; teamB: AssignedFieldPlayer[]; partnerById: Map<string, string>; summary: TeamBalanceSummary } {
-  const split = pairSplitPools(attPool, midPool, defPool, relations, variant);
+  const split = pairSplitPools(attPool, midPool, defPool, relations, variant, options);
   const teamA = split.teamA.map((p) => {
     const assignment = split.assignments.get(p.id)!;
     return { ...buildAssigned(p, assignment.group, assignment.subRole), ...split.pairMetaById.get(p.id) };
@@ -885,7 +959,7 @@ function evaluatePoolAssignment(
     const assignment = split.assignments.get(p.id)!;
     return { ...buildAssigned(p, assignment.group, assignment.subRole), ...split.pairMetaById.get(p.id) };
   });
-  const summary = calcSummary(teamA, teamB, relations);
+  const summary = calcSummary(teamA, teamB, relations, options);
   const mismatchCount = [...teamA, ...teamB].filter((p) => {
     const primary = getPositionGroup(p.primaryPosition);
     return primary !== p.assignedGroup && !hasGroup(p.secondaryPositions, p.assignedGroup);
@@ -934,7 +1008,7 @@ function pickRankedPool<T extends { id: string }>(ranked: T[], count: number, va
   return pool;
 }
 
-function buildPools(fieldPlayers: FieldPlayer[], teamTargets: RoleTargets, variant: number, relations: PlayerRelation[] = []): {
+function buildPools(fieldPlayers: FieldPlayer[], teamTargets: RoleTargets, variant: number, relations: PlayerRelation[] = [], options: TeamBalanceOptions = {}): {
   attPool: FieldPlayer[];
   midPool: FieldPlayer[];
   defPool: FieldPlayer[];
@@ -972,7 +1046,7 @@ function buildPools(fieldPlayers: FieldPlayer[], teamTargets: RoleTargets, varia
     for (const lastAttCombo of combinations(lastN, attPickCount)) {
       const attCandidate = [...strongAtt, ...lastAttCombo];
       const defCandidate = [...strongDef, ...lastN.filter((p) => !lastAttCombo.includes(p))];
-      const result = evaluatePoolAssignment(attCandidate, midPool, defCandidate, relations, variant);
+      const result = evaluatePoolAssignment(attCandidate, midPool, defCandidate, relations, variant, options);
       const key = [...attCandidate.map((p) => p.id).sort(), "|", ...defCandidate.map((p) => p.id).sort()].join(",");
       candidates.push({ adjScore: result.adjScore, att: attCandidate, def: defCandidate, key });
     }
@@ -1008,6 +1082,7 @@ function buildResult(
   if (Math.abs(summary.guestA - summary.guestB) >= 5) warnings.push("정규 선수와 용병 비율이 한쪽으로 몰렸습니다.");
   if (Math.abs(summary.coachA - summary.coachB) > 1) warnings.push("코치/감독/단장이 한쪽 팀으로 몰렸습니다.");
   if (Math.abs(summary.multiPositionA - summary.multiPositionB) >= 2) warnings.push("멀티포지션 선수가 한쪽으로 몰렸습니다.");
+  if (Math.abs(summary.quarterTargetA - summary.quarterTargetB) >= 3) warnings.push(`팀별 목표 출전 쿼터 차이가 큽니다: ${formatTeamName("A")} ${summary.quarterTargetA}Q / ${formatTeamName("B")} ${summary.quarterTargetB}Q`);
   const hardViolations = relationViolations.filter((violation) => violation.score === 1);
   if (hardViolations.length > 0) {
     warnings.push(`궁합도 1점 분리 우선 조합이 같은 팀에 있습니다: ${hardViolations.map((violation) => `${formatTeamName(violation.team)} ${violation.playerAName}/${violation.playerBName}`).join(", ")}`);
@@ -1025,7 +1100,7 @@ function buildResult(
   };
 }
 
-export function balanceTeams(players: Player[], variant = 0, relations: PlayerRelation[] = []): TeamBalanceResult {
+export function balanceTeams(players: Player[], variant = 0, relations: PlayerRelation[] = [], options: TeamBalanceOptions = {}): TeamBalanceResult {
   if (players.length < MIN_TEAM_SIZE * 2 || players.length > MAX_TEAM_SIZE * 2) {
     throw new Error(`필드 참석자는 ${MIN_TEAM_SIZE * 2}명~${MAX_TEAM_SIZE * 2}명이어야 합니다. 현재 ${players.length}명입니다.`);
   }
@@ -1039,8 +1114,8 @@ export function balanceTeams(players: Player[], variant = 0, relations: PlayerRe
   const halfSize = Math.ceil(fieldPlayers.length / 2);
   const teamTargets = targetForTeamSize(halfSize);
 
-  const { attPool, midPool, defPool } = buildPools(fieldPlayers, teamTargets, variant, relations);
-  const initial = evaluatePoolAssignment(attPool, midPool, defPool, relations, variant);
+  const { attPool, midPool, defPool } = buildPools(fieldPlayers, teamTargets, variant, relations, options);
+  const initial = evaluatePoolAssignment(attPool, midPool, defPool, relations, variant, options);
 
   if (initial.teamA.length < MIN_TEAM_SIZE || initial.teamA.length > MAX_TEAM_SIZE
       || initial.teamB.length < MIN_TEAM_SIZE || initial.teamB.length > MAX_TEAM_SIZE) {
@@ -1050,8 +1125,8 @@ export function balanceTeams(players: Player[], variant = 0, relations: PlayerRe
   return buildResult(initial.teamA, initial.teamB, initial.summary, relations);
 }
 
-export function rebalanceTeams(teamAPlayers: Player[], teamBPlayers: Player[], variant = 0, relations: PlayerRelation[] = []): TeamBalanceResult {
-  return balanceTeams([...teamAPlayers, ...teamBPlayers], variant, relations);
+export function rebalanceTeams(teamAPlayers: Player[], teamBPlayers: Player[], variant = 0, relations: PlayerRelation[] = [], options: TeamBalanceOptions = {}): TeamBalanceResult {
+  return balanceTeams([...teamAPlayers, ...teamBPlayers], variant, relations, options);
 }
 
 function detailedTotalDiff(summary: TeamBalanceSummary): number {
@@ -1089,6 +1164,10 @@ function staffBalanceDiff(summary: TeamBalanceSummary): number {
 
 function guestBalanceDiff(summary: TeamBalanceSummary): number {
   return Math.abs(summary.guestA - summary.guestB);
+}
+
+function quarterTargetDiff(summary: TeamBalanceSummary): number {
+  return Math.abs(summary.quarterTargetA - summary.quarterTargetB);
 }
 
 function totalDiffPenalty(result: TeamBalanceResult): number {
@@ -1167,6 +1246,7 @@ function variantQualityScore(result: TeamBalanceResult): number {
     + totalDiffPenalty(result)
     + roleBalanceDiff(summary) * 140
     + scoreCardBalanceDiff(summary) * 90
+    + quarterTargetDiff(summary) * 500
     + profileStackPenalty(result) * PROFILE_STACK_VARIANT_WEIGHT
     + Math.abs(summary.multiPositionA - summary.multiPositionB) * MULTI_POSITION_VARIANT_PENALTY
     + multiStrengthDiff(result) * 2
@@ -1180,6 +1260,9 @@ function variantDisplayOrder(a: TeamBalanceResult, b: TeamBalanceResult): number
 
   const totalDiff = detailedTotalDiff(a.summary) - detailedTotalDiff(b.summary);
   if (totalDiff !== 0) return totalDiff;
+
+  const quarterDiff = quarterTargetDiff(a.summary) - quarterTargetDiff(b.summary);
+  if (quarterDiff !== 0) return quarterDiff;
 
   const scoreCardDiff = scoreCardBalanceDiff(a.summary) - scoreCardBalanceDiff(b.summary);
   if (scoreCardDiff !== 0) return scoreCardDiff;
@@ -1391,7 +1474,7 @@ function selectDiverseVariants(candidates: TeamBalanceResult[], maxVariants: num
   });
 }
 
-export function balanceTeamsVariants(players: Player[], maxVariants = 10, relations: PlayerRelation[] = []): TeamBalanceResult[] {
+export function balanceTeamsVariants(players: Player[], maxVariants = 10, relations: PlayerRelation[] = [], options: TeamBalanceOptions = {}): TeamBalanceResult[] {
   if (players.length < MIN_TEAM_SIZE * 2 || players.length > MAX_TEAM_SIZE * 2) {
     throw new Error(`필드 참석자는 ${MIN_TEAM_SIZE * 2}명~${MAX_TEAM_SIZE * 2}명이어야 합니다. 현재 ${players.length}명입니다.`);
   }
@@ -1404,13 +1487,13 @@ export function balanceTeamsVariants(players: Player[], maxVariants = 10, relati
   const fieldPlayers = players.filter(isFieldPlayer);
   const halfSize = Math.ceil(fieldPlayers.length / 2);
   const teamTargets = targetForTeamSize(halfSize);
-  const pairPlan = chooseBasePairPlan(fieldPlayers, teamTargets, relations, maxVariants);
+  const pairPlan = chooseBasePairPlan(fieldPlayers, teamTargets, relations, maxVariants, options);
   const maskCount = 2 ** pairPlan.pairs.length;
   const candidates: TeamBalanceResult[] = [];
   const seen = new Set<string>();
 
   for (let mask = 0; mask < maskCount; mask += 1) {
-    const evaluated = evaluatePairMask(pairPlan, relations, mask);
+    const evaluated = evaluatePairMask(pairPlan, relations, mask, options);
     if (evaluated.teamA.length < MIN_TEAM_SIZE || evaluated.teamA.length > MAX_TEAM_SIZE
         || evaluated.teamB.length < MIN_TEAM_SIZE || evaluated.teamB.length > MAX_TEAM_SIZE) {
       continue;
@@ -1430,10 +1513,10 @@ export function balanceTeamsVariants(players: Player[], maxVariants = 10, relati
   return selectDiverseVariants(candidates, maxVariants);
 }
 
-export function summarizeTeams(teamAPlayers: AssignedPlayer[], teamBPlayers: AssignedPlayer[], relations: PlayerRelation[] = []): TeamBalanceResult {
+export function summarizeTeams(teamAPlayers: AssignedPlayer[], teamBPlayers: AssignedPlayer[], relations: PlayerRelation[] = [], options: TeamBalanceOptions = {}): TeamBalanceResult {
   const a = teamAPlayers as AssignedFieldPlayer[];
   const b = teamBPlayers as AssignedFieldPlayer[];
-  const summary = calcSummary(a, b, relations);
+  const summary = calcSummary(a, b, relations, options);
   return buildResult(a, b, summary, relations);
 }
 

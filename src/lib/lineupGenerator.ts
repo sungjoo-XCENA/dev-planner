@@ -1,12 +1,14 @@
 import type { AssignedPlayer, DedicatedGoalkeeper, Player, PositionGroup, StaffRole } from "@/types/player";
 import type { LineupResult, LineupRole, PlayerLineupSummary, Quarter, TeamQuarterLineup } from "@/types/lineup";
 import type { Team, TeamName } from "@/types/team";
+import type { TeamBalanceOptions } from "@/lib/teamBalancer";
 import { formatTeamName } from "@/lib/teamLabels";
 import { extractStaffRole } from "@/lib/staffRoles";
 import { centerBackScore, centerForwardScore, detailedTechnicalTotal, wingBackScore, wingScore } from "@/lib/playerScores";
 
 const QUARTERS: Quarter[] = [1, 2, 3, 4];
 const MAX_DEDICATED_GK_AUTO_ASSIGN = 2;
+const DEFAULT_QUARTER_TARGET = 3;
 const FORMATION_OUTFIELD: Record<PositionGroup, number> = {
   ATTACK: 3,
   MID: 3,
@@ -29,20 +31,17 @@ function compositeScore(p: AssignedPlayer): number {
   return detailedTechnicalTotal(p) + p.activityScore;
 }
 
+function targetQuarterFor(player: AssignedPlayer, options: TeamBalanceOptions = {}): number {
+  const raw = options.quarterTargets?.[player.id] ?? DEFAULT_QUARTER_TARGET;
+  return Math.max(1, Math.min(4, Math.round(raw)));
+}
+
 function ironmanCountFor(teamSize: number): number {
   // Math: 4쿼터 풀가동 인원 = max(1, 팀인원 - 4×bench/Q - 4×GK)
   // bench/Q = teamSize - 11; total bench = 4(teamSize - 11); GK = 4
   // forced 4Q = teamSize - 4(teamSize - 11) - 4 = 40 - 3 × teamSize
   // 14명 이상 팀이면 0이지만 종합점수 1위는 4Q 보장 → 최소 1.
   return Math.max(1, 40 - 3 * teamSize);
-}
-
-function sortByCompositeDesc(players: AssignedPlayer[]): AssignedPlayer[] {
-  return [...players].sort((a, b) => {
-    const diff = compositeScore(b) - compositeScore(a);
-    if (diff !== 0) return diff;
-    return a.name.localeCompare(b.name, "ko");
-  });
 }
 
 function byName(a: AssignedPlayer, b: AssignedPlayer): number {
@@ -116,6 +115,7 @@ function planRotation(
   nonIronmen: AssignedPlayer[],
   hasDedicatedGk: boolean[],
   benchPerQuarter: number[],
+  options: TeamBalanceOptions = {},
 ): PerQuarterRotation[] {
   // bench·GK 합산을 events 로 추적 → 같은 사람이 두 번 이벤트 받지 않게
   const eventCount = new Map<string, number>();
@@ -133,7 +133,9 @@ function planRotation(
     const filtered = pool.filter((p) => !excluded.has(p.id));
     if (filtered.length === 0) return null;
     return [...filtered].sort((a, b) => {
-      const diff = (eventCount.get(a.id) ?? 0) - (eventCount.get(b.id) ?? 0);
+      const aNeed = (eventCount.get(a.id) ?? 0) - Math.max(0, 4 - targetQuarterFor(a, options));
+      const bNeed = (eventCount.get(b.id) ?? 0) - Math.max(0, 4 - targetQuarterFor(b, options));
+      const diff = aNeed - bNeed;
       if (diff !== 0) return diff;
       const shortageDiff = positionShortagePenalty(a, currentAbsences) - positionShortagePenalty(b, currentAbsences);
       if (shortageDiff !== 0) return shortageDiff;
@@ -214,6 +216,7 @@ function lineupForTeam(
   team: Team,
   dedicatedGks: DedicatedGoalkeeper[],
   waitingCallups: WaitingCallup[] = [],
+  options: TeamBalanceOptions = {},
 ): TeamLineupPlan {
   const dedicatedSlice = dedicatedGks.slice(0, MAX_DEDICATED_GK_AUTO_ASSIGN);
   const dedicatedByQuarter: Record<Quarter, DedicatedGoalkeeper | null> = {
@@ -224,9 +227,16 @@ function lineupForTeam(
   };
 
   const teamSize = team.players.length;
-  const sortedComposite = sortByCompositeDesc(team.players);
+  const sortedComposite = [...team.players].sort((a, b) => {
+    const targetDiff = targetQuarterFor(b, options) - targetQuarterFor(a, options);
+    if (targetDiff !== 0) return targetDiff;
+    const scoreDiff = compositeScore(b) - compositeScore(a);
+    if (scoreDiff !== 0) return scoreDiff;
+    return a.name.localeCompare(b.name, "ko");
+  });
   const ironmenCount = Math.min(ironmanCountFor(teamSize), Math.max(0, teamSize - 1));
-  const ironmen = sortedComposite.slice(0, ironmenCount);
+  const preferredIronmen = sortedComposite.filter((player) => targetQuarterFor(player, options) >= 4);
+  const ironmen = [...preferredIronmen, ...sortedComposite.filter((player) => targetQuarterFor(player, options) < 4)].slice(0, ironmenCount);
   const ironmanIds = new Set(ironmen.map((p) => p.id));
   const nonIronmen = team.players.filter((p) => !ironmanIds.has(p.id));
 
@@ -237,7 +247,7 @@ function lineupForTeam(
     const deployedFromTeam = OUTFIELD_DEPLOYED + (dedicatedByQuarter[quarter] ? 0 : 1);
     return Math.max(0, teamSize - deployedFromTeam);
   });
-  const rotation = planRotation(team.players, nonIronmen, hasDedicatedGk, benchPerQuarter);
+  const rotation = planRotation(team.players, nonIronmen, hasDedicatedGk, benchPerQuarter, options);
 
   const warnings: string[] = [];
   const dedicatedRotation: Record<string, string[]> = {};
@@ -388,6 +398,7 @@ export function generateLineups(
   teamB: Team,
   dedicatedGks: DedicatedGoalkeeper[],
   waitingPlayers: Player[] = [],
+  options: TeamBalanceOptions = {},
 ): LineupResult {
   const warnings: string[] = [];
   if (dedicatedGks.length > MAX_DEDICATED_GK_AUTO_ASSIGN) warnings.push("전담 GK가 3명 이상입니다. 2명만 자동 배정합니다.");
@@ -396,8 +407,8 @@ export function generateLineups(
   const waitingCallupsA = buildWaitingCallups(fieldWaiting, "A");
   const waitingCallupsB = buildWaitingCallups(fieldWaiting, "B");
 
-  const a = lineupForTeam(teamA, dedicatedGks, waitingCallupsA);
-  const b = lineupForTeam(teamB, dedicatedGks, waitingCallupsB);
+  const a = lineupForTeam(teamA, dedicatedGks, waitingCallupsA, options);
+  const b = lineupForTeam(teamB, dedicatedGks, waitingCallupsB, options);
 
   const rotation: Record<string, string[]> = { ...a.rotation };
   Object.entries(b.rotation).forEach(([name, items]) => {

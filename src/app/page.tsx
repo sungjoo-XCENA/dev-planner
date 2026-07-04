@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from "react";
 import type { AssignedPlayer, AssignedSubRole, DedicatedGoalkeeper, FieldPosition, Player, PositionGroup, StaffRole } from "@/types/player";
 import type { PlayerRelation } from "@/types/relation";
 import type { LineupResult, LineupRole, Quarter } from "@/types/lineup";
@@ -10,7 +10,7 @@ import type { TeamRecord, TeamRecordGroups, TeamRecordPlayer } from "@/types/tea
 import { appConfig } from "@/config/appConfig";
 import { loadPlayersFromCsv } from "@/lib/loadPlayersFromCsv";
 import { POSITIONS, getPositionGroup, hasGroup } from "@/lib/positions";
-import { balanceTeamsVariants, summarizeTeams } from "@/lib/teamBalancer";
+import { balanceTeamsVariants, summarizeTeams, type TeamBalanceOptions } from "@/lib/teamBalancer";
 import { generateLineups } from "@/lib/lineupGenerator";
 import { planMatchLineup, type MatchPlanResult, type MatchSelection } from "@/lib/matchPlanner";
 import { clearStoredAll, loadStored, saveStored } from "@/lib/persistedState";
@@ -22,6 +22,9 @@ import { isMultiPositionPlayer, multiPositionGroups } from "@/lib/multiPosition"
 import { makeHistoryInsightKey, normalizeHistoryName } from "@/lib/historyInsights";
 
 const SCORE_OPTIONS = Array.from({ length: 10 }, (_, index) => index + 1);
+const QUARTER_OPTIONS = [1, 2, 3, 4];
+const DEFAULT_BALANCE_QUARTERS = 3;
+const BALANCE_FIELD_QUARTERS_REQUIRED = 80;
 type PlannerMode = "BALANCE" | "MATCH";
 type TeamScoreChipKey = "CF" | "W" | "M" | "CB" | "WB";
 const SCORE_CHIP_SUB_ROLES: Record<TeamScoreChipKey, AssignedSubRole> = {
@@ -635,6 +638,10 @@ export default function Home() {
   const [selectedVariantIdx, setSelectedVariantIdx] = useState(0);
   const [lineupResult, setLineupResult] = useState<LineupResult | null>(null);
   const [matchResult, setMatchResult] = useState<MatchPlanResult | null>(null);
+  const [balanceQuarterLimits, setBalanceQuarterLimits] = useState<Record<string, number>>({});
+  const [dualTeamIds, setDualTeamIds] = useState<string[]>([]);
+  const [draggedBalancePlayerId, setDraggedBalancePlayerId] = useState<string | null>(null);
+  const [dragOverBalanceTarget, setDragOverBalanceTarget] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [showSheetUrl, setShowSheetUrl] = useState(false);
   const [playerQuery, setPlayerQuery] = useState("");
@@ -662,6 +669,8 @@ export default function Home() {
       const storedGkNames = loadStored<string[]>("dedicatedGkNames", []);
       const storedTempGuests = loadStored<Player[]>("tempGuests", []);
       const storedTempGks = loadStored<DedicatedGoalkeeper[]>("tempGks", []);
+      const storedBalanceLimits = loadStored<Record<string, number>>("balanceQuarterLimits", {});
+      const storedDualTeamIds = loadStored<string[]>("dualTeamIds", []);
       const storedFieldIdSet = new Set(storedFieldIds);
       const storedFieldNameSet = new Set(storedFieldNames.map(normalizeStoredPlayerName));
       const activeStoredTempGuests = storedTempGuests.filter((guestPlayer) => (
@@ -670,6 +679,7 @@ export default function Home() {
 
       setCsvUrl(storedCsvUrl);
       setPlannerMode(storedMode);
+      setBalanceQuarterLimits(storedBalanceLimits);
       setTempGuests(activeStoredTempGuests);
       setTempGks(storedTempGks);
 
@@ -683,6 +693,7 @@ export default function Home() {
         setWarnings(result.warnings);
         setFieldIds(storedFieldIds);
         setWaitingIds(storedWaitingIds);
+        setDualTeamIds(storedDualTeamIds);
         setDedicatedGks(storedTempGks);
         setHydrated(true);
         return;
@@ -698,6 +709,15 @@ export default function Home() {
       setFieldIds(validFieldIds);
       const validWaitingIds = reconcileStoredPlayerIds(storedWaitingIds, storedWaitingNames, selectablePlayers);
       setWaitingIds(validWaitingIds);
+      const validSelectableIds = new Set(selectablePlayers.map((player) => player.id));
+      setDualTeamIds(storedDualTeamIds.filter((id) => validSelectableIds.has(id)));
+      setBalanceQuarterLimits((prev) => {
+        const next: Record<string, number> = {};
+        for (const [id, value] of Object.entries(prev)) {
+          if (validSelectableIds.has(id)) next[id] = value;
+        }
+        return next;
+      });
 
       const sheetGkPool: DedicatedGoalkeeper[] = result.players
         .filter((p) => p.primaryPosition === "GK")
@@ -743,6 +763,14 @@ export default function Home() {
     if (!hydrated) return;
     saveStored("tempGks", tempGks);
   }, [tempGks, hydrated]);
+  useEffect(() => {
+    if (!hydrated) return;
+    saveStored("balanceQuarterLimits", balanceQuarterLimits);
+  }, [balanceQuarterLimits, hydrated]);
+  useEffect(() => {
+    if (!hydrated) return;
+    saveStored("dualTeamIds", dualTeamIds);
+  }, [dualTeamIds, hydrated]);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -889,6 +917,27 @@ export default function Home() {
   const regularCount = fieldPlayers.filter((p) => p.memberType === "REGULAR").length;
   const guestCount = fieldPlayers.filter((p) => p.memberType === "GUEST").length;
   const waitingCount = waitingPlayers.length;
+  const activeFieldIds = useMemo(() => new Set(activeFieldPlayers.map((p) => p.id)), [activeFieldPlayers]);
+  const activeDualTeamIds = useMemo(() => dualTeamIds.filter((id) => activeFieldIds.has(id)), [dualTeamIds, activeFieldIds]);
+  const balanceQuarterTargets = useMemo(() => {
+    const targets: Record<string, number> = {};
+    activeFieldPlayers.forEach((player) => {
+      targets[player.id] = Math.max(1, Math.min(4, Math.round(balanceQuarterLimits[player.id] ?? DEFAULT_BALANCE_QUARTERS)));
+    });
+    activeDualTeamIds.forEach((id) => {
+      targets[id] = 2;
+    });
+    return targets;
+  }, [activeFieldPlayers, activeDualTeamIds, balanceQuarterLimits]);
+  const balanceOptions = useMemo<TeamBalanceOptions>(() => ({
+    quarterTargets: balanceQuarterTargets,
+    dualTeamPlayerIds: activeDualTeamIds,
+  }), [balanceQuarterTargets, activeDualTeamIds]);
+  const balanceQuarterTotal = useMemo(
+    () => activeFieldPlayers.reduce((sum, player) => sum + (balanceQuarterTargets[player.id] ?? DEFAULT_BALANCE_QUARTERS), 0),
+    [activeFieldPlayers, balanceQuarterTargets],
+  );
+  const balanceQuarterDiff = balanceQuarterTotal - BALANCE_FIELD_QUARTERS_REQUIRED;
   const sortedSheetPlayers = useMemo(
     () => players.filter((p) => p.source === "SHEET").sort((a, b) => a.name.localeCompare(b.name, "ko")),
     [players],
@@ -1009,6 +1058,14 @@ export default function Home() {
       prev
         .filter((gk) => gk.source !== "SHEET" || result.players.some((p) => p.id === gk.id)),
     );
+    setBalanceQuarterLimits((prev) => {
+      const next: Record<string, number> = {};
+      for (const [id, value] of Object.entries(prev)) {
+        if (validIds.has(id)) next[id] = value;
+      }
+      return next;
+    });
+    setDualTeamIds((prev) => prev.filter((id) => validIds.has(id)));
   }
 
   function handleResetAll() {
@@ -1019,6 +1076,8 @@ export default function Home() {
     setDedicatedGks([]);
     setTempGuests([]);
     setTempGks([]);
+    setBalanceQuarterLimits({});
+    setDualTeamIds([]);
     setPlayers((prev) => prev.filter((p) => p.source === "SHEET"));
   }
 
@@ -1035,6 +1094,7 @@ export default function Home() {
       setFieldIds((prev) => [...prev, player.id]);
     }
     setWaitingIds((prev) => prev.filter((x) => x !== player.id));
+    setBalanceQuarterLimits((prev) => ({ ...prev, [player.id]: prev[player.id] ?? DEFAULT_BALANCE_QUARTERS }));
   }
 
   function addWaitingFieldPlayer(player: Player) {
@@ -1050,12 +1110,20 @@ export default function Home() {
       setFieldIds((prev) => [...prev, player.id]);
     }
     setWaitingIds((prev) => (prev.includes(player.id) ? prev : [...prev, player.id]));
+    setBalanceQuarterLimits((prev) => ({ ...prev, [player.id]: prev[player.id] ?? DEFAULT_BALANCE_QUARTERS }));
+    setDualTeamIds((prev) => prev.filter((x) => x !== player.id));
   }
 
   function removeFieldPlayer(id: string) {
     setFieldIds((prev) => prev.filter((item) => item !== id));
     setWaitingIds((prev) => prev.filter((item) => item !== id));
     setTempGuests((prev) => prev.filter((item) => item.id !== id));
+    setBalanceQuarterLimits((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+    setDualTeamIds((prev) => prev.filter((item) => item !== id));
   }
 
   function addDedicatedGk(player: Player) {
@@ -1100,6 +1168,7 @@ export default function Home() {
     };
     setTempGuests((prev) => [...prev, player]);
     setFieldIds((prev) => [...prev, player.id]);
+    setBalanceQuarterLimits((prev) => ({ ...prev, [player.id]: DEFAULT_BALANCE_QUARTERS }));
     resetGuest();
   }
 
@@ -1116,13 +1185,61 @@ export default function Home() {
     resetGuest();
   }
 
+  function setBalanceQuarterLimit(playerId: string, value: number) {
+    const nextValue = Math.max(1, Math.min(4, Math.round(value)));
+    setBalanceQuarterLimits((prev) => ({ ...prev, [playerId]: nextValue }));
+    if (nextValue !== 2) {
+      setDualTeamIds((prev) => prev.filter((id) => id !== playerId));
+    }
+  }
+
+  function setBalanceDualTeam(playerId: string, enabled: boolean) {
+    setBalanceQuarterLimits((prev) => ({ ...prev, [playerId]: 2 }));
+    setDualTeamIds((prev) => {
+      if (enabled) return prev.includes(playerId) ? prev : [...prev, playerId];
+      return prev.filter((id) => id !== playerId);
+    });
+  }
+
+  function handleBalanceDragStart(playerId: string) {
+    setDraggedBalancePlayerId(playerId);
+  }
+
+  function handleBalanceDragEnd() {
+    setDraggedBalancePlayerId(null);
+    setDragOverBalanceTarget(null);
+  }
+
+  function handleBalanceDragOver(event: DragEvent<HTMLElement>, target: string) {
+    event.preventDefault();
+    setDragOverBalanceTarget(target);
+  }
+
+  function handleBalanceDragLeave() {
+    setDragOverBalanceTarget(null);
+  }
+
+  function handleBalanceDropQuarter(event: DragEvent<HTMLElement>, quarter: number) {
+    event.preventDefault();
+    if (!draggedBalancePlayerId) return;
+    setBalanceQuarterLimit(draggedBalancePlayerId, quarter);
+    handleBalanceDragEnd();
+  }
+
+  function handleBalanceDropDual(event: DragEvent<HTMLElement>) {
+    event.preventDefault();
+    if (!draggedBalancePlayerId) return;
+    setBalanceDualTeam(draggedBalancePlayerId, true);
+    handleBalanceDragEnd();
+  }
+
   function runPlanner() {
     resetResults();
     try {
       if (plannerMode === "MATCH") {
         setMatchResult(planMatchLineup(matchActiveFieldPlayers, dedicatedGks, {}, matchCallupPlayers));
       } else {
-        const variants = balanceTeamsVariants(activeFieldPlayers, 10, relations);
+        const variants = balanceTeamsVariants(activeFieldPlayers, 10, relations, balanceOptions);
         setTeamVariants(variants);
         setSelectedVariantIdx(0);
         setTeamResult(variants[0]);
@@ -1145,7 +1262,7 @@ export default function Home() {
   async function handleConfirmTeams() {
     if (!teamResult) return;
     try {
-      const lineup = generateLineups(teamResult.teamA, teamResult.teamB, dedicatedGks, waitingPlayers);
+      const lineup = generateLineups(teamResult.teamA, teamResult.teamB, dedicatedGks, waitingPlayers, balanceOptions);
       setLineupResult(lineup);
       setTeamsConfirmed(true);
       setSwapSelection(null);
@@ -1189,8 +1306,8 @@ export default function Home() {
       const updated = sourceTeamPlayers.map((p) => (p.id === sourcePlayer.id ? reassignPlayerGroup(p, targetGroup) : p));
       try {
         const next = targetTeam === "A"
-          ? summarizeTeams(updated, teamResult.teamB.players, relations)
-          : summarizeTeams(teamResult.teamA.players, updated, relations);
+          ? summarizeTeams(updated, teamResult.teamB.players, relations, balanceOptions)
+          : summarizeTeams(teamResult.teamA.players, updated, relations, balanceOptions);
         setTeamResult(next);
         setSwapSelection(null);
       } catch (error) {
@@ -1203,8 +1320,8 @@ export default function Home() {
     const targetNext = [...targetTeamPlayers, movedPlayer];
     try {
       const next = swapSelection.team === "A"
-        ? summarizeTeams(sourceNext, targetNext, relations)
-        : summarizeTeams(targetNext, sourceNext, relations);
+        ? summarizeTeams(sourceNext, targetNext, relations, balanceOptions)
+        : summarizeTeams(targetNext, sourceNext, relations, balanceOptions);
       setTeamResult(next);
       setSwapSelection(null);
     } catch (error) {
@@ -1223,7 +1340,7 @@ export default function Home() {
     const nextA = targetTeam === "A" ? updatePlayers(teamResult.teamA.players) : teamResult.teamA.players;
     const nextB = targetTeam === "B" ? updatePlayers(teamResult.teamB.players) : teamResult.teamB.players;
     try {
-      const next = summarizeTeams(nextA, nextB, relations);
+      const next = summarizeTeams(nextA, nextB, relations, balanceOptions);
       setTeamResult(next);
       setSwapSelection(null);
       setLineupResult(null);
@@ -1276,8 +1393,8 @@ export default function Home() {
       });
       try {
         const next = team === "A"
-          ? summarizeTeams(updated, teamResult.teamB.players, relations)
-          : summarizeTeams(teamResult.teamA.players, updated, relations);
+          ? summarizeTeams(updated, teamResult.teamB.players, relations, balanceOptions)
+          : summarizeTeams(teamResult.teamA.players, updated, relations, balanceOptions);
         setTeamResult(next);
         setSwapSelection(null);
       } catch (error) {
@@ -1317,7 +1434,7 @@ export default function Home() {
     const newA = teamAPlayers.map((p) => (p.id === aPlayer.id ? reassign(bPlayer, aPlayer.assignedGroup) : p));
     const newB = teamBPlayers.map((p) => (p.id === bPlayer.id ? reassign(aPlayer, bPlayer.assignedGroup) : p));
     try {
-      const next = summarizeTeams(newA, newB, relations);
+      const next = summarizeTeams(newA, newB, relations, balanceOptions);
       setTeamResult(next);
       setSwapSelection(null);
     } catch (error) {
@@ -1563,6 +1680,28 @@ export default function Home() {
         <div className="mt-2 flex flex-wrap gap-2">{dedicatedGks.map((gk) => <Chip key={gk.id} label={gk.name} badge={<StaffRoleBadge role={extractStaffRole(gk.memo)} compact />} onRemove={() => removeDedicatedGk(gk.id)} />)}</div>
       </section>
 
+      {plannerMode === "BALANCE" && activeFieldPlayers.length > 0 && (
+        <section className="mb-6 rounded-3xl bg-white p-4 shadow-sm sm:p-6">
+          <BalanceQuarterPlanner
+            players={activeFieldPlayers}
+            quarterTargets={balanceQuarterTargets}
+            dualTeamIds={activeDualTeamIds}
+            total={balanceQuarterTotal}
+            diff={balanceQuarterDiff}
+            draggedPlayerId={draggedBalancePlayerId}
+            dragOverTarget={dragOverBalanceTarget}
+            onDragStart={handleBalanceDragStart}
+            onDragEnd={handleBalanceDragEnd}
+            onDragOver={handleBalanceDragOver}
+            onDragLeave={handleBalanceDragLeave}
+            onDropQuarter={handleBalanceDropQuarter}
+            onDropDual={handleBalanceDropDual}
+            onSetQuarter={setBalanceQuarterLimit}
+            onSetDual={setBalanceDualTeam}
+          />
+        </section>
+      )}
+
       <section className="mb-6 rounded-3xl bg-white p-6 shadow-sm">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
@@ -1728,6 +1867,167 @@ function safeJson(value: unknown): string {
 
 function ModeButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: ReactNode }) {
   return <button type="button" className={`rounded-xl px-4 py-2 text-sm font-bold ${active ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600"}`} onClick={onClick}>{children}</button>;
+}
+
+function BalanceQuarterPlanner({
+  players,
+  quarterTargets,
+  dualTeamIds,
+  total,
+  diff,
+  draggedPlayerId,
+  dragOverTarget,
+  onDragStart,
+  onDragEnd,
+  onDragOver,
+  onDragLeave,
+  onDropQuarter,
+  onDropDual,
+  onSetQuarter,
+  onSetDual,
+}: {
+  players: Player[];
+  quarterTargets: Record<string, number>;
+  dualTeamIds: string[];
+  total: number;
+  diff: number;
+  draggedPlayerId: string | null;
+  dragOverTarget: string | null;
+  onDragStart: (playerId: string) => void;
+  onDragEnd: () => void;
+  onDragOver: (event: DragEvent<HTMLElement>, target: string) => void;
+  onDragLeave: () => void;
+  onDropQuarter: (event: DragEvent<HTMLElement>, quarter: number) => void;
+  onDropDual: (event: DragEvent<HTMLElement>) => void;
+  onSetQuarter: (playerId: string, value: number) => void;
+  onSetDual: (playerId: string, enabled: boolean) => void;
+}) {
+  const dualSet = new Set(dualTeamIds);
+  const diffTone = diff === 0
+    ? "bg-emerald-100 text-emerald-700"
+    : Math.abs(diff) <= 2
+      ? "bg-amber-100 text-amber-700"
+      : "bg-rose-100 text-rose-700";
+  const diffLabel = diff === 0 ? "정상" : diff > 0 ? `+${diff}Q 초과` : `${Math.abs(diff)}Q 부족`;
+  const byQuarter = (quarter: number) => players.filter((player) => !dualSet.has(player.id) && (quarterTargets[player.id] ?? DEFAULT_BALANCE_QUARTERS) === quarter);
+
+  const renderChip = (player: Player) => {
+    const quarter = quarterTargets[player.id] ?? DEFAULT_BALANCE_QUARTERS;
+    const isDual = dualSet.has(player.id);
+    const isDragging = draggedPlayerId === player.id;
+    return (
+      <div
+        key={player.id}
+        draggable
+        onDragStart={() => onDragStart(player.id)}
+        onDragEnd={onDragEnd}
+        className={`inline-flex max-w-full items-center gap-1 rounded-full px-2.5 py-1.5 text-sm font-semibold ${isDual ? "bg-cyan-100 text-cyan-800" : player.memberType === "GUEST" ? "bg-violet-100 text-violet-800" : "bg-slate-100 text-slate-700"} ${isDragging ? "opacity-40" : ""}`}
+        title="드래그해서 출전 쿼터를 바꿀 수 있습니다."
+      >
+        <span className="truncate">{player.name}({player.primaryPosition})</span>
+        <StaffRoleBadge role={extractStaffRole(player.memo)} compact />
+        {isDual && <span className="rounded-full bg-white/80 px-1.5 py-0.5 text-[10px] font-black">양팀</span>}
+        <button
+          type="button"
+          className="ml-0.5 inline-flex h-5 w-5 items-center justify-center rounded-full bg-white/80 text-xs font-black disabled:opacity-30"
+          onClick={(event) => {
+            event.stopPropagation();
+            onSetQuarter(player.id, quarter - 1);
+          }}
+          disabled={quarter <= 1}
+          aria-label={`${player.name} 출전 쿼터 줄이기`}
+        >
+          -
+        </button>
+        <span className="min-w-6 text-center text-xs font-black">{quarter}Q</span>
+        <button
+          type="button"
+          className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-white/80 text-xs font-black disabled:opacity-30"
+          onClick={(event) => {
+            event.stopPropagation();
+            onSetQuarter(player.id, quarter + 1);
+          }}
+          disabled={quarter >= 4}
+          aria-label={`${player.name} 출전 쿼터 늘리기`}
+        >
+          +
+        </button>
+        {quarter === 2 && (
+          <button
+            type="button"
+            className={`rounded-full px-2 py-0.5 text-[10px] font-black ${isDual ? "bg-cyan-700 text-white" : "bg-white/80 text-slate-600"}`}
+            onClick={(event) => {
+              event.stopPropagation();
+              onSetDual(player.id, !isDual);
+            }}
+          >
+            양팀
+          </button>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <div>
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <h2 className="text-xl font-bold">내부전 출전 쿼터 설정</h2>
+          <p className="mt-1 text-sm text-slate-600">참석자를 1Q~4Q 칸으로 옮기면 팀분배와 라인업 회전에 반영됩니다. 모바일에서는 칩의 -/+ 버튼으로 조정하세요.</p>
+        </div>
+        <div className="flex flex-wrap gap-2 lg:justify-end">
+          <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-600">필요 팀당 40Q · 총 {BALANCE_FIELD_QUARTERS_REQUIRED}Q</span>
+          <span className={`rounded-full px-3 py-1 text-xs font-bold ${diffTone}`}>설정 {total}Q</span>
+          <span className={`rounded-full px-3 py-1 text-xs font-bold ${diffTone}`}>{diffLabel}</span>
+          <span className="rounded-full bg-cyan-100 px-3 py-1 text-xs font-bold text-cyan-800">양팀 {dualTeamIds.length}명</span>
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {QUARTER_OPTIONS.map((quarter) => {
+          const items = byQuarter(quarter);
+          const target = `quarter-${quarter}`;
+          return (
+            <div
+              key={quarter}
+              className={`min-h-36 rounded-2xl border p-3 ${dragOverTarget === target ? "border-slate-900 bg-indigo-50" : "border-slate-200 bg-slate-50"}`}
+              onDragOver={(event) => onDragOver(event, target)}
+              onDragLeave={onDragLeave}
+              onDrop={(event) => onDropQuarter(event, quarter)}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="font-black">{quarter}Q</h3>
+                <span className="text-xs font-bold text-slate-500">{items.length}명 · {items.length * quarter}Q</span>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {items.map(renderChip)}
+                {items.length === 0 && <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-400">여기로 드래그</span>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div
+        className={`mt-3 rounded-2xl border p-3 ${dragOverTarget === "dual" ? "border-cyan-500 bg-cyan-50" : "border-slate-200 bg-white"}`}
+        onDragOver={(event) => onDragOver(event, "dual")}
+        onDragLeave={onDragLeave}
+        onDrop={onDropDual}
+      >
+        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h3 className="font-bold">양팀 1Q씩 필요한 선수</h3>
+            <p className="text-xs text-slate-500">여기로 드래그하면 자동으로 2Q가 되고, 팀분배 점수는 양팀에 1Q씩 나눠 반영합니다.</p>
+          </div>
+          <span className="rounded-full bg-cyan-100 px-3 py-1 text-xs font-bold text-cyan-800">{dualTeamIds.length}명</span>
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {players.filter((player) => dualSet.has(player.id)).map(renderChip)}
+          {dualTeamIds.length === 0 && <span className="rounded-full bg-slate-100 px-3 py-1 text-sm text-slate-500">없음</span>}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function PositionPicker({ title, includeGk, selectedRole, primary, onGk, onField }: { title: string; includeGk?: boolean; selectedRole: "FIELD" | "GK"; primary: FieldPosition; onGk: () => void; onField: (position: FieldPosition) => void }) {
@@ -2149,6 +2449,8 @@ function TeamResultView({
         <MetricCard label="총합" a={totalA} b={totalB} highlight />
         <MetricCard label="정규" a={s.regularA} b={s.regularB} />
         <MetricCard label="용병" a={s.guestA} b={s.guestB} />
+        <MetricCard label="출전쿼터" a={s.quarterTargetA} b={s.quarterTargetB} />
+        <MetricCard label="양팀 대상" a={s.dualTeamA} b={s.dualTeamB} />
         <MetricCard label="운영진" a={s.coachA} b={s.coachB} />
         <MetricCard label="멀티포지션" a={s.multiPositionA} b={s.multiPositionB} />
         <MetricCard label="포지션 변경자" a={overridesA} b={overridesB} />

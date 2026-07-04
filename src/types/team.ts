@@ -38,6 +38,10 @@ export type TeamBalanceSummary = {
   relationPenalty: number;
   relationViolationCount: number;
   relationHardViolationCount: number;
+  quarterTargetA: number;
+  quarterTargetB: number;
+  dualTeamA: number;
+  dualTeamB: number;
   balanceScore: number;
 };
 
