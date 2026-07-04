@@ -3,10 +3,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from "react";
 import type { AssignedPlayer, AssignedSubRole, DedicatedGoalkeeper, FieldPosition, Player, PositionGroup, StaffRole } from "@/types/player";
 import type { PlayerRelation } from "@/types/relation";
-import type { LineupResult, LineupRole, Quarter } from "@/types/lineup";
+import type { LineupResult, LineupRole, Quarter, TeamQuarterLineup } from "@/types/lineup";
 import type { TeamBalanceResult, TeamName } from "@/types/team";
 import type { HistoryDefenseForm, HistoryInsightResponse, HistoryPairInsight, HistoryPlayerForm, TeamHistoryInsight } from "@/types/history";
 import type { TeamRecord, TeamRecordGroups, TeamRecordPlayer } from "@/types/teamRecord";
+import type { MatchRecordSaveRequest, MatchRecordSaveResponse } from "@/types/matchRecord";
 import { appConfig } from "@/config/appConfig";
 import { loadPlayersFromCsv } from "@/lib/loadPlayersFromCsv";
 import { POSITIONS, getPositionGroup, hasGroup } from "@/lib/positions";
@@ -563,6 +564,16 @@ function formatLocalDate(date = new Date()): string {
   return `${year}-${month}-${day}`;
 }
 
+function compactRecordDate(date: string): string {
+  return date.replace(/\D/g, "").slice(0, 8);
+}
+
+function formatDefaultMatchTime(dateValue: string): string {
+  const date = new Date(`${dateValue}T00:00:00`);
+  const day = Number.isNaN(date.getTime()) ? "" : ` (${"일월화수목금토"[date.getDay()]})`;
+  return `20:00 ~ 22:00${day}`;
+}
+
 function toRecordPlayer(player: TeamRecordSourcePlayer): TeamRecordPlayer {
   const staffRole = extractStaffRole(player.memo);
   return {
@@ -616,6 +627,90 @@ async function upsertTeamRecord(record: TeamRecord): Promise<TeamRecord> {
     throw new Error(typeof body?.error === "string" ? body.error : `HTTP ${response.status}`);
   }
   return body.record as TeamRecord;
+}
+
+async function saveMatchRecord(record: MatchRecordSaveRequest): Promise<MatchRecordSaveResponse> {
+  const response = await fetch("/api/match-record", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(record),
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const details = Array.isArray(body?.details) ? `: ${body.details.join(", ")}` : "";
+    const detail = typeof body?.detail === "string" ? `: ${body.detail}` : "";
+    const error = new Error(typeof body?.error === "string" ? `${body.error}${details}${detail}` : `HTTP ${response.status}`) as Error & { status?: number; body?: unknown };
+    error.status = response.status;
+    error.body = body;
+    throw error;
+  }
+  return body as MatchRecordSaveResponse;
+}
+
+function collectMatchStaffRoles(result: MatchPlanResult): Partial<Record<string, StaffRole>> {
+  const roles: Partial<Record<string, StaffRole>> = {};
+  const add = (name: string | undefined, memo: string | undefined) => {
+    if (!name) return;
+    const role = extractStaffRole(memo);
+    if (role) roles[name] = role;
+  };
+  result.starters.attack.forEach((item) => add(item.player.name, item.player.memo));
+  result.starters.mid.forEach((item) => add(item.player.name, item.player.memo));
+  result.starters.defense.forEach((item) => add(item.player.name, item.player.memo));
+  result.bench.forEach((item) => add(item.player.name, item.player.memo));
+  add(result.starters.gk?.name, result.starters.gk?.memo);
+  return roles;
+}
+
+function matchQuartersForRecord(quarters: MatchPlanResult["quarters"]): TeamQuarterLineup[] {
+  return quarters.flatMap((quarter) => {
+    const emptyAway: TeamQuarterLineup = {
+      quarter: quarter.quarter,
+      team: "A",
+      attack: [],
+      mid: [],
+      defense: [],
+      gk: "없음",
+      bench: [],
+      warnings: [],
+    };
+    const home: TeamQuarterLineup = {
+      quarter: quarter.quarter,
+      team: "B",
+      attack: quarter.attack,
+      mid: quarter.mid,
+      defense: quarter.defense,
+      gk: quarter.gk,
+      bench: quarter.bench,
+      warnings: quarter.unavailable.length > 0 ? [`출전 제외: ${quarter.unavailable.join(", ")}`] : [],
+    };
+    return [emptyAway, home];
+  });
+}
+
+function buildMatchRecord(result: MatchPlanResult, quarters: MatchPlanResult["quarters"], date: string, overwriteExisting: boolean): MatchRecordSaveRequest {
+  const lineupQuarters = matchQuartersForRecord(quarters);
+  return {
+    matchId: compactRecordDate(date),
+    matchDate: date,
+    matchTime: formatDefaultMatchTime(date),
+    matchKind: "MATCH",
+    recordMode: "SUMMARY",
+    venueName: "",
+    homeTeamName: "DevUtd",
+    awayTeamName: "상대팀",
+    memo: "dev-planner 매치 라인업 확정",
+    quarters: lineupQuarters,
+    lineupQuarters,
+    events: [],
+    summaryStats: [],
+    guestStats: [],
+    guestPlayers: [],
+    teamScores: [],
+    scoreOverride: { A: 0, B: 0 },
+    staffRoles: collectMatchStaffRoles(result),
+    overwriteExisting,
+  };
 }
 
 
@@ -1846,6 +1941,8 @@ export default function Home() {
         <MatchResultView
           result={matchResult}
           copied={copied}
+          quarterPlanTotal={matchQuarterTotal}
+          quarterPlanRequired={MATCH_FIELD_QUARTERS_REQUIRED}
           onCopyShareUrl={copyMatchLineupShareUrl}
           onQuartersChange={handleMatchQuartersChange}
         />
@@ -4276,11 +4373,15 @@ function TeamLineupImage({
 function MatchResultView({
   result,
   copied,
+  quarterPlanTotal,
+  quarterPlanRequired,
   onCopyShareUrl,
   onQuartersChange,
 }: {
   result: MatchPlanResult;
   copied: boolean;
+  quarterPlanTotal: number;
+  quarterPlanRequired: number;
   onCopyShareUrl: (result: MatchPlanResult, prebuiltUrl?: string | null) => void;
   onQuartersChange: (quarters: MatchPlanResult["quarters"]) => void;
 }) {
@@ -4288,12 +4389,19 @@ function MatchResultView({
   const [selection, setSelection] = useState<{ key: string; section: LineupSection; name: string } | null>(null);
   const [shareUrl, setShareUrl] = useState<string | null>(null);
   const [shareUrlError, setShareUrlError] = useState<string | null>(null);
+  const [saveStatus, setSaveStatus] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const refs = useRef<Map<string, HTMLDivElement | null>>(new Map());
   const currentMatch = useMemo(() => ({ ...result, quarters }), [result, quarters]);
+  const today = useMemo(() => formatLocalDate(), []);
+  const quarterPlanDiff = quarterPlanTotal - quarterPlanRequired;
 
   useEffect(() => {
     setQuarters(result.quarters);
     setSelection(null);
+    setSaveStatus(null);
+    setSaveError(null);
   }, [result]);
 
   useEffect(() => {
@@ -4370,7 +4478,38 @@ function MatchResultView({
     ));
     setQuarters(next);
     onQuartersChange(next);
+    setSaveStatus(null);
+    setSaveError(null);
     setSelection(null);
+  }
+
+  async function saveCurrentMatch(overwriteExisting = false, skipQuarterCheck = false): Promise<void> {
+    if (!skipQuarterCheck && quarterPlanTotal !== quarterPlanRequired) {
+      const diffText = quarterPlanDiff > 0 ? `${quarterPlanDiff}Q 초과` : `${Math.abs(quarterPlanDiff)}Q 부족`;
+      const ok = window.confirm(`출전 쿼터 설정 합계가 ${quarterPlanTotal}Q라서 기준 ${quarterPlanRequired}Q보다 ${diffText}입니다. 그래도 매치 라인업을 저장할까요?`);
+      if (!ok) return;
+    }
+
+    setSaving(true);
+    setSaveStatus(null);
+    setSaveError(null);
+    try {
+      const record = buildMatchRecord(currentMatch, quarters, today, overwriteExisting);
+      const saved = await saveMatchRecord(record);
+      setSaveStatus(`${saved.matchId} 매치 라인업 확정 저장 완료`);
+    } catch (error) {
+      const apiError = error as Error & { status?: number; body?: unknown };
+      if (apiError.status === 409 && !overwriteExisting) {
+        const ok = window.confirm(`오늘(${today}) 매치 기록이 이미 있습니다. 기존 스코어/라인업 기록을 덮어쓰고 저장할까요?`);
+        if (ok) {
+          await saveCurrentMatch(true, true);
+          return;
+        }
+      }
+      setSaveError(`매치 라인업 저장 실패: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function downloadOne(quarter: number) {
@@ -4395,6 +4534,13 @@ function MatchResultView({
         <h2 className="text-xl font-bold">매치 라인업 추천</h2>
         <div className="flex flex-wrap gap-2">
           <button
+            className="whitespace-nowrap rounded-xl bg-emerald-600 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-500 disabled:cursor-wait disabled:bg-emerald-300"
+            onClick={() => void saveCurrentMatch()}
+            disabled={saving}
+          >
+            {saving ? "저장 중" : "매치 라인업 확정 저장"}
+          </button>
+          <button
             className="whitespace-nowrap rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-800 hover:bg-slate-50 disabled:cursor-wait disabled:opacity-60"
             onClick={() => onCopyShareUrl(currentMatch, shareUrl)}
             disabled={!shareUrl && !shareUrlError}
@@ -4404,6 +4550,20 @@ function MatchResultView({
           <button className="whitespace-nowrap rounded-xl bg-slate-900 px-4 py-2 text-sm font-bold text-white" onClick={downloadAll}>전체 이미지 저장</button>
         </div>
       </div>
+      {quarterPlanTotal !== quarterPlanRequired && (
+        <div className="mt-4">
+          <MessageBox
+            title="쿼터 설정 확인"
+            items={[`설정 합계가 ${quarterPlanTotal}Q입니다. 기준 ${quarterPlanRequired}Q와 다르지만, 확정 저장 시 확인 후 저장할 수 있습니다.`]}
+            tone="warning"
+          />
+        </div>
+      )}
+      {(saveStatus || saveError) && (
+        <p className={`mt-3 text-right text-xs font-semibold ${saveError ? "text-red-600" : "text-emerald-700"}`}>
+          {saveError ?? saveStatus}
+        </p>
+      )}
       {result.warnings.length > 0 && <div className="mt-4"><MessageBox title="매치 경고" items={result.warnings} tone="warning" /></div>}
       {result.notes.length > 0 && <div className="mt-4"><MessageBox title="운영 메모" items={result.notes} tone="info" /></div>}
       <div className="mt-4 rounded-2xl border border-slate-200 p-4">
