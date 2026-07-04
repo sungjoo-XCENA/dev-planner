@@ -14,9 +14,16 @@ const PAIR_FLIP_MAX_ROUNDS = 30;
 const STRONG_RESERVE_PER_TEAM = 2;
 const MISMATCH_PENALTY = 1.5;
 const MULTI_POSITION_BALANCE_PENALTY = 16;
+const DEFAULT_QUARTER_TARGET = 3;
+const QUARTER_BALANCE_PENALTY = 12;
 const RELATION_PENALTY: Record<PlayerRelation["score"], number> = {
   1: 1000,
   2: 80,
+};
+
+export type TeamBalanceOptions = {
+  quarterTargets?: Record<string, number>;
+  dualTeamPlayerIds?: string[];
 };
 
 type FieldPlayer = Player & { primaryPosition: FieldPosition };
@@ -25,6 +32,27 @@ type RoleTargets = Record<PositionGroup, number>;
 
 function isFieldPlayer(player: Player): player is FieldPlayer {
   return player.primaryPosition !== "GK";
+}
+
+function quarterTargetFor(id: string, options: TeamBalanceOptions = {}): number {
+  return Math.max(1, Math.min(4, Math.round(options.quarterTargets?.[id] ?? DEFAULT_QUARTER_TARGET)));
+}
+
+function isDualTeamPlayer(id: string, options: TeamBalanceOptions = {}): boolean {
+  return options.dualTeamPlayerIds?.includes(id) ?? false;
+}
+
+function ownQuarterWeight(player: { id: string }, options: TeamBalanceOptions = {}): number {
+  if (isDualTeamPlayer(player.id, options)) return 1 / DEFAULT_QUARTER_TARGET;
+  return quarterTargetFor(player.id, options) / DEFAULT_QUARTER_TARGET;
+}
+
+function virtualQuarterWeight(player: { id: string }, options: TeamBalanceOptions = {}): number {
+  return isDualTeamPlayer(player.id, options) ? 1 / DEFAULT_QUARTER_TARGET : 0;
+}
+
+function playerQuarterContribution(player: { id: string }, options: TeamBalanceOptions = {}): number {
+  return isDualTeamPlayer(player.id, options) ? 1 : quarterTargetFor(player.id, options);
 }
 
 function targetForTeamSize(size: number): RoleTargets {
@@ -90,22 +118,45 @@ function pairCostByGroup(
   teamB: FieldPlayer[],
   groupOf: Map<string, PositionGroup>,
   relations: PlayerRelation[] = [],
+  options: TeamBalanceOptions = {},
 ): number {
-  const sumByGroup = (team: FieldPlayer[], group: PositionGroup, fn: (p: FieldPlayer) => number) =>
-    team.filter((p) => groupOf.get(p.id) === group).reduce((acc, p) => acc + fn(p), 0);
-  const aAtt = sumByGroup(teamA, "ATTACK", (p) => p.attackScore);
-  const aMid = sumByGroup(teamA, "MID", (p) => p.midScore);
-  const aDef = sumByGroup(teamA, "DEFENSE", (p) => p.defenseScore);
-  const aAct = teamA.reduce((acc, p) => acc + effectiveActivityScore(p), 0);
-  const bAtt = sumByGroup(teamB, "ATTACK", (p) => p.attackScore);
-  const bMid = sumByGroup(teamB, "MID", (p) => p.midScore);
-  const bDef = sumByGroup(teamB, "DEFENSE", (p) => p.defenseScore);
-  const bAct = teamB.reduce((acc, p) => acc + effectiveActivityScore(p), 0);
+  const sumByGroup = (
+    ownTeam: FieldPlayer[],
+    otherTeam: FieldPlayer[],
+    group: PositionGroup,
+    fn: (p: FieldPlayer) => number,
+  ) => {
+    const own = ownTeam
+      .filter((p) => groupOf.get(p.id) === group)
+      .reduce((acc, p) => acc + fn(p) * ownQuarterWeight(p, options), 0);
+    const shared = otherTeam
+      .filter((p) => groupOf.get(p.id) === group)
+      .reduce((acc, p) => acc + fn(p) * virtualQuarterWeight(p, options), 0);
+    return own + shared;
+  };
+  const sumActivity = (ownTeam: FieldPlayer[], otherTeam: FieldPlayer[]) =>
+    ownTeam.reduce((acc, p) => acc + effectiveActivityScore(p) * ownQuarterWeight(p, options), 0)
+    + otherTeam.reduce((acc, p) => acc + effectiveActivityScore(p) * virtualQuarterWeight(p, options), 0);
+  const quarterTotal = (ownTeam: FieldPlayer[], otherTeam: FieldPlayer[]) =>
+    ownTeam.reduce((acc, p) => acc + playerQuarterContribution(p, options), 0)
+    + otherTeam.reduce((acc, p) => acc + (isDualTeamPlayer(p.id, options) ? 1 : 0), 0);
+
+  const aAtt = sumByGroup(teamA, teamB, "ATTACK", (p) => p.attackScore);
+  const aMid = sumByGroup(teamA, teamB, "MID", (p) => p.midScore);
+  const aDef = sumByGroup(teamA, teamB, "DEFENSE", (p) => p.defenseScore);
+  const aAct = sumActivity(teamA, teamB);
+  const bAtt = sumByGroup(teamB, teamA, "ATTACK", (p) => p.attackScore);
+  const bMid = sumByGroup(teamB, teamA, "MID", (p) => p.midScore);
+  const bDef = sumByGroup(teamB, teamA, "DEFENSE", (p) => p.defenseScore);
+  const bAct = sumActivity(teamB, teamA);
   const aMulti = teamA.filter(isMultiPositionPlayer).length;
   const bMulti = teamB.filter(isMultiPositionPlayer).length;
+  const aQuarter = quarterTotal(teamA, teamB);
+  const bQuarter = quarterTotal(teamB, teamA);
   const total = (aAtt + aMid + aDef + aAct) - (bAtt + bMid + bDef + bAct);
   return (Math.abs(aAtt - bAtt) + Math.abs(aMid - bMid) + Math.abs(aDef - bDef)) * 5
        + Math.abs(aAct - bAct) * 2
+       + Math.abs(aQuarter - bQuarter) * QUARTER_BALANCE_PENALTY
        + Math.abs(aMulti - bMulti) * MULTI_POSITION_BALANCE_PENALTY
        + Math.abs(total)
        + relationPenaltyForSplit(teamA, teamB, relations);
@@ -123,6 +174,7 @@ function pairSplitPools(
   midPool: FieldPlayer[],
   defPool: FieldPlayer[],
   relations: PlayerRelation[] = [],
+  options: TeamBalanceOptions = {},
 ): SplitResult {
   const groupOf = new Map<string, PositionGroup>();
   attPool.forEach((p) => groupOf.set(p.id, "ATTACK"));
@@ -152,16 +204,16 @@ function pairSplitPools(
         } else if (teamB.length < teamA.length) {
           teamB.push(stronger);
         } else {
-          const costA = pairCostByGroup([...teamA, stronger], teamB, groupOf, relations);
-          const costB = pairCostByGroup(teamA, [...teamB, stronger], groupOf, relations);
+          const costA = pairCostByGroup([...teamA, stronger], teamB, groupOf, relations, options);
+          const costB = pairCostByGroup(teamA, [...teamB, stronger], groupOf, relations, options);
           if (costA <= costB) teamA.push(stronger);
           else teamB.push(stronger);
         }
         continue;
       }
 
-      const cost1 = pairCostByGroup([...teamA, stronger], [...teamB, weaker], groupOf, relations);
-      const cost2 = pairCostByGroup([...teamA, weaker], [...teamB, stronger], groupOf, relations);
+      const cost1 = pairCostByGroup([...teamA, stronger], [...teamB, weaker], groupOf, relations, options);
+      const cost2 = pairCostByGroup([...teamA, weaker], [...teamB, stronger], groupOf, relations, options);
       if (cost1 <= cost2) {
         teamA.push(stronger);
         teamB.push(weaker);
@@ -224,20 +276,29 @@ function calcSummary(
   teamA: AssignedFieldPlayer[],
   teamB: AssignedFieldPlayer[],
   relations: PlayerRelation[] = [],
+  options: TeamBalanceOptions = {},
 ): TeamBalanceSummary {
-  const sum = (players: AssignedFieldPlayer[], fn: (p: AssignedFieldPlayer) => number) =>
-    players.reduce((acc, p) => acc + fn(p), 0);
+  const sum = (
+    ownTeam: AssignedFieldPlayer[],
+    otherTeam: AssignedFieldPlayer[],
+    fn: (p: AssignedFieldPlayer) => number,
+  ) =>
+    ownTeam.reduce((acc, p) => acc + fn(p) * ownQuarterWeight(p, options), 0)
+    + otherTeam.reduce((acc, p) => acc + fn(p) * virtualQuarterWeight(p, options), 0);
   const byGroup = (players: AssignedFieldPlayer[], group: PositionGroup) =>
     players.filter((p) => p.assignedGroup === group);
+  const quarterTotal = (ownTeam: AssignedFieldPlayer[], otherTeam: AssignedFieldPlayer[]) =>
+    ownTeam.reduce((acc, p) => acc + playerQuarterContribution(p, options), 0)
+    + otherTeam.reduce((acc, p) => acc + (isDualTeamPlayer(p.id, options) ? 1 : 0), 0);
 
-  const attackScoreA = sum(byGroup(teamA, "ATTACK"), (p) => p.attackScore);
-  const attackScoreB = sum(byGroup(teamB, "ATTACK"), (p) => p.attackScore);
-  const midScoreA = sum(byGroup(teamA, "MID"), (p) => p.midScore);
-  const midScoreB = sum(byGroup(teamB, "MID"), (p) => p.midScore);
-  const defenseScoreA = sum(byGroup(teamA, "DEFENSE"), (p) => p.defenseScore);
-  const defenseScoreB = sum(byGroup(teamB, "DEFENSE"), (p) => p.defenseScore);
-  const activityA = sum(teamA, (p) => effectiveActivityScore(p));
-  const activityB = sum(teamB, (p) => effectiveActivityScore(p));
+  const attackScoreA = sum(byGroup(teamA, "ATTACK"), byGroup(teamB, "ATTACK"), (p) => p.attackScore);
+  const attackScoreB = sum(byGroup(teamB, "ATTACK"), byGroup(teamA, "ATTACK"), (p) => p.attackScore);
+  const midScoreA = sum(byGroup(teamA, "MID"), byGroup(teamB, "MID"), (p) => p.midScore);
+  const midScoreB = sum(byGroup(teamB, "MID"), byGroup(teamA, "MID"), (p) => p.midScore);
+  const defenseScoreA = sum(byGroup(teamA, "DEFENSE"), byGroup(teamB, "DEFENSE"), (p) => p.defenseScore);
+  const defenseScoreB = sum(byGroup(teamB, "DEFENSE"), byGroup(teamA, "DEFENSE"), (p) => p.defenseScore);
+  const activityA = sum(teamA, teamB, (p) => effectiveActivityScore(p));
+  const activityB = sum(teamB, teamA, (p) => effectiveActivityScore(p));
   const fieldGkA = teamA.filter((p) => p.canGk).length;
   const fieldGkB = teamB.filter((p) => p.canGk).length;
   const regularA = teamA.filter((p) => p.memberType === "REGULAR").length;
@@ -249,12 +310,17 @@ function calcSummary(
   const overrides = [...teamA, ...teamB].filter((p) => p.isPositionOverride).length;
   const relationViolations = relationViolationsForTeams(teamA, teamB, relations);
   const relationPenalty = relationViolations.reduce((acc, violation) => acc + violation.penalty, 0);
+  const quarterTargetA = quarterTotal(teamA, teamB);
+  const quarterTargetB = quarterTotal(teamB, teamA);
+  const dualTeamA = teamA.filter((p) => isDualTeamPlayer(p.id, options)).length;
+  const dualTeamB = teamB.filter((p) => isDualTeamPlayer(p.id, options)).length;
 
   const balanceScore =
     Math.abs(attackScoreA - attackScoreB) * 5 +
     Math.abs(midScoreA - midScoreB) * 5 +
     Math.abs(defenseScoreA - defenseScoreB) * 5 +
     Math.abs(activityA - activityB) * 2 +
+    Math.abs(quarterTargetA - quarterTargetB) * QUARTER_BALANCE_PENALTY +
     Math.abs(fieldGkA - fieldGkB) * 3 +
     Math.abs(guestA - guestB) +
     Math.abs(multiPositionA - multiPositionB) * MULTI_POSITION_BALANCE_PENALTY +
@@ -281,6 +347,10 @@ function calcSummary(
     relationPenalty,
     relationViolationCount: relationViolations.length,
     relationHardViolationCount: relationViolations.filter((violation) => violation.score === 1).length,
+    quarterTargetA,
+    quarterTargetB,
+    dualTeamA,
+    dualTeamB,
     balanceScore,
   };
 }
@@ -290,11 +360,12 @@ function evaluatePoolAssignment(
   midPool: FieldPlayer[],
   defPool: FieldPlayer[],
   relations: PlayerRelation[] = [],
+  options: TeamBalanceOptions = {},
 ): { adjScore: number; balanceScore: number; mismatchCount: number; teamA: AssignedFieldPlayer[]; teamB: AssignedFieldPlayer[]; partnerById: Map<string, string>; summary: TeamBalanceSummary } {
-  const split = pairSplitPools(attPool, midPool, defPool, relations);
+  const split = pairSplitPools(attPool, midPool, defPool, relations, options);
   const teamA = split.teamA.map((p) => buildAssigned(p, split.groupOf.get(p.id)!));
   const teamB = split.teamB.map((p) => buildAssigned(p, split.groupOf.get(p.id)!));
-  const summary = calcSummary(teamA, teamB, relations);
+  const summary = calcSummary(teamA, teamB, relations, options);
   const mismatchCount = [...teamA, ...teamB].filter((p) => {
     const primary = getPositionGroup(p.primaryPosition);
     return primary !== p.assignedGroup && !hasGroup(p.secondaryPositions, p.assignedGroup);
@@ -321,7 +392,7 @@ function combinations<T>(items: T[], k: number): T[][] {
   return withFirst.concat(withoutFirst);
 }
 
-function buildPools(fieldPlayers: FieldPlayer[], teamTargets: RoleTargets, variant: number, relations: PlayerRelation[] = []): {
+function buildPools(fieldPlayers: FieldPlayer[], teamTargets: RoleTargets, variant: number, relations: PlayerRelation[] = [], options: TeamBalanceOptions = {}): {
   attPool: FieldPlayer[];
   midPool: FieldPlayer[];
   defPool: FieldPlayer[];
@@ -355,7 +426,7 @@ function buildPools(fieldPlayers: FieldPlayer[], teamTargets: RoleTargets, varia
     for (const lastAttCombo of combinations(lastN, attPickCount)) {
       const attCandidate = [...strongAtt, ...lastAttCombo];
       const defCandidate = [...strongDef, ...lastN.filter((p) => !lastAttCombo.includes(p))];
-      const result = evaluatePoolAssignment(attCandidate, midPool, defCandidate, relations);
+      const result = evaluatePoolAssignment(attCandidate, midPool, defCandidate, relations, options);
       const key = [...attCandidate.map((p) => p.id).sort(), "|", ...defCandidate.map((p) => p.id).sort()].join(",");
       candidates.push({ adjScore: result.adjScore, att: attCandidate, def: defCandidate, key });
     }
@@ -379,10 +450,11 @@ function refineByPairFlip(
   teamB: AssignedFieldPlayer[],
   partnerById: Map<string, string>,
   relations: PlayerRelation[] = [],
+  options: TeamBalanceOptions = {},
 ): { teamA: AssignedFieldPlayer[]; teamB: AssignedFieldPlayer[]; summary: TeamBalanceSummary } {
   const a = [...teamA];
   const b = [...teamB];
-  let summary = calcSummary(a, b, relations);
+  let summary = calcSummary(a, b, relations, options);
 
   for (let round = 0; round < PAIR_FLIP_MAX_ROUNDS; round += 1) {
     let bestImprovement = 0;
@@ -404,7 +476,7 @@ function refineByPairFlip(
       const movingFromB = b[j];
       trialA[i] = { ...movingFromB, assignedGroup: movingFromA.assignedGroup, assignmentReason: assignmentReason(movingFromB, movingFromA.assignedGroup), isPositionOverride: getPositionGroup(movingFromB.primaryPosition) !== movingFromA.assignedGroup };
       trialB[j] = { ...movingFromA, assignedGroup: movingFromB.assignedGroup, assignmentReason: assignmentReason(movingFromA, movingFromB.assignedGroup), isPositionOverride: getPositionGroup(movingFromA.primaryPosition) !== movingFromB.assignedGroup };
-      const trialSummary = calcSummary(trialA, trialB, relations);
+      const trialSummary = calcSummary(trialA, trialB, relations, options);
       const improvement = summary.balanceScore - trialSummary.balanceScore;
       if (improvement > bestImprovement) {
         bestImprovement = improvement;
@@ -418,7 +490,7 @@ function refineByPairFlip(
     const movingFromB = b[bIndex];
     a[aIndex] = { ...movingFromB, assignedGroup: movingFromA.assignedGroup, assignmentReason: assignmentReason(movingFromB, movingFromA.assignedGroup), isPositionOverride: getPositionGroup(movingFromB.primaryPosition) !== movingFromA.assignedGroup };
     b[bIndex] = { ...movingFromA, assignedGroup: movingFromB.assignedGroup, assignmentReason: assignmentReason(movingFromA, movingFromB.assignedGroup), isPositionOverride: getPositionGroup(movingFromA.primaryPosition) !== movingFromB.assignedGroup };
-    summary = calcSummary(a, b, relations);
+    summary = calcSummary(a, b, relations, options);
   }
 
   return { teamA: a, teamB: b, summary };
@@ -436,6 +508,7 @@ function buildResult(
   if (overrides.length >= 6) warnings.push(`포지션 변경자가 ${overrides.length}명입니다. 역할 배정이 다소 억지일 수 있습니다.`);
   if (summary.fieldGkA === 0 || summary.fieldGkB === 0) warnings.push("한 팀에 필드 GK 가능자가 없습니다. 전담 GK가 없거나 부족하면 문제가 될 수 있습니다.");
   if (Math.abs(summary.activityA - summary.activityB) >= 8) warnings.push("팀별 활동량 차이가 큽니다.");
+  if (Math.abs(summary.quarterTargetA - summary.quarterTargetB) >= 3) warnings.push(`팀별 목표 출전 쿼터 차이가 큽니다: ${formatTeamName("A")} ${summary.quarterTargetA}Q / ${formatTeamName("B")} ${summary.quarterTargetB}Q`);
   if (Math.abs(summary.guestA - summary.guestB) >= 5) warnings.push("정규 선수와 용병 비율이 한쪽으로 몰렸습니다.");
   if (Math.abs(summary.multiPositionA - summary.multiPositionB) >= 2) warnings.push("멀티포지션 선수가 한쪽으로 몰렸습니다.");
   const hardViolations = relationViolations.filter((violation) => violation.score === 1);
@@ -455,7 +528,7 @@ function buildResult(
   };
 }
 
-export function balanceTeams(players: Player[], variant = 0, relations: PlayerRelation[] = []): TeamBalanceResult {
+export function balanceTeams(players: Player[], variant = 0, relations: PlayerRelation[] = [], options: TeamBalanceOptions = {}): TeamBalanceResult {
   if (players.length < MIN_TEAM_SIZE * 2 || players.length > MAX_TEAM_SIZE * 2) {
     throw new Error(`필드 참석자는 ${MIN_TEAM_SIZE * 2}명~${MAX_TEAM_SIZE * 2}명이어야 합니다. 현재 ${players.length}명입니다.`);
   }
@@ -469,30 +542,30 @@ export function balanceTeams(players: Player[], variant = 0, relations: PlayerRe
   const halfSize = Math.ceil(fieldPlayers.length / 2);
   const teamTargets = targetForTeamSize(halfSize);
 
-  const { attPool, midPool, defPool } = buildPools(fieldPlayers, teamTargets, variant, relations);
-  const initial = evaluatePoolAssignment(attPool, midPool, defPool, relations);
+  const { attPool, midPool, defPool } = buildPools(fieldPlayers, teamTargets, variant, relations, options);
+  const initial = evaluatePoolAssignment(attPool, midPool, defPool, relations, options);
 
   if (initial.teamA.length < MIN_TEAM_SIZE || initial.teamA.length > MAX_TEAM_SIZE
       || initial.teamB.length < MIN_TEAM_SIZE || initial.teamB.length > MAX_TEAM_SIZE) {
     throw new Error(`한 팀은 ${MIN_TEAM_SIZE}명~${MAX_TEAM_SIZE}명이어야 합니다. 현재 ${formatTeamName("A")} ${initial.teamA.length}명, ${formatTeamName("B")} ${initial.teamB.length}명입니다.`);
   }
 
-  const refined = refineByPairFlip(initial.teamA, initial.teamB, initial.partnerById, relations);
+  const refined = refineByPairFlip(initial.teamA, initial.teamB, initial.partnerById, relations, options);
   return buildResult(refined.teamA, refined.teamB, refined.summary, relations);
 }
 
-export function rebalanceTeams(teamAPlayers: Player[], teamBPlayers: Player[], variant = 0, relations: PlayerRelation[] = []): TeamBalanceResult {
-  return balanceTeams([...teamAPlayers, ...teamBPlayers], variant, relations);
+export function rebalanceTeams(teamAPlayers: Player[], teamBPlayers: Player[], variant = 0, relations: PlayerRelation[] = [], options: TeamBalanceOptions = {}): TeamBalanceResult {
+  return balanceTeams([...teamAPlayers, ...teamBPlayers], variant, relations, options);
 }
 
-export function balanceTeamsVariants(players: Player[], maxVariants = 10, relations: PlayerRelation[] = []): TeamBalanceResult[] {
+export function balanceTeamsVariants(players: Player[], maxVariants = 10, relations: PlayerRelation[] = [], options: TeamBalanceOptions = {}): TeamBalanceResult[] {
   const results: TeamBalanceResult[] = [];
   const seen = new Set<string>();
   const probe = Math.max(maxVariants * 10, 100);
   for (let v = 0; v < probe && results.length < maxVariants; v += 1) {
     let r: TeamBalanceResult;
     try {
-      r = balanceTeams(players, v, relations);
+      r = balanceTeams(players, v, relations, options);
     } catch {
       if (results.length === 0) throw new Error("팀 분배 실패");
       break;
@@ -508,10 +581,10 @@ export function balanceTeamsVariants(players: Player[], maxVariants = 10, relati
   return results;
 }
 
-export function summarizeTeams(teamAPlayers: AssignedPlayer[], teamBPlayers: AssignedPlayer[], relations: PlayerRelation[] = []): TeamBalanceResult {
+export function summarizeTeams(teamAPlayers: AssignedPlayer[], teamBPlayers: AssignedPlayer[], relations: PlayerRelation[] = [], options: TeamBalanceOptions = {}): TeamBalanceResult {
   const a = teamAPlayers as AssignedFieldPlayer[];
   const b = teamBPlayers as AssignedFieldPlayer[];
-  const summary = calcSummary(a, b, relations);
+  const summary = calcSummary(a, b, relations, options);
   return buildResult(a, b, summary, relations);
 }
 
