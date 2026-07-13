@@ -89,6 +89,7 @@ export type MatchRecordLoadResponse = {
   guestStats?: MatchRecordPlayerStat[];
   guestPlayers?: MatchRecordGuestPlayer[];
   teamScores?: MatchRecordTeamScore[];
+  lineupQuarters?: TeamQuarterLineup[];
   players?: Partial<Record<TeamName, string[]>>;
   staffRoles?: Partial<Record<string, StaffRole>>;
   scoreOverride?: Partial<Record<TeamName, number>>;

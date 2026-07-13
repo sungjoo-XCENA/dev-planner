@@ -11,7 +11,7 @@ import type {
   MatchRecordSaveResponse,
   MatchRecordTeamScore,
 } from "@/types/matchRecord";
-import type { Quarter } from "@/types/lineup";
+import type { Quarter, TeamQuarterLineup } from "@/types/lineup";
 import type { StaffRole } from "@/types/player";
 import type { TeamName } from "@/types/team";
 
@@ -208,6 +208,7 @@ function loadResponse(matchId: string, existing: unknown): MatchRecordLoadRespon
     : {};
   const plannerStats = plannerSummaryStats(planner.summaryStats);
   const guestStats = plannerSummaryStats(planner.guestStats);
+  const lineupQuarters = plannerLineupQuarters(planner);
 
   return {
     ok: true,
@@ -228,6 +229,7 @@ function loadResponse(matchId: string, existing: unknown): MatchRecordLoadRespon
     guestStats,
     guestPlayers: plannerGuestPlayers(planner.guestPlayers),
     teamScores: plannerTeamScores(planner.teamScores, record.HomeGoal, record.AwayGoal),
+    ...(lineupQuarters.length > 0 ? { lineupQuarters } : {}),
     players: playerListsFromRecord(planner, record),
     staffRoles: staffRolesFromRecord(planner, record),
     scoreOverride: plannerScoreOverride(planner.scoreOverride, record.HomeGoal, record.AwayGoal),
@@ -342,6 +344,53 @@ function plannerGuestPlayers(value: unknown): MatchRecordGuestPlayer[] {
       };
     })
     .filter((player): player is MatchRecordGuestPlayer => Boolean(player));
+}
+
+function plannerLineupQuarters(planner: Record<string, unknown>): TeamQuarterLineup[] {
+  const source = planner.quarters;
+  const quarterEntries = Array.isArray(source)
+    ? source.map((value, index) => [`Q${index + 1}`, value] as const)
+    : Object.entries(source && typeof source === "object" ? (source as Record<string, unknown>) : {});
+  const lineups: TeamQuarterLineup[] = [];
+
+  quarterEntries.forEach(([key, value]) => {
+    const record = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+    const quarter = quarterValue(record.quarter) ?? quarterFromPlannerKey(key);
+    if (!quarter) return;
+    lineups.push(plannerLineupSide(quarter, "A", record.A));
+    lineups.push(plannerLineupSide(quarter, "B", record.B));
+  });
+
+  return lineups.sort((a, b) => (
+    a.quarter === b.quarter ? a.team.localeCompare(b.team) : a.quarter - b.quarter
+  ));
+}
+
+function quarterFromPlannerKey(key: string): Quarter | null {
+  const match = key.match(/^Q?([1-4])$/i);
+  return match ? quarterValue(match[1]) : null;
+}
+
+function plannerLineupSide(quarter: Quarter, team: TeamName, value: unknown): TeamQuarterLineup {
+  const record = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+  return {
+    quarter,
+    team,
+    attack: stringListValue(record.attack),
+    mid: stringListValue(record.mid),
+    defense: stringListValue(record.defense),
+    gk: stringValue(record.gk)?.trim() || "없음",
+    bench: stringListValue(record.bench),
+    warnings: [],
+  };
+}
+
+function stringListValue(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return uniqueNames(value.map((item) => {
+    if (typeof item === "string") return item;
+    return nameFromFirebaseItem(item);
+  }));
 }
 
 function playerListsFromRecord(planner: Record<string, unknown>, record: Record<string, unknown>): Partial<Record<TeamName, string[]>> {

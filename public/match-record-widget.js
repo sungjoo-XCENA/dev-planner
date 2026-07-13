@@ -11,6 +11,7 @@
     conflict: null,
     loadedRecord: null,
     loadedPlayers: null,
+    loadedLineupQuarters: null,
     loadedForm: null,
     editingRecordOnly: false,
     currentLineupOverride: false,
@@ -548,6 +549,29 @@
     return loaded.A.length || loaded.B.length ? loaded : null;
   }
 
+  function normalizeLoadedLineupQuarters(records) {
+    if (!Array.isArray(records)) return null;
+    var normalized = records.map(function (record) {
+      if (!record || (record.team !== "A" && record.team !== "B")) return null;
+      var quarter = selectedQuarterValue(record.quarter);
+      if (!quarter) return null;
+      return {
+        quarter: quarter,
+        team: record.team,
+        attack: normalizeLoadedTeam(record.attack),
+        mid: normalizeLoadedTeam(record.mid),
+        defense: normalizeLoadedTeam(record.defense),
+        gk: playerName(record.gk) || "없음",
+        bench: normalizeLoadedTeam(record.bench),
+        warnings: Array.isArray(record.warnings) ? record.warnings : [],
+      };
+    }).filter(Boolean);
+    normalized.sort(function (a, b) {
+      return a.quarter === b.quarter ? a.team.localeCompare(b.team) : a.quarter - b.quarter;
+    });
+    return normalized.length ? normalized : null;
+  }
+
   function normalizeLoadedTeam(players) {
     return uniqueNames((Array.isArray(players) ? players : []).map(function (value) {
       return loadedPlayerName(value);
@@ -607,6 +631,7 @@
 
   function displayRecords(fallbackRecords) {
     if (state.currentLineupOverride) return fallbackRecords;
+    if (state.loadedLineupQuarters) return state.loadedLineupQuarters;
     if (state.editingRecordOnly) {
       var loaded = state.loadedPlayers || emptyLoadedPlayers();
       return ["A", "B"].map(function (team) {
@@ -637,6 +662,7 @@
 
   function payloadRecords(fallbackRecords) {
     if (state.currentLineupOverride) return fallbackRecords;
+    if (state.loadedLineupQuarters) return state.loadedLineupQuarters;
     if (state.editingRecordOnly) {
       var loaded = state.loadedPlayers || emptyLoadedPlayers();
       return ["A", "B"].map(function (team) {
@@ -660,7 +686,7 @@
         attack: state.loadedPlayers[team] || [],
         mid: [],
         defense: [],
-        gk: "?놁쓬",
+        gk: "없음",
         bench: [],
         warnings: [],
       };
@@ -905,6 +931,7 @@
     }
     var loaded = ensureLoadedPlayersFromCurrent();
     loaded[team] = uniqueNames((loaded[team] || []).concat(name));
+    state.loadedLineupQuarters = null;
     state.currentLineupOverride = false;
     state.status = name + " 선수를 " + teamLabel(team) + "에 추가했습니다.";
     renderPanel();
@@ -915,6 +942,7 @@
     if (!name || (team !== "A" && team !== "B")) return;
     var loaded = ensureLoadedPlayersFromCurrent();
     loaded[team] = (loaded[team] || []).filter(function (player) { return playerName(player) !== name; });
+    state.loadedLineupQuarters = null;
     Object.keys(state.summaryStats).forEach(function (key) {
       var stat = state.summaryStats[key];
       if (stat && stat.team === team && playerName(stat.player) === name) delete state.summaryStats[key];
@@ -935,6 +963,7 @@
     state.conflict = null;
     state.loadedRecord = null;
     state.loadedPlayers = null;
+    state.loadedLineupQuarters = null;
     state.loadedForm = null;
     state.editingRecordOnly = false;
     state.currentLineupOverride = false;
@@ -1587,7 +1616,7 @@
   }
 
   function renderLineupSide(side, team) {
-    var gk = side && side.gk && side.gk !== "?놁쓬" ? [side.gk] : [];
+    var gk = side && side.gk && side.gk !== "없음" && side.gk !== "?놁쓬" ? [side.gk] : [];
     return [
       "<div class=\"mrw-lineup-side\"><div class=\"mrw-lineup-team\">" + teamLabel(team) + "</div>",
       renderLineupRow("공격", side && side.attack),
@@ -2238,6 +2267,7 @@
       setGuestStatsFromArray(data.guestStats);
       setTeamScoresFromArray(data.teamScores, data.scoreOverride);
       state.loadedPlayers = normalizeLoadedPlayers(data.players) || emptyLoadedPlayers();
+      state.loadedLineupQuarters = normalizeLoadedLineupQuarters(data.lineupQuarters);
       state.conflict = null;
       state.loadedRecord = data;
       state.editingRecordOnly = true;
