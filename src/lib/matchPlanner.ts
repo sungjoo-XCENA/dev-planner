@@ -145,6 +145,10 @@ function targetFor(id: string, limits: MatchQuarterLimits): number {
   return Math.max(1, Math.min(4, Math.round(limits[id] ?? DEFAULT_MATCH_QUARTERS)));
 }
 
+function playCountFor(playCounts: Map<string, number>, id: string): number {
+  return playCounts.get(id) ?? 0;
+}
+
 function selectionsFor(plan: FormationPlan): MatchSelection[] {
   return [...plan.attack, ...plan.mid, ...plan.defense];
 }
@@ -312,6 +316,69 @@ function pickFormation(
   return normalizedPlan(best);
 }
 
+function pickQuarterFormation({
+  quarter,
+  players,
+  playCounts,
+  limits,
+  requiredIds,
+  starterIds,
+  usedCallupIds,
+  respectTargets,
+}: {
+  quarter: 1 | 2 | 3 | 4;
+  players: Player[];
+  playCounts: Map<string, number>;
+  limits: MatchQuarterLimits;
+  requiredIds: Set<string>;
+  starterIds: Set<string>;
+  usedCallupIds: Set<string>;
+  respectTargets: boolean;
+}): FormationPlan {
+  const remainingQuartersAfter = 4 - quarter;
+  return pickFormation(players, (player, group) => {
+    const current = playCountFor(playCounts, player.id);
+    const target = targetFor(player.id, limits);
+    const remainingNeed = target - current;
+    const mustPlayNow = remainingNeed > remainingQuartersAfter;
+    const alreadyMetTarget = remainingNeed <= 0;
+    const isRequired = requiredIds.has(player.id);
+    const isStarter = starterIds.has(player.id);
+    const isCallup = usedCallupIds.has(player.id);
+
+    let score = roleScore(player, group);
+
+    if (respectTargets && alreadyMetTarget) score -= 80_000_000;
+    else if (alreadyMetTarget) score -= 900_000;
+
+    if (mustPlayNow) score += 80_000_000;
+    else if (remainingNeed > 0) score += remainingNeed * 350_000;
+
+    if (quarter === 1) {
+      score += (isRequired && !isStarter ? 1_000_000 : 0);
+      score += (isRequired ? 250_000 : 0);
+      score += (!isStarter ? 100_000 : 0);
+      score -= (isCallup ? 200_000 : 0);
+    } else if (quarter === 2) {
+      score += (isStarter ? 450_000 : 0);
+      score += (isRequired ? 150_000 : 0);
+      score -= (isCallup && current >= 1 ? 200_000 : 0);
+    } else if (quarter === 3) {
+      score += (isRequired && current === 0 ? 2_000_000 : 0);
+      score += (isRequired && current < 2 ? 1_000_000 : 0);
+      score += (isRequired && !isStarter && current < 2 ? 500_000 : 0);
+      score += (isRequired ? 250_000 : 0);
+      score -= (isCallup && current >= 2 ? 250_000 : 0);
+    } else {
+      score += (isStarter ? 450_000 : 0);
+      score += (isRequired ? 150_000 : 0);
+      score -= (isCallup && current >= 2 ? 250_000 : 0);
+    }
+
+    return score;
+  });
+}
+
 function lineupFromFormation(
   quarter: 1 | 2 | 3 | 4,
   formation: FormationPlan,
@@ -425,8 +492,8 @@ export function planMatchLineup(
 ): MatchPlanResult {
   const warnings: string[] = [];
   const notes: string[] = [
-    "1Q는 베스트 11에 들지 않은 정규 참석자를 먼저 배정하고, 2Q와 4Q는 베스트 라인업으로 잡습니다.",
-    "3Q는 3Q까지 정규 참석자가 최소 1Q, 가능하면 2Q를 채우도록 배정합니다. 지고 있으면 4Q 베스트를 유지하고, 여유가 있으면 2Q 미만 선수와 교체하세요.",
+    "1Q는 베스트 11에 들지 않은 정규 참석자를 먼저 배정하고, 2Q와 4Q는 베스트를 우선하되 선수별 출전 쿼터 설정을 먼저 맞춥니다.",
+    "3Q까지 정규 참석자가 최소 1Q, 가능하면 2Q를 채우도록 배정합니다. 지고 있으면 4Q 베스트 유지안을 참고하고, 여유가 있으면 설정 쿼터를 맞춘 4Q를 쓰세요.",
   ];
   const requiredPlayers = uniqueFieldPlayers(players);
   const requiredIds = new Set(requiredPlayers.map((player) => player.id));
@@ -489,78 +556,66 @@ export function planMatchLineup(
   const rosterPlayers = allSelections.map((item) => item.player);
   const playCounts = new Map<string, number>();
   const quarters: MatchQuarterLineup[] = [];
+  const requestedSlots = allSelections.reduce((total, item) => total + targetFor(item.player.id, quarterLimits), 0);
+  const respectTargets = requestedSlots >= MATCH_FIELD_SLOTS_TOTAL;
 
-  const q1Formation = pickFormation(rosterPlayers, (player, group) => {
-    const isRequired = requiredIds.has(player.id);
-    const isStarter = starterIds.has(player.id);
-    const isCallup = usedCallupIds.has(player.id);
-    return (
-      (isRequired && !isStarter ? 1_000_000 : 0) +
-      (isRequired ? 250_000 : 0) +
-      (!isStarter ? 100_000 : 0) -
-      (isCallup ? 200_000 : 0) +
-      roleScore(player, group)
-    );
+  const q1Formation = pickQuarterFormation({
+    quarter: 1,
+    players: rosterPlayers,
+    playCounts,
+    limits: quarterLimits,
+    requiredIds,
+    starterIds,
+    usedCallupIds,
+    respectTargets,
   });
   quarters.push(lineupFromFormation(1, q1Formation, allSelections, starters.gk, playCounts, quarterLimits));
 
-  quarters.push(lineupFromFormation(2, bestFormation, allSelections, starters.gk, playCounts, quarterLimits));
+  const q2Formation = pickQuarterFormation({
+    quarter: 2,
+    players: rosterPlayers,
+    playCounts,
+    limits: quarterLimits,
+    requiredIds,
+    starterIds,
+    usedCallupIds,
+    respectTargets,
+  });
+  quarters.push(lineupFromFormation(2, q2Formation, allSelections, starters.gk, playCounts, quarterLimits));
 
-  const q3Formation = pickFormation(rosterPlayers, (player, group) => {
-    const current = playCounts.get(player.id) ?? 0;
-    const isRequired = requiredIds.has(player.id);
-    const isStarter = starterIds.has(player.id);
-    const isCallup = usedCallupIds.has(player.id);
-    const target = targetFor(player.id, quarterLimits);
-    const finalWithoutQ3 = current + (isStarter ? 1 : 0);
-    const targetShortfall = Math.max(0, target - finalWithoutQ3);
-    const targetOverflow = Math.max(0, current - target);
-
-    return (
-      (isRequired && current === 0 ? 2_000_000 : 0) +
-      (isRequired && current < 2 ? 1_000_000 : 0) +
-      (isRequired && !isStarter && current < 2 ? 500_000 : 0) +
-      (isRequired ? 250_000 : 0) -
-      (isCallup && finalWithoutQ3 >= 2 ? 250_000 : 0) +
-      targetShortfall * 50_000 -
-      targetOverflow * 50_000 +
-      roleScore(player, group)
-    );
+  const q3Formation = pickQuarterFormation({
+    quarter: 3,
+    players: rosterPlayers,
+    playCounts,
+    limits: quarterLimits,
+    requiredIds,
+    starterIds,
+    usedCallupIds,
+    respectTargets,
   });
   quarters.push(lineupFromFormation(3, q3Formation, allSelections, starters.gk, playCounts, quarterLimits));
 
   const playCountsBeforeFourth = new Map(playCounts);
-  const q4RotateFormation = pickFormation(rosterPlayers, (player, group) => {
-    const current = playCountsBeforeFourth.get(player.id) ?? 0;
-    const isRequired = requiredIds.has(player.id);
-    const isStarter = starterIds.has(player.id);
-    const isCallup = usedCallupIds.has(player.id);
-    const target = targetFor(player.id, quarterLimits);
-    const needsSecond = isRequired && current < 2;
-    const needsTarget = isRequired && current < target;
-    const alreadyEnough = current >= target;
-
-    return (
-      (needsSecond ? 2_000_000 : 0) +
-      (needsTarget ? 700_000 : 0) +
-      (isRequired ? 250_000 : 0) +
-      (isStarter ? 120_000 : 0) -
-      (isCallup && current >= 2 ? 250_000 : 0) -
-      (alreadyEnough ? 60_000 : 0) +
-      roleScore(player, group)
-    );
+  const q4RotateFormation = pickQuarterFormation({
+    quarter: 4,
+    players: rosterPlayers,
+    playCounts: playCountsBeforeFourth,
+    limits: quarterLimits,
+    requiredIds,
+    starterIds,
+    usedCallupIds,
+    respectTargets,
   });
   const keepLineup = lineupFromFormation(4, bestFormation, allSelections, starters.gk, playCountsBeforeFourth, quarterLimits, false);
   const rotateLineup = lineupFromFormation(4, q4RotateFormation, allSelections, starters.gk, playCountsBeforeFourth, quarterLimits, false);
   const rotateSwaps = buildSwapSuggestions(bestFormation, q4RotateFormation, playCountsBeforeFourth);
 
-  quarters.push(lineupFromFormation(4, bestFormation, allSelections, starters.gk, playCounts, quarterLimits));
+  quarters.push(lineupFromFormation(4, q4RotateFormation, allSelections, starters.gk, playCounts, quarterLimits));
 
   if (dedicatedGks.length === 0 && quarters.some((quarter) => quarter.gk === NO_GOALKEEPER)) {
     warnings.push("쉬는 선수가 없는 쿼터는 GK를 자동 배정하지 못했습니다. 전담 GK를 추가하거나 매치 참석자를 11명 이상으로 맞춰주세요.");
   }
 
-  const requestedSlots = allSelections.reduce((total, item) => total + targetFor(item.player.id, quarterLimits), 0);
   if (requestedSlots > MATCH_FIELD_SLOTS_TOTAL) {
     warnings.push(`출전 쿼터 목표가 총 ${requestedSlots}칸이라 실제 배정 가능한 ${MATCH_FIELD_SLOTS_TOTAL}칸보다 많습니다. 일부 선수는 목표보다 적게 배정됩니다.`);
   } else if (requestedSlots < MATCH_FIELD_SLOTS_TOTAL) {
