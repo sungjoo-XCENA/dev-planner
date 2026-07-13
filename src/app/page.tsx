@@ -4387,6 +4387,7 @@ function MatchResultView({
 }) {
   const [quarters, setQuarters] = useState(result.quarters);
   const [selection, setSelection] = useState<{ key: string; section: LineupSection; name: string } | null>(null);
+  const [quarterSwapKey, setQuarterSwapKey] = useState<string | null>(null);
   const [shareUrl, setShareUrl] = useState<string | null>(null);
   const [shareUrlError, setShareUrlError] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
@@ -4400,6 +4401,7 @@ function MatchResultView({
   useEffect(() => {
     setQuarters(result.quarters);
     setSelection(null);
+    setQuarterSwapKey(null);
     setSaveStatus(null);
     setSaveError(null);
   }, [result]);
@@ -4481,6 +4483,37 @@ function MatchResultView({
     setSaveStatus(null);
     setSaveError(null);
     setSelection(null);
+  }
+
+  function handleQuarterSwap(key: string) {
+    if (!quarterSwapKey) {
+      setQuarterSwapKey(key);
+      setSelection(null);
+      return;
+    }
+    if (quarterSwapKey === key) {
+      setQuarterSwapKey(null);
+      return;
+    }
+
+    const firstIdx = quarters.findIndex((quarter) => `match-${quarter.quarter}` === quarterSwapKey);
+    const secondIdx = quarters.findIndex((quarter) => `match-${quarter.quarter}` === key);
+    if (firstIdx < 0 || secondIdx < 0) {
+      setQuarterSwapKey(null);
+      return;
+    }
+
+    const reordered = [...quarters];
+    const first = reordered[firstIdx];
+    reordered[firstIdx] = reordered[secondIdx];
+    reordered[secondIdx] = first;
+    const next = reordered.map((quarter, index) => ({ ...quarter, quarter: (index + 1) as Quarter }));
+    setQuarters(next);
+    onQuartersChange(next);
+    setQuarterSwapKey(null);
+    setSelection(null);
+    setSaveStatus(null);
+    setSaveError(null);
   }
 
   async function saveCurrentMatch(overwriteExisting = false, skipQuarterCheck = false): Promise<void> {
@@ -4566,6 +4599,7 @@ function MatchResultView({
       )}
       {result.warnings.length > 0 && <div className="mt-4"><MessageBox title="매치 경고" items={result.warnings} tone="warning" /></div>}
       {result.notes.length > 0 && <div className="mt-4"><MessageBox title="운영 메모" items={result.notes} tone="info" /></div>}
+      <p className="mt-3 text-xs text-slate-500">같은 쿼터 안에서는 <span className="font-bold">필드, GK, 대기</span> 어디든 서로 자리를 바꿀 수 있어요. 쿼터 순서는 각 피치 아래 <span className="font-bold">쿼터 순서 바꾸기</span> 버튼으로 조정하면 위에서부터 1~4Q로 다시 정렬됩니다.</p>
       <div className="mt-4 rounded-2xl border border-slate-200 p-4">
         <h3 className="font-bold">베스트 라인업</h3>
         <div className="mt-3">
@@ -4585,9 +4619,11 @@ function MatchResultView({
         {quarters.map((q) => {
           const key = `match-${q.quarter}`;
           const selectedKey = selection && selection.key === key ? `${selection.section}|${selection.name}` : null;
+          const isSwapSelected = quarterSwapKey === key;
+          const isSwapPending = quarterSwapKey !== null && !isSwapSelected;
           return (
             <div key={key} className="space-y-2">
-              <div ref={(el) => { refs.current.set(key, el); }}>
+              <div ref={(el) => { refs.current.set(key, el); }} className={isSwapSelected ? "ring-2 ring-amber-400 rounded-2xl" : ""}>
                 <Pitch
                   title={`${q.quarter}Q`}
                   gk={q.gk}
@@ -4601,6 +4637,12 @@ function MatchResultView({
                   onSelect={(section, name) => handleSelect(key, section, name)}
                 />
               </div>
+              <button
+                className={`w-full rounded-xl px-3 py-2 text-xs font-semibold ${isSwapSelected ? "bg-amber-400 text-amber-950" : isSwapPending ? "bg-amber-100 text-amber-900 hover:bg-amber-200" : "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"}`}
+                onClick={() => handleQuarterSwap(key)}
+              >
+                {isSwapSelected ? "선택됨 (취소)" : isSwapPending ? "여기와 바꾸기" : "쿼터 순서 바꾸기"}
+              </button>
               <button className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700" onClick={() => downloadOne(q.quarter)}>이 화면 이미지 저장</button>
             </div>
           );
