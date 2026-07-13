@@ -321,6 +321,55 @@ function normalizeSharedLineup(lineup: unknown): LineupResult {
   };
 }
 
+function normalizeQuarterNumber(value: unknown, fallback: Quarter): Quarter {
+  const quarter = Number(value);
+  return quarter === 1 || quarter === 2 || quarter === 3 || quarter === 4 ? quarter : fallback;
+}
+
+function normalizeSharedMatchQuarter(
+  quarter: Partial<MatchPlanResult["quarters"][number]> | null | undefined,
+  fallbackQuarter: Quarter,
+): MatchPlanResult["quarters"][number] {
+  return {
+    quarter: normalizeQuarterNumber(quarter?.quarter, fallbackQuarter),
+    attack: stringList(quarter?.attack),
+    mid: stringList(quarter?.mid),
+    defense: stringList(quarter?.defense),
+    gk: typeof quarter?.gk === "string" ? quarter.gk : "없음",
+    bench: stringList(quarter?.bench),
+    unavailable: stringList(quarter?.unavailable),
+  };
+}
+
+function normalizeSharedMatchResult(match: unknown): MatchPlanResult {
+  const source = match as Partial<MatchPlanResult>;
+  const operation = source.operation as Partial<MatchPlanResult["operation"]> | undefined;
+  return {
+    starters: {
+      attack: Array.isArray(source.starters?.attack) ? source.starters.attack : [],
+      mid: Array.isArray(source.starters?.mid) ? source.starters.mid : [],
+      defense: Array.isArray(source.starters?.defense) ? source.starters.defense : [],
+      gk: source.starters?.gk ?? null,
+    },
+    quarters: Array.isArray(source.quarters)
+      ? source.quarters.map((quarter, index) => normalizeSharedMatchQuarter(quarter, normalizeQuarterNumber(index + 1, 1)))
+      : [],
+    bench: Array.isArray(source.bench) ? source.bench : [],
+    playerSummaries: Array.isArray(source.playerSummaries) ? source.playerSummaries : [],
+    warnings: stringList(source.warnings),
+    notes: stringList(source.notes),
+    operation: {
+      keepLineup: normalizeSharedMatchQuarter(operation?.keepLineup, 4),
+      rotateLineup: normalizeSharedMatchQuarter(operation?.rotateLineup, 4),
+      rotateSwaps: Array.isArray(operation?.rotateSwaps) ? operation.rotateSwaps : [],
+      q4PriorityNames: stringList(operation?.q4PriorityNames),
+      coveredByQ3Names: stringList(operation?.coveredByQ3Names),
+      callupUsedNames: stringList(operation?.callupUsedNames),
+      callupUnusedNames: stringList(operation?.callupUnusedNames),
+    },
+  };
+}
+
 function normalizeSharedAssignedPlayer(player: AssignedPlayer): AssignedPlayer {
   return {
     ...player,
@@ -467,7 +516,7 @@ async function decodeSharedMatchLineup(value: string): Promise<MatchPlanResult> 
     if (payload.version !== 1 || !payload.match || !Array.isArray(payload.match.quarters)) {
       throw new Error("매치 라인업 공유 데이터 형식이 올바르지 않습니다.");
     }
-    return payload.match;
+    return normalizeSharedMatchResult(payload.match);
   };
 
   if (value.startsWith(RAW_LINEUP_PREFIX)) {
@@ -909,7 +958,7 @@ export default function Home() {
             setTeamVariants([]);
             setSelectedVariantIdx(0);
             setLineupResult(null);
-            setMatchResult(payload.match);
+            setMatchResult(normalizeSharedMatchResult(payload.match));
             setTeamsConfirmed(false);
             setSwapSelection(null);
             setCopied(false);
