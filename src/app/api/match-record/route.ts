@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { firebaseDeleteJson, firebaseGetJson, firebasePatchJson } from "@/lib/firebaseRealtime";
+import { dataDeleteJson, dataGetJson, dataPatchJson } from "@/lib/sharedData";
 import { buildMatchInfoPayload, validateMatchRecordRequest } from "@/lib/matchRecordPayload";
 import type {
   MatchRecordConflictResponse,
@@ -26,7 +26,7 @@ export async function GET(request: Request) {
   if (list) {
     const limit = Math.min(Math.max(Number(searchParams.get("limit") ?? 240) || 240, 1), 500);
     try {
-      const records = await firebaseGetJson(["MatchInfo"]);
+      const records = await dataGetJson(["MatchInfo"]);
       return NextResponse.json(matchRecordListResponse(records, limit), {
         headers: { "cache-control": "no-store" },
       });
@@ -46,7 +46,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    const existing = await firebaseGetJson(["MatchInfo", matchId]);
+    const existing = await dataGetJson(["MatchInfo", matchId]);
     if (!existing) {
       return NextResponse.json({ error: "MATCH_NOT_FOUND", matchId, path: `MatchInfo/${matchId}` }, { status: 404 });
     }
@@ -114,11 +114,11 @@ export async function DELETE(request: Request) {
   const path = `MatchInfo/${matchId}`;
 
   try {
-    const existing = await firebaseGetJson(["MatchInfo", matchId]);
-    await firebaseDeleteJson(["MatchInfo", matchId]);
-    const remaining = await firebaseGetJson(["MatchInfo", matchId]);
+    const existing = await dataGetJson(["MatchInfo", matchId]);
+    await dataDeleteJson(["MatchInfo", matchId]);
+    const remaining = await dataGetJson(["MatchInfo", matchId]);
     if (remaining) {
-      throw new Error(`Firebase delete verification failed for ${path}`);
+      throw new Error(`공통 DB 삭제 확인 실패: ${path}`);
     }
 
     return NextResponse.json(
@@ -157,17 +157,21 @@ export async function POST(request: Request) {
   }
 
   const payload = buildMatchInfoPayload(body);
+  if (body.scheduleId !== undefined) {
+    if (body.scheduleId !== null && (!Number.isSafeInteger(body.scheduleId) || body.scheduleId < 1)) return NextResponse.json({ error: "Invalid schedule" }, { status: 400 });
+    payload.ScheduleId = body.scheduleId;
+  }
   const path = `MatchInfo/${body.matchId}`;
 
   try {
-    const existing = await firebaseGetJson(["MatchInfo", body.matchId]);
+    const existing = await dataGetJson(["MatchInfo", body.matchId]);
 
     if (existing && !body.overwriteExisting && !body.dryRun) {
       return NextResponse.json(conflictResponse(body.matchId, path, existing), { status: 409 });
     }
 
     if (!body.dryRun) {
-      await firebasePatchJson(["MatchInfo", body.matchId], payload);
+      await dataPatchJson(["MatchInfo", body.matchId], payload);
     }
 
     const response: MatchRecordSaveResponse = {
@@ -212,6 +216,7 @@ function loadResponse(matchId: string, existing: unknown): MatchRecordLoadRespon
 
   return {
     ok: true,
+    scheduleId: typeof record.ScheduleId === "number" ? record.ScheduleId : undefined,
     matchId,
     path: `MatchInfo/${matchId}`,
     matchDate: stringValue(record.MatchDate),

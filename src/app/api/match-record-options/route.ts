@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { firebaseGetJson, firebasePatchJson } from "@/lib/firebaseRealtime";
+import { dataGetJson, dataPatchJson } from "@/lib/sharedData";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -16,8 +16,8 @@ type TeamOption = {
 export async function GET() {
   try {
     const [stadiumInfo, teamInfo] = await Promise.all([
-      firebaseGetJson(["StadiumInfo"]),
-      firebaseGetJson(["TeamInfo"]),
+      dataGetJson(["StadiumInfo"]),
+      dataGetJson(["TeamInfo"]),
     ]);
 
     return NextResponse.json(
@@ -56,7 +56,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    await firebasePatchJson(["TeamInfo", name], {
+    await dataPatchJson(["TeamInfo", name], {
       TeamName: name,
       TeamLogoURL: "",
     });

@@ -12,6 +12,7 @@ const DEFAULT_MATCH_HOME = "DevUtd";
 const DEFAULT_MATCH_AWAY = "상대팀";
 
 type MatchInfoPayload = {
+  ScheduleId?: number | null;
   MatchDate: string;
   MatchTime: string;
   MatchType: 0 | 1;

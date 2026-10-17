@@ -1,6 +1,5 @@
-import { readFile } from "fs/promises";
 import { NextResponse } from "next/server";
-import { firebaseGetJson } from "@/lib/firebaseRealtime";
+import { dataGetJson } from "@/lib/sharedData";
 import { buildHistoryInsightResponse, parseFirebaseMatches } from "@/lib/historyInsights";
 import type { HistoryInsightRequest, HistorySource } from "@/types/history";
 
@@ -8,9 +7,6 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 const DEFAULT_YEARS = [2025, 2026];
-const DEFAULT_MATCH_INFO_PATH =
-  "C:\\Users\\admin\\Documents\\카카오톡 받은 파일\\DevUtd_Tool_20240107\\240107\\last_FireBaseDB_MatchInfo.json";
-
 type HistorySourceResult = {
   raw: unknown;
   source: HistorySource;
@@ -38,9 +34,9 @@ export async function POST(request: Request) {
   if (!sourceResult) {
     return NextResponse.json(
       {
-        error: "Firebase match history was not found",
+        error: "Match history is unavailable",
         detail:
-          "Firebase MatchInfo 조회에 실패했습니다. FIREBASE_SERVICE_ACCOUNT_JSON/FIREBASE_SERVICE_ACCOUNT_PATH 또는 FIREBASE_MATCHINFO_PATH를 확인해주세요.",
+          "경기 기록 서버에 연결하지 못했습니다. 잠시 후 다시 시도해주세요.",
       },
       { status: 503 },
     );
@@ -64,41 +60,9 @@ export async function POST(request: Request) {
 }
 
 async function loadHistorySource(): Promise<HistorySourceResult | null> {
-  const warnings: string[] = [];
-  const firebase = await loadFromFirebase(warnings);
-  if (firebase) return firebase;
-
-  const cache = await loadFromCache(warnings);
-  if (cache) return cache;
-
-  return null;
-}
-
-async function loadFromFirebase(warnings: string[]): Promise<HistorySourceResult | null> {
   try {
-    return {
-      raw: await firebaseGetJson(["MatchInfo"]),
-      source: "firebase",
-      warnings,
-    };
-  } catch (error) {
-    warnings.push(`Firebase MatchInfo 조회 실패: ${error instanceof Error ? error.message : String(error)}`);
-    return null;
-  }
-}
-
-async function loadFromCache(warnings: string[]): Promise<HistorySourceResult | null> {
-  const matchInfoPath = process.env.FIREBASE_MATCHINFO_PATH || DEFAULT_MATCH_INFO_PATH;
-
-  try {
-    const text = await readFile(matchInfoPath, "utf8");
-    return {
-      raw: JSON.parse(text),
-      source: "cache",
-      warnings,
-    };
-  } catch (error) {
-    warnings.push(`Firebase 캐시 파일 조회 실패: ${error instanceof Error ? error.message : String(error)}`);
+    return { raw: await dataGetJson(["MatchInfo"]), source: "oracle", warnings: [] };
+  } catch {
     return null;
   }
 }

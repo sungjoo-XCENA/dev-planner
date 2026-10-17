@@ -1,4 +1,4 @@
-export type HistorySource = "firebase" | "cache";
+export type HistorySource = "oracle" | "firebase" | "cache";
 
 export type HistoryPairLabel = "good" | "caution" | "sample";
 

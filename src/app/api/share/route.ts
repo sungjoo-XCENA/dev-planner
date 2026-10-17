@@ -1,6 +1,6 @@
 import { randomBytes } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
-import { firebaseGetJson, firebasePatchJson } from "@/lib/firebaseRealtime";
+import { dataGetJson, dataPatchJson } from "@/lib/sharedData";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -14,7 +14,7 @@ type StoredShare = {
   createdAt: string;
 };
 
-const FIREBASE_SHARE_PATH = process.env.FIREBASE_SHARE_PATH || "PlannerShares";
+const FIREBASE_SHARE_PATH = "PlannerShares";
 
 function shareBasePath(): string[] {
   return FIREBASE_SHARE_PATH.split("/").map((part) => part.trim()).filter(Boolean);
@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
       createdAt: new Date().toISOString(),
     };
 
-    await firebasePatchJson([...shareBasePath(), id], record);
+    await dataPatchJson([...shareBasePath(), id], record);
     return NextResponse.json({ id });
   } catch (error) {
     return NextResponse.json(
@@ -65,7 +65,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "공유 링크 키가 올바르지 않습니다." }, { status: 400 });
     }
 
-    const record = await firebaseGetJson([...shareBasePath(), id]) as Partial<StoredShare> | null;
+    const record = await dataGetJson([...shareBasePath(), id]) as Partial<StoredShare> | null;
     const kind = normalizeKind(record?.kind);
     if (!record || record.version !== 1 || !kind || record.payload == null) {
       return NextResponse.json({ error: "공유 데이터를 찾을 수 없습니다." }, { status: 404 });

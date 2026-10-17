@@ -35,6 +35,7 @@ export type MatchRecordGuestPlayer = {
 };
 
 export type MatchRecordSaveRequest = {
+  scheduleId?: number | null;
   matchId: string;
   matchDate: string;
   matchTime?: string;
@@ -71,6 +72,7 @@ export type MatchRecordSaveResponse = {
 };
 
 export type MatchRecordLoadResponse = {
+  scheduleId?: number;
   ok: true;
   matchId: string;
   path: string;
