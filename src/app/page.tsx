@@ -1772,7 +1772,7 @@ export default function Home() {
       </div>
       <section className="mb-6 rounded-3xl bg-white p-6 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h1 className="text-3xl font-bold tracking-tight">DEV FC Planner</h1>
+          <h1 className="text-3xl font-bold tracking-tight">DevUtd Planner</h1>
           <button
             type="button"
             className={`rounded-xl px-4 py-2 text-sm font-bold ${showRecordEdit ? "bg-slate-900 text-white" : "border border-slate-300 bg-white text-slate-700"}`}
