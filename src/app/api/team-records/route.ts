@@ -1,7 +1,5 @@
-import { promises as fs } from "fs";
-import path from "path";
 import { NextResponse } from "next/server";
-import { firebaseDeleteJson, firebaseGetJson, firebasePatchJson } from "@/lib/firebaseRealtime";
+import { dataDeleteJson, dataGetJson, dataPatchJson } from "@/lib/sharedData";
 import type { TeamQuarterLineup } from "@/types/lineup";
 import type { TeamRecord, TeamRecordGroups, TeamRecordPlayer, TeamRecordSummary } from "@/types/teamRecord";
 
@@ -12,142 +10,20 @@ type TeamRecordDb = {
   records: Record<string, TeamRecord>;
 };
 
-const STORE_PATH = path.join(process.cwd(), "data", "team-records.json");
-const REDIS_RECORDS_KEY = "dev-planner:team-records:v1";
-const FIREBASE_RECORDS_PATH = process.env.FIREBASE_TEAM_RECORDS_PATH || "PlannerTeamRecords";
-
-type RedisConfig = {
-  url: string;
-  token: string;
-};
-
-function emptyDb(): TeamRecordDb {
-  return { records: {} };
-}
-
-function getRedisConfig(): RedisConfig | null {
-  const url = process.env.UPSTASH_REDIS_REST_URL ?? process.env.KV_REST_API_URL;
-  const token = process.env.UPSTASH_REDIS_REST_TOKEN ?? process.env.KV_REST_API_TOKEN;
-  if (!url || !token) return null;
-  return { url: url.replace(/\/$/, ""), token };
-}
-
-function shouldUseFileStore(): boolean {
-  return process.env.VERCEL !== "1";
-}
-
-function hasFirebaseConfig(): boolean {
-  return Boolean(process.env.FIREBASE_SERVICE_ACCOUNT_JSON || process.env.FIREBASE_SERVICE_ACCOUNT_PATH);
-}
-
-function firebaseRecordsPath(): string[] {
-  return FIREBASE_RECORDS_PATH.split("/").map((part) => part.trim()).filter(Boolean);
-}
-
-function storageNotConfiguredError(): Error {
-  return new Error("Vercel 배포 환경에서는 기존 Firebase 서비스 계정 환경변수(FIREBASE_SERVICE_ACCOUNT_JSON 또는 FIREBASE_SERVICE_ACCOUNT_PATH)가 필요합니다.");
-}
-
-async function redisCommand<T>(config: RedisConfig, command: unknown[]): Promise<T> {
-  const response = await fetch(config.url, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${config.token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(command),
-    cache: "no-store",
-  });
-  const body = (await response.json().catch(() => ({}))) as { result?: T; error?: string };
-  if (!response.ok || body.error) {
-    throw new Error(body.error ?? `Redis HTTP ${response.status}`);
-  }
-  return body.result as T;
-}
-
-function parseDb(raw: unknown): TeamRecordDb {
-  if (!raw) return emptyDb();
-  const parsed = typeof raw === "string" ? JSON.parse(raw) as Partial<TeamRecordDb> : raw as Partial<TeamRecordDb>;
-  return { records: parsed.records ?? {} };
-}
+const RECORDS_PATH = "PlannerTeamRecords";
 
 async function readDb(): Promise<TeamRecordDb> {
-  const redis = getRedisConfig();
-  if (redis) {
-    return parseDb(await redisCommand<string | null>(redis, ["GET", REDIS_RECORDS_KEY]));
-  }
-
-  if (hasFirebaseConfig()) {
-    return { records: parseFirebaseRecords(await firebaseGetJson(firebaseRecordsPath())) };
-  }
-
-  if (!shouldUseFileStore()) {
-    throw storageNotConfiguredError();
-  }
-
-  try {
-    const raw = await fs.readFile(STORE_PATH, "utf8");
-    return parseDb(raw);
-  } catch (error) {
-    if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
-      return emptyDb();
-    }
-    throw error;
-  }
+  return { records: parseFirebaseRecords(await dataGetJson([RECORDS_PATH])) };
 }
 
-async function writeDb(db: TeamRecordDb): Promise<void> {
-  const redis = getRedisConfig();
-  if (redis) {
-    await redisCommand<string>(redis, ["SET", REDIS_RECORDS_KEY, JSON.stringify(db)]);
-    return;
-  }
-
-  if (hasFirebaseConfig()) {
-    await firebasePatchJson(firebaseRecordsPath(), db.records);
-    return;
-  }
-
-  if (!shouldUseFileStore()) {
-    throw storageNotConfiguredError();
-  }
-
-  await fs.mkdir(path.dirname(STORE_PATH), { recursive: true });
-  const tempPath = `${STORE_PATH}.${process.pid}.tmp`;
-  await fs.writeFile(tempPath, `${JSON.stringify(db, null, 2)}\n`, "utf8");
-  await fs.rename(tempPath, STORE_PATH);
+async function writeRecord(record: TeamRecord): Promise<void> {
+  await dataPatchJson([RECORDS_PATH, record.date], record);
 }
 
 async function deleteRecordByDate(date: string): Promise<boolean> {
-  const redis = getRedisConfig();
-  if (redis) {
-    const db = await readDb();
-    const existed = Boolean(db.records[date]);
-    delete db.records[date];
-    await redisCommand<string>(redis, ["SET", REDIS_RECORDS_KEY, JSON.stringify(db)]);
-    return existed;
-  }
-
-  if (hasFirebaseConfig()) {
-    const pathParts = [...firebaseRecordsPath(), date];
-    const existing = await firebaseGetJson(pathParts);
-    await firebaseDeleteJson(pathParts);
-    const remaining = await firebaseGetJson(pathParts);
-    if (remaining) {
-      throw new Error(`Firebase team record delete verification failed for ${pathParts.join("/")}`);
-    }
-    return Boolean(existing);
-  }
-
-  if (!shouldUseFileStore()) {
-    throw storageNotConfiguredError();
-  }
-
-  const db = await readDb();
-  const existed = Boolean(db.records[date]);
-  delete db.records[date];
-  await writeDb(db);
-  return existed;
+  const existing = await dataGetJson([RECORDS_PATH, date]);
+  await dataDeleteJson([RECORDS_PATH, date]);
+  return Boolean(existing);
 }
 
 function parseFirebaseRecords(raw: unknown): Record<string, TeamRecord> {
@@ -354,7 +230,7 @@ export async function POST(request: Request) {
 
   db.records[normalized.date] = normalized;
   try {
-    await writeDb(db);
+    await writeRecord(normalized);
   } catch (error) {
     return storageErrorResponse(error);
   }

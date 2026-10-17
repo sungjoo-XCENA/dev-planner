@@ -1026,6 +1026,7 @@
       if (!response.ok) throw new Error(data.detail || data.error || "경기 옵션을 불러오지 못했습니다.");
       state.options = {
         loaded: true,
+        schedules: await fetch("/api/schedules", {cache:"no-store"}).then(function(r){return r.ok ? r.json() : [];}).catch(function(){return [];}),
         stadiums: Array.isArray(data.stadiums) ? data.stadiums : [],
         teams: Array.isArray(data.teams) ? data.teams : [],
         error: "",
@@ -1130,6 +1131,7 @@
     state.matchKind = kind;
     return {
       date: valueOf(existing, "date", loaded.date || dateValue),
+      scheduleId: valueOf(existing, "scheduleId", loaded.scheduleId || ""),
       matchId: valueOf(existing, "matchId", loaded.matchId || compactDate(dateValue)),
       startTime: valueOf(existing, "startTime", loaded.startTime || "20:00"),
       duration: duration,
@@ -1279,6 +1281,7 @@
       : fieldInput("경기일", "date", "date", form.date, state.editingRecordOnly);
     return [
       "<div class=\"mrw-meta\">",
+      "<div class=\"mrw-field\"><label>웹 일정 연결</label><select data-mrw=\"scheduleId\"><option value=\"\">별도 경기 / 연결 안 함</option>" + (state.options.schedules || []).map(function(s){ return "<option value=\"" + Number(s.id) + "\"" + (String(form.scheduleId) === String(s.id) ? " selected" : "") + ">" + escapeHtml([s.match_date, s.venue, s.opponent].filter(Boolean).join(" · ")) + "</option>"; }).join("") + "</select></div>",
       dateField,
       renderMatchKindControl(form.matchKind),
       fieldInput("시작 시간", "startTime", "time", form.startTime || "20:00"),
@@ -1791,6 +1794,21 @@
   }
 
   function bindPanel(panel) {
+    var scheduleSelect = panel.querySelector("[data-mrw=scheduleId]");
+    if (scheduleSelect) scheduleSelect.addEventListener("change", function(){
+      var form = formState(panel);
+      form.scheduleId = scheduleSelect.value;
+      var item = (state.options.schedules || []).find(function(s){return String(s.id) === scheduleSelect.value;});
+      if (item) {
+        form.date = item.match_date || form.date;
+        if (!state.editingMatchId) form.matchId = compactDate(form.date);
+        form.venueName = item.venue || form.venueName;
+        if (item.match_time) form.startTime = item.match_time.slice(0,5);
+        form.awayTeamName = item.opponent || form.awayTeamName;
+      }
+      state.loadedForm = form;
+      renderPanel();
+    });
     var dateInput = panel.querySelector("[data-mrw=date]");
     var idInput = panel.querySelector("[data-mrw=matchId]");
     if (dateInput && idInput) {
@@ -2070,6 +2088,7 @@
     assertRegisteredRecordPlayers(quarters, summaryStats, events);
     return {
       matchId: state.editingMatchId || panel.querySelector("[data-mrw=matchId]").value.trim() || compactDate(matchDate),
+      scheduleId: Number(valueOf(panel, "scheduleId", "")) || null,
       matchDate: matchDate,
       matchTime: formatMatchTime(matchDate, startTime, duration),
       matchKind: matchKind,
@@ -2270,6 +2289,7 @@
       state.loadedLineupQuarters = normalizeLoadedLineupQuarters(data.lineupQuarters);
       state.conflict = null;
       state.loadedRecord = data;
+      if (state.loadedForm) state.loadedForm.scheduleId = data.scheduleId || "";
       state.editingRecordOnly = true;
       state.editingMatchId = data.matchId || matchId;
       state.matchKind = data.matchKind === "MATCH" ? "MATCH" : "SELF";
@@ -2283,6 +2303,7 @@
       state.selectedTeamRecordError = "";
       state.loadedForm = {
         date: matchDate || todayInputValue(),
+        scheduleId: data.scheduleId || "",
         matchId: data.matchId || matchId,
         startTime: data.matchTime ? startTimeFromMatchTime(data.matchTime) : "20:00",
         duration: data.matchTime ? normalizeDuration(durationFromMatchTime(data.matchTime)) : "2",

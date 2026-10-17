@@ -1767,6 +1767,9 @@ export default function Home() {
 
   return (
     <main className="mx-auto max-w-7xl p-4 pb-28 sm:p-8">
+      <div className="mb-3 flex justify-end gap-4 text-sm">
+        <a href="/admin" className="underline">관리자 로그인</a>
+      </div>
       <section className="mb-6 rounded-3xl bg-white p-6 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h1 className="text-3xl font-bold tracking-tight">DEV FC Planner</h1>
@@ -2964,7 +2967,7 @@ function mergeHistoryGroupMaps(...maps: HistoryGroupMap[]): HistoryGroupMap {
 }
 
 function historySourceLabel(source: HistoryInsightResponse["source"]): string {
-  return source === "firebase" ? "Firebase 직접 조회" : "로컬 Firebase 캐시";
+  return source === "oracle" ? "공통 경기 기록" : "이전 경기 기록";
 }
 
 function formatHistorySigned(value: number): string {
