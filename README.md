@@ -1,4 +1,10 @@
-# DEV FC Planner
+# DevUtd Planner
+
+운영 주소: https://devutd-planner.vercel.app
+
+웹: https://devutd-web.vercel.app
+
+기존 `devfc-planner.vercel.app` 주소는 새 플래너 주소로 이동합니다. Vercel 프로젝트 이름은 `devutd-planner`이며 GitHub 저장소 이름은 유지합니다.
 
 축구 자체전 인원을 두 팀으로 균형 있게 나누고 4쿼터 라인업을 자동 생성하는 웹 도구. Google Sheets를 선수 DB로 쓰고 팀 분배/라인업 계산은 브라우저에서 한다.
 
